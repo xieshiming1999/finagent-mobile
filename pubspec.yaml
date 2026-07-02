@@ -53,6 +53,7 @@ flutter:
     - assets/finance/skills/stock/
     - assets/finance/skills/fund/
     - assets/finance/skills/data-sources/
+    - assets/finance/skills/data-sources/references/
     - assets/finance/skills/tushare/
     - assets/finance/skills/wind-aifinmarket/
     - assets/finance/skills/wind-find-finance-skill/
