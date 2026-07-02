@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{TITLE}}</title>
+<style>
+:root {
+  --bg: #131722; --bg-card: #1e222d; --bg-hover: #2a2e39; --border: #2a2e39;
+  --text: #d1d4dc; --text-dim: #787b86; --text-bright: #f0f3fa;
+  --accent: #2962ff; --green: #26a69a; --red: #ef5350; --yellow: #ffc107;
+  --radius: 6px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; line-height: 1.6; }
+.container { max-width: 720px; margin: 0 auto; padding: 16px; }
+.report-header { margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.report-title { font-size: 18px; font-weight: 700; color: var(--text-bright); margin-bottom: 4px; }
+.report-date { font-size: 12px; color: var(--text-dim); }
+.section { margin-bottom: 20px; }
+.section-title { font-size: 14px; font-weight: 600; color: var(--text-bright); margin-bottom: 10px; padding-left: 8px; border-left: 3px solid var(--accent); }
+.grid { display: grid; gap: 10px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+.kpi-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.kpi-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 4px; }
+.kpi-value { font-size: 20px; font-weight: 700; color: var(--text-bright); }
+.kpi-change { font-size: 12px; margin-top: 3px; }
+.kpi-change.up { color: var(--green); }
+.kpi-change.down { color: var(--red); }
+.kpi-change.flat { color: var(--text-dim); }
+.highlight-list { list-style: none; }
+.highlight-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.highlight-icon { color: var(--green); font-size: 14px; flex-shrink: 0; }
+.highlight-icon.risk { color: var(--red); }
+.report-table { width: 100%; border-collapse: collapse; background: var(--bg-card); border-radius: var(--radius); overflow: hidden; }
+.report-table th { background: var(--bg-hover); font-size: 12px; color: var(--text-dim); text-align: left; padding: 8px 12px; font-weight: 500; }
+.report-table td { padding: 8px 12px; border-top: 1px solid var(--border); font-size: 13px; }
+.report-table tr:hover td { background: var(--bg-hover); }
+.text-block { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; font-size: 13px; line-height: 1.8; }
+.text-block p { margin-bottom: 8px; }
+.text-block p:last-child { margin-bottom: 0; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 500; }
+.tag-green { background: rgba(38,166,154,0.15); color: var(--green); }
+.tag-red { background: rgba(239,83,80,0.15); color: var(--red); }
+.tag-yellow { background: rgba(255,193,7,0.15); color: var(--yellow); }
+.tag-blue { background: rgba(41,98,255,0.15); color: var(--accent); }
+.verdict { text-align: center; padding: 16px; margin-top: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
+.verdict-label { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+.verdict-value { font-size: 22px; font-weight: 700; }
+@media (max-width: 400px) {
+  .grid-3, .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .kpi-value { font-size: 16px; }
+  .report-title { font-size: 16px; }
+}
+</style>
+</head>
+<body>
+<div class="container" id="content">
+  <div style="color:var(--text-dim);text-align:center;padding:40px;">Loading report...</div>
+</div>
+
+<script>
+var CONFIG = {
+  title: "Report",
+  date: "",
+  sections: []
+};
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function joinFields(fields, sep) {
+  return (fields || [])
+    .filter(function(item) { return item !== undefined && item !== null && String(item).trim() !== ''; })
+    .map(escapeHtml)
+    .join(sep || ' · ');
+}
+
+function renderEvidenceList(items) {
+  var html = '<ul class="highlight-list">';
+  (items || []).forEach(function(item) {
+    html += '<li class="highlight-item"><span class="highlight-icon risk">!</span><span>' + escapeHtml(item) + '</span></li>';
+  });
+  html += '</ul>';
+  return html;
+}
+
+function renderAnalysisEvidence(evidence) {
+  if (!evidence || evidence.contract !== 'analysis-evidence-v1') return '';
+  var subject = evidence.subject || {};
+  var coverage = evidence.sourceCoverage || {};
+  var rows = [
+    ['类别', evidence.kind || '-'],
+    ['标的', joinFields([subject.name, subject.id || subject.type]) || '-'],
+    ['置信度', evidence.confidence || '-'],
+    ['策略状态', evidence.strategyReadiness || '-'],
+    ['来源', Array.isArray(coverage.sources) ? coverage.sources.join(', ') : coverage.sources],
+    ['接口', coverage.interfaceId || '-'],
+    ['表/Schema', joinFields([coverage.canonicalTable, coverage.canonicalSchema]) || '-'],
+    ['读回动作', coverage.readbackAction || '-'],
+    ['数据时间', coverage.sourceDataTime || '-'],
+    ['获取时间', coverage.fetchedAt || '-'],
+    ['缓存/覆盖', joinFields([coverage.cacheStatus, coverage.coverageStatus]) || '-']
+  ];
+  var html = '<table class="report-table"><thead><tr><th>字段</th><th>值</th></tr></thead><tbody>';
+  rows.forEach(function(row) {
+    html += '<tr><td>' + escapeHtml(row[0]) + '</td><td>' + escapeHtml(row[1]) + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  [
+    ['观察事实', evidence.observedFacts],
+    ['解释', evidence.interpretations],
+    ['缺口', evidence.missingEvidence]
+  ].forEach(function(group) {
+    if (Array.isArray(group[1]) && group[1].length) {
+      html += '<div style="margin-top:10px">';
+      html += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px">' + escapeHtml(group[0]) + '</div>';
+      html += renderEvidenceList(group[1]);
+      html += '</div>';
+    }
+  });
+  return html;
+}
+
+function render() {
+  var c = document.getElementById('content');
+  var html = '<div class="report-header">';
+  html += '<div class="report-title">' + escapeHtml(CONFIG.title) + '</div>';
+  if (CONFIG.date) html += '<div class="report-date">' + escapeHtml(CONFIG.date) + '</div>';
+  html += '</div>';
+
+  var sections = (CONFIG.sections || []).slice();
+  var evidenceHtml = renderAnalysisEvidence(CONFIG.analysisEvidence || (CONFIG.evidence && CONFIG.evidence.analysisEvidence));
+  if (evidenceHtml) sections.push({ title: '分析证据', type: 'html', content: evidenceHtml });
+
+  sections.forEach(function(s) {
+    html += '<div class="section">';
+    if (s.title) html += '<div class="section-title">' + escapeHtml(s.title) + '</div>';
+
+    switch (s.type) {
+      case 'kpi':
+        var cols = s.cols || 3;
+        html += '<div class="grid grid-' + cols + '">';
+        (s.items || []).forEach(function(k) {
+          var dir = k.direction || 'flat';
+          var arrow = dir === 'up' ? '▲ ' : dir === 'down' ? '▼ ' : '';
+          html += '<div class="kpi-card"><div class="kpi-label">' + (k.label||'') + '</div>';
+          html += '<div class="kpi-value">' + (k.value||'—') + '</div>';
+          if (k.change) html += '<div class="kpi-change ' + dir + '">' + arrow + k.change + '</div>';
+          html += '</div>';
+        });
+        html += '</div>';
+        break;
+
+      case 'highlight':
+        html += '<ul class="highlight-list">';
+        (s.items || []).forEach(function(item) {
+          var icon = s.icon || '✦';
+          var cls = s.risk ? 'highlight-icon risk' : 'highlight-icon';
+          html += '<li class="highlight-item"><span class="' + cls + '">' + icon + '</span><span>' + item + '</span></li>';
+        });
+        html += '</ul>';
+        break;
+
+      case 'table':
+        html += '<table class="report-table"><thead><tr>';
+        (s.headers || []).forEach(function(h) { html += '<th>' + h + '</th>'; });
+        html += '</tr></thead><tbody>';
+        (s.rows || []).forEach(function(row) {
+          html += '<tr>';
+          row.forEach(function(cell) { html += '<td>' + cell + '</td>'; });
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        break;
+
+      case 'text':
+        html += '<div class="text-block">';
+        var content = s.content || '';
+        content.split('\n').forEach(function(p) {
+          if (p.trim()) html += '<p>' + escapeHtml(p) + '</p>';
+        });
+        html += '</div>';
+        break;
+
+      case 'html':
+        html += s.content || '';
+        break;
+
+      case 'verdict':
+        var color = s.color || 'var(--text-bright)';
+        html += '<div class="verdict"><div class="verdict-label">' + escapeHtml(s.label||'综合评级') + '</div>';
+        html += '<div class="verdict-value" style="color:' + color + '">' + escapeHtml(s.value||'—') + '</div>';
+        if (s.sub) html += '<div style="font-size:12px;color:var(--text-dim);margin-top:6px">' + escapeHtml(s.sub) + '</div>';
+        html += '</div>';
+        break;
+    }
+    html += '</div>';
+  });
+
+  c.innerHTML = html;
+}
+
+render();
+</script>
+</body>
+</html>
