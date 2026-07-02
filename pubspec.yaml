@@ -57,7 +57,10 @@ flutter:
     - assets/finance/skills/investment-workflow/
     - assets/finance/skills/tushare/
     - assets/finance/skills/wind-aifinmarket/
+    - assets/finance/skills/wind-aifinmarket/references/
     - assets/finance/skills/wind-find-finance-skill/
+    - assets/finance/skills/tradingview/
+    - assets/finance/skills/tradingview/references/
     - assets/finance/skills/tradingview-scanner/
     - assets/finance/skills/oil-war-room/
     - assets/finance/skills/market-overview/
