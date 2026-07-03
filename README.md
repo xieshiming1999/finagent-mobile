@@ -45,6 +45,18 @@ Service dependencies:
 
 Runtime data such as sessions, dashboards, generated reports, logs, cache, memory, cookies, and API keys belongs outside this repository.
 
+## Design Guides
+
+Design guides are part of the source contract. They are added as the corresponding code domains appear. When a design guide is added or materially changed, update both `README.md` and `README.zh.md` in the same source-change commit so the README describes the code at that point in history.
+
+English:
+
+- `docs/design/agent/agent-design-guide.md`
+
+Chinese:
+
+- `docs/design/agent/agent-design-guide.zh.md`
+
 ## Development
 
 Validate locally:
