@@ -31,11 +31,26 @@ Minimum model settings:
 
 Finance data settings:
 
-- Provider credentials only for providers you intend to use.
-- Data source options such as Wind, Tushare, search providers, Xueqiu simulated trading, yfinance/Yahoo Finance, and TradingView.
+- Provider credentials only for providers you intend to use. A personal research finance agent usually fails first on data access, not on the LLM: the hard work is retrieving data, proving the provider returned the expected schema, preserving source time separately from fetch time, and reusing verified local rows before spending another external call.
+- Data source options should be treated as governed provider paths, not anonymous fallback blobs. Configure only the providers used by your workflow.
 - Optional local proxy settings when your network requires them.
-- Global web access or a working proxy for providers that depend on overseas web services, especially yfinance/Yahoo Finance and TradingView.
 - Runtime data directory for sessions, memory, generated dashboards, local cache, provider evidence, logs, and user-created artifacts.
+
+Data-source comparison:
+
+| Source group | Best use | Main boundary | Provenance treatment |
+|---|---|---|---|
+| TDX native | A-share quote, K-line, index, transactions, tick, and market-structure evidence | Public servers can be unavailable or schema-specific | Persist only registered schemas; preserve provider as-of time and classify transport failures. |
+| EastMoney public routes | A-share/fund public data, sectors, rankings, money flow, limit pools, and hot lists | Route and field names can drift | Normalize through code-owned interfaces and keep failure evidence visible. |
+| Wind / AIFinMarket | Licensed professional, macro, fundamental, document, and advanced finance data | Credential, quota, and permission gated | Prefer cache/readback first; expose quota and permission status before live refresh. |
+| Tushare Pro | Structured A-share reference data when the token has permission | Endpoint permissions vary by account | Disable unsupported endpoints and avoid retry loops after permission failure. |
+| Yahoo Finance compatible routes | Global instruments, cross-market context, history, options, actions, and news | Needs global web access or proxy; not an A-share primary source | Use for global context and typed readbacks; do not replace primary China-market providers. |
+| Search and research pages | Narrative explanation, macro attribution, and source discovery | Not automatically canonical market data | Treat as hypothesis/evidence rows unless promoted to a governed schema. |
+
+Credential and access matrix:
+
+| Data source | Key required | Where to get / configure | Main use |
+|---|---|---|---|
 
 Service dependencies:
 
@@ -52,10 +67,12 @@ Design guides are part of the source contract. They are added as the correspondi
 English:
 
 - `docs/design/agent/agent-design-guide.md`
+- `docs/design/data-provenance/data-provenance-design-guide.md`
 
 Chinese:
 
 - `docs/design/agent/agent-design-guide.zh.md`
+- `docs/design/data-provenance/data-provenance-design-guide.zh.md`
 
 ## Development
 
