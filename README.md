@@ -34,6 +34,8 @@ Finance data settings:
 - Provider credentials only for providers you intend to use. A personal research finance agent usually fails first on data access, not on the LLM: the hard work is retrieving data, proving the provider returned the expected schema, preserving source time separately from fetch time, and reusing verified local rows before spending another external call.
 - Data source options should be treated as governed provider paths, not anonymous fallback blobs. Configure only the providers used by your workflow.
 - TDX and EastMoney public data: practical A-share sources for quote, K-line, sector, hot-rank, limit-pool, money-flow, and related market structure data. Treat transport failures and provider schema changes as source-health evidence, not silent fallbacks.
+- Wind / AIFinMarket: configure `WIND_API_KEY` only if you have access from Wind AIFinMarket. Use it for licensed professional data, macro series, documents, and advanced finance facts; quota and permission limits are provider-owned and should be visible in API health.
+- Tushare: configure `TUSHARE_TOKEN` from a Tushare account when you need supported A-share reference data. Some statement/fund endpoints require extra permissions; unsupported or permission-gated endpoints should stay disabled instead of being advertised as normal workflows.
 - Optional local proxy settings when your network requires them.
 - Runtime data directory for sessions, memory, generated dashboards, local cache, provider evidence, logs, and user-created artifacts.
 
@@ -54,6 +56,8 @@ Credential and access matrix:
 |---|---|---|---|
 | TDX native public market data | No API key | Bundled native protocol/provider policy | A-share quote, K-line, index and market-structure paths; network/server availability still matters. |
 | EastMoney public data | No API key | Public EastMoney routes | A-share, ETF, sector, hot-rank, flow, limit-pool and related public data. |
+| Wind / AIFinMarket | `WIND_API_KEY` | Wind AIFinMarket / Wind account or portal | Professional, macro, fundamental, document and advanced finance data; quota and permission gated. |
+| Tushare Pro | `TUSHARE_TOKEN` | Tushare account -> personal center -> account token | Structured A-share reference data; endpoint permissions vary by account. |
 
 Service dependencies:
 
