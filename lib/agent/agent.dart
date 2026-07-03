@@ -1657,7 +1657,8 @@ class Agent {
     final decision = await goalManager.evaluateAfterTurn(
       lastResponse,
       _goalJudge,
-      verifyGoalState,
+      (state, judgment) =>
+          verifyGoalState(state, judgment, basePath: ctx.toolContext.basePath),
     );
 
     if (decision.message.isNotEmpty) {
