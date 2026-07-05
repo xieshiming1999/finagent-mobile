@@ -45,11 +45,16 @@ Minimum model settings:
 Finance data settings:
 
 - Provider credentials only for providers you intend to use. A personal research finance agent usually fails first on data access, not on the LLM: the hard work is retrieving data, proving the provider returned the expected schema, preserving source time separately from fetch time, and reusing verified local rows before spending another external call.
-- Data source options should be treated as governed provider paths, not anonymous fallback blobs. Configure only the providers used by your workflow.
+- Data source options such as Wind, Tushare, search providers, Xueqiu simulated trading, Yahoo Finance, and TradingView.
 - TDX and EastMoney public data: practical A-share sources for quote, K-line, sector, hot-rank, limit-pool, money-flow, and related market structure data. Treat transport failures and provider schema changes as source-health evidence, not silent fallbacks.
 - Wind / AIFinMarket: configure `WIND_API_KEY` only if you have access from Wind AIFinMarket. Use it for licensed professional data, macro series, documents, and advanced finance facts; quota and permission limits are provider-owned and should be visible in API health.
 - Tushare: configure `TUSHARE_TOKEN` from a Tushare account when you need supported A-share reference data. Some statement/fund endpoints require extra permissions; unsupported or permission-gated endpoints should stay disabled instead of being advertised as normal workflows.
+- Search providers: configure only the search engines you actually use. They provide research context and source discovery, not canonical market-data tables.
+- Xueqiu simulated trading: configure cookies/session data only for simulated-trading validation. Keep it separate from real broker execution and refresh cookies outside source control.
+- Yahoo Finance / yfinance-style data: mobile uses direct Yahoo-compatible paths for global quote/history/research where available. It normally needs global web access or a working proxy.
+- TradingView: use it as a visual/chart enhancement layer when web access is available; it is not the canonical storage source for reusable data.
 - Optional local proxy settings when your network requires them.
+- Global web access or a working proxy for providers that depend on overseas web services, especially yfinance/Yahoo Finance and TradingView.
 - Runtime data directory for sessions, memory, generated dashboards, local cache, provider evidence, logs, and user-created artifacts.
 
 Data-source comparison:
@@ -71,6 +76,16 @@ Credential and access matrix:
 | EastMoney public data | No API key | Public EastMoney routes | A-share, ETF, sector, hot-rank, flow, limit-pool and related public data. |
 | Wind / AIFinMarket | `WIND_API_KEY` | Wind AIFinMarket / Wind account or portal | Professional, macro, fundamental, document and advanced finance data; quota and permission gated. |
 | Tushare Pro | `TUSHARE_TOKEN` | Tushare account -> personal center -> account token | Structured A-share reference data; endpoint permissions vary by account. |
+| Yahoo Finance / yfinance-style global data | No API key in this app | Public Yahoo/yfinance-compatible routes used directly by the mobile runtime | Global quote/history/research/options/actions; usually needs global web access or proxy. |
+| TradingView visual/chart layer | No API key in this app | Web access / embedded chart resources | Visual chart enhancement, not canonical persisted data. |
+| Brave Search | `BRAVE_SEARCH_KEY` | Brave Search API dashboard | Research/source discovery, not canonical market data. |
+| Tavily Search | `TAVILY_API_KEY` | Tavily Platform dashboard | Research/source discovery and extraction, not canonical market data. |
+| FRED macro data | `FRED_API_KEY` | FRED account API key page | Official US macro/rates series. |
+| BLS public macro data | No API key in current implementation | BLS public API / public releases | US labor/inflation evidence; rate limits and source availability still apply. |
+| BEA macro data | `BEA_API_KEY` or `~/.fin_electron/bea.txt` fallback | BEA API signup | US national accounts and growth evidence. |
+| EIA energy data | `EIA_API_KEY` | EIA Open Data API registration | Energy inventory/commodity macro evidence. |
+| Xueqiu simulated trading | `XQ_COOKIE`; optional `XQ_PORTFOLIO` | Logged-in Xueqiu browser session and simulation group ids/names | Simulation validation only; keep separate from real broker execution. |
+| Public macro/research pages | Usually no API key | Official/public pages; sometimes browser/manual validation | Research narrative and attribution evidence until promoted into governed schema. |
 
 Service dependencies:
 
