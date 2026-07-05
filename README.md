@@ -4,6 +4,19 @@ This repository is also a study and research project on agent systems running on
 
 FinAgent Mobile is a Flutter mobile agent. Its primary bundled domain is finance: local market research, data-backed analysis, watchlists, dashboards, strategy review, and simulated-trading workflows.
 
+## Abilities
+
+- Mobile agent runtime: chat, sessions, memory, tool use, WebView/dashboard interaction, approvals, resumable workflow evidence, and app-started workflow tests for real UI behavior.
+- Finance data layer: governed interfaces for quote, K-line, fund, macro, news, provider health, source time versus fetch time, local readback, cache-first reuse, and provider failure classification.
+- Market and investment analysis: market overview, stock research, fund research, watchlists, macro/news context, risk notes, and user-facing reports backed by tool evidence.
+- Strategy and backtest: built-in indicators and strategies, custom StrategySpec validation, backtest execution, saved strategy lifecycle, rerun evidence, and watchlist/monitor handoff.
+- UI artifacts: dashboards, generated WebView reports, strategy views, macro evidence panels, and provenance text that explains provider, cache, time, and missing data.
+- Trading boundary: simulated-trading workflows and paper evidence are supported; real broker execution is outside the default mobile safety boundary.
+
+## Demonstration
+
+![FinAgent Mobile dashboard demonstration](docs/images/finagent-mobile.png)
+
 ## Quick Start
 
 Install Flutter, then run:
@@ -75,12 +88,14 @@ English:
 
 - `docs/design/agent/agent-design-guide.md`
 - `docs/design/data-provenance/data-provenance-design-guide.md`
+- `docs/design/strategy-provenance/strategy-provenance-design-guide.md`
 - `docs/design/workflow-phase/workflow-phase-design-guide.md`
 
 Chinese:
 
 - `docs/design/agent/agent-design-guide.zh.md`
 - `docs/design/data-provenance/data-provenance-design-guide.zh.md`
+- `docs/design/strategy-provenance/strategy-provenance-design-guide.zh.md`
 - `docs/design/workflow-phase/workflow-phase-design-guide.zh.md`
 
 ## Development
