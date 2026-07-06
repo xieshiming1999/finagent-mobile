@@ -2098,6 +2098,217 @@ askUserQuestion:{"contract":"ask-user-question-v1","answers":[{"question":"策�
     expect(calls.single.input['symbols'], ['300059']);
   });
 
+  test('saved strategy list drives multi-symbol rerun from workflow state', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+
+    final calls = hooks.buildPreflightToolCalls([
+      Message(
+        role: Role.user,
+        content:
+            'rerun saved strategy\n'
+            'data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"strategy_review","assetClass":"stock","intentMode":"rerun","executionMode":"preview_only","safetyBoundary":"reuse saved strategy artifact","evidenceRefs":["custom_strategy_list","custom_strategy_run"],"confirmationState":"none","subjects":["300059","600519"],"source":"scenario"}}',
+      ),
+      Message(
+        role: Role.assistant,
+        content: '',
+        toolUses: const [
+          ToolUse(
+            id: 'list',
+            name: 'MarketData',
+            input: {'action': 'custom_strategy_list'},
+          ),
+        ],
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'list',
+          content: '''
+{
+  "action": "custom_strategy_list",
+  "strategies": [
+    {
+      "strategyId": "custom_low_risk_entry_v1",
+      "status": "backtested",
+      "assetClass": "stock",
+      "symbols": ["300059"]
+    },
+    {
+      "strategyId": "momentum_breakout_v1",
+      "status": "backtested",
+      "assetClass": "stock",
+      "symbols": ["600519", "000858", "300059"]
+    }
+  ]
+}
+''',
+        ),
+      ),
+    ]);
+
+    expect(calls, isNotNull);
+    expect(calls, hasLength(2));
+    expect(
+      calls!.map((call) => call.input['action']),
+      everyElement('custom_strategy_run'),
+    );
+    expect(
+      calls.map((call) => call.input['strategyId']),
+      everyElement('momentum_breakout_v1'),
+    );
+    expect(
+      calls.map((call) => call.input['symbols']).toList(),
+      [
+        ['300059'],
+        ['600519'],
+      ],
+    );
+  });
+
+  test('saved strategy rerun discovers list before generic strategy help', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+
+    final calls = hooks.buildPreflightToolCalls([
+      Message(
+        role: Role.user,
+        content:
+            '查看已保存策略，选择一个在 300059 和 600519 上分别跑一次，并比较结果。\n\n'
+            'data:{"workflowState":{"workflowKind":"strategyReview","assetClass":"stock","intentMode":"rerun","executionMode":"previewOnly","safetyBoundary":"reuse saved strategy artifact","evidenceRefs":["custom_strategy_list","custom_strategy_run"],"confirmationState":"none","subjects":["300059","600519"],"source":"scenario:standalone-p0-005"}}\n\n'
+            '[Context update]\n'
+            '[04:43:06] 已切换看板：Market Overview',
+      ),
+    ]);
+
+    expect(calls, isNotNull);
+    expect(calls, hasLength(1));
+    expect(calls!.single.name, 'MarketData');
+    expect(calls.single.input['action'], 'custom_strategy_list');
+  });
+
+  test('saved strategy rerun accepts exact scenario workflow state casing', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+
+    final calls = hooks.buildPreflightToolCalls([
+      Message(
+        role: Role.user,
+        content:
+            '查看已保存策略，选择一个在 300059 和 600519 上分别跑一次，并比较结果。\n\n'
+            'data:{"workflowState":{"workflowKind":"strategyReview","assetClass":"stock","intentMode":"rerun","executionMode":"previewOnly","safetyBoundary":"reuse saved strategy artifact","evidenceRefs":["custom_strategy_list","custom_strategy_run"],"confirmationState":"none","subjects":["300059","600519"],"source":"scenario:standalone-p0-005"}}\n\n'
+            '[Context update]\n'
+            '[04:43:06] 已切换看板：Market Overview',
+      ),
+      Message(
+        role: Role.assistant,
+        content: '',
+        toolUses: const [
+          ToolUse(
+            id: 'list',
+            name: 'MarketData',
+            input: {'action': 'custom_strategy_list'},
+          ),
+        ],
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'list',
+          content: '''
+{
+  "action": "custom_strategy_list",
+  "strategies": [
+    {
+      "strategyId": "momentum_breakout_v1",
+      "status": "backtested",
+      "assetClass": "stock",
+      "symbols": ["600519", "000858", "300059"]
+    }
+  ]
+}
+''',
+        ),
+      ),
+    ]);
+
+    expect(calls, isNotNull);
+    expect(calls, hasLength(2));
+    expect(
+      calls!.map((call) => call.input['strategyId']),
+      everyElement('momentum_breakout_v1'),
+    );
+  });
+
+  test('saved strategy rerun only issues missing subject runs', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+
+    final calls = hooks.buildPreflightToolCalls([
+      Message(
+        role: Role.user,
+        content:
+            'rerun saved strategy\n'
+            'data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"strategy_review","assetClass":"stock","intentMode":"rerun","executionMode":"preview_only","safetyBoundary":"reuse saved strategy artifact","evidenceRefs":["custom_strategy_list","custom_strategy_run"],"confirmationState":"none","subjects":["300059","600519"],"source":"scenario"}}',
+      ),
+      Message(
+        role: Role.assistant,
+        content: '',
+        toolUses: const [
+          ToolUse(
+            id: 'list',
+            name: 'MarketData',
+            input: {'action': 'custom_strategy_list'},
+          ),
+          ToolUse(
+            id: 'run-300059',
+            name: 'MarketData',
+            input: {
+              'action': 'custom_strategy_run',
+              'strategyId': 'momentum_breakout_v1',
+              'symbols': ['300059'],
+            },
+          ),
+        ],
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'list',
+          content: '''
+{
+  "action": "custom_strategy_list",
+  "strategies": [
+    {
+      "strategyId": "momentum_breakout_v1",
+      "status": "backtested",
+      "assetClass": "stock",
+      "symbols": ["600519", "000858", "300059"]
+    }
+  ]
+}
+''',
+        ),
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'run-300059',
+          content: '''
+{
+  "action": "custom_strategy_run",
+  "status": "backtested",
+  "strategyId": "momentum_breakout_v1",
+  "symbol": "300059"
+}
+''',
+        ),
+      ),
+    ]);
+
+    expect(calls, isNotNull);
+    expect(calls, hasLength(1));
+    expect(calls!.single.input['action'], 'custom_strategy_run');
+    expect(calls.single.input['strategyId'], 'momentum_breakout_v1');
+    expect(calls.single.input['symbols'], ['600519']);
+  });
+
   test('explicit strategy id rerun is not replaced by latest saved strategy', () {
     final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
 

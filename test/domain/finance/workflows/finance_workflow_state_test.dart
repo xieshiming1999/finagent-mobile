@@ -138,6 +138,21 @@ void main() {
     expect(state.toJson()['subjects'], ['600519', '000858', '300059']);
   });
 
+  test('reads data workflowState before trailing context update', () {
+    final state = FinanceWorkflowState.fromUserContent(
+      '查看已保存策略，选择一个在 300059 和 600519 上分别跑一次，并比较结果。\n\n'
+      'data:{"workflowState":{"workflowKind":"strategyReview","assetClass":"stock","intentMode":"rerun","executionMode":"previewOnly","safetyBoundary":"reuse saved strategy artifact","evidenceRefs":["custom_strategy_list","custom_strategy_run"],"confirmationState":"none","subjects":["300059","600519"],"source":"scenario:standalone-p0-005"}}\n\n'
+      '[Context update]\n'
+      '[04:43:06] 已切换看板：Market Overview',
+    );
+
+    expect(state, isNotNull);
+    expect(state!.workflowKind, FinanceWorkflowKind.strategyReview);
+    expect(state.intentMode, FinanceIntentMode.rerun);
+    expect(state.executionMode, FinanceExecutionMode.previewOnly);
+    expect(state.subjects, ['300059', '600519']);
+  });
+
   test('recognizes rejected custom strategy as blocked unsupported state', () {
     final state = FinanceWorkflowState.fromToolResult(
       ToolResult(

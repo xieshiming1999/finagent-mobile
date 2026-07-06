@@ -100,8 +100,7 @@ class FinanceTurnPolicy implements DomainTurnPolicy {
   @override
   bool shouldStopToolBatchAfterResult(ToolUse toolUse, ToolResult result) {
     if (result.isError || _savedCustomStrategyId == null) return false;
-    return _isCustomStrategySave(toolUse) ||
-        _isCustomStrategyRunForSavedStrategy(toolUse);
+    return _isCustomStrategySave(toolUse);
   }
 
   bool _isXueqiuWriteToolUse(ToolUse toolUse) {
@@ -144,15 +143,6 @@ class FinanceTurnPolicy implements DomainTurnPolicy {
     }
     final strategyId = '${toolUse.input['strategyId'] ?? ''}'.trim();
     return strategyId.isNotEmpty && strategyId != _savedCustomStrategyId;
-  }
-
-  bool _isCustomStrategyRunForSavedStrategy(ToolUse toolUse) {
-    if (toolUse.name != 'MarketData') return false;
-    if ('${toolUse.input['action'] ?? ''}' != 'custom_strategy_run') {
-      return false;
-    }
-    return '${toolUse.input['strategyId'] ?? ''}'.trim() ==
-        _savedCustomStrategyId;
   }
 
   bool _isPostCustomStrategySaveDrift(ToolUse toolUse) {

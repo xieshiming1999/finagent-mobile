@@ -48,34 +48,29 @@ class FinanceCustomStrategyPreflight {
           ];
         }
       }
+      final listedStrategyId = _latestRunnableStrategyIdFromList(
+        turnMessages,
+        commandState?.subjects ?? const <String>[],
+      );
+      if (listedStrategyId != null &&
+          commandState?.subjects.isNotEmpty == true) {
+        final calls = _missingSubjectRunCalls(
+          turnMessages,
+          strategyId: listedStrategyId,
+          subjects: commandState!.subjects,
+        );
+        if (calls.isNotEmpty) return calls;
+      }
       final selectedStrategyId = _selectedStrategyIdFromQuestionAnswer(
         turnMessages,
       );
       if (selectedStrategyId != null &&
           commandState?.subjects.isNotEmpty == true) {
-        final calls = <ToolUse>[];
-        for (final subject in commandState!.subjects) {
-          final symbol = _normalizeSymbol(subject);
-          if (symbol.isEmpty || !_isStockCode(symbol)) continue;
-          if (_hasSuccessfulRunForSymbol(
-            turnMessages,
-            strategyId: selectedStrategyId,
-            symbol: symbol,
-          )) {
-            continue;
-          }
-          calls.add(
-            ToolUse(
-              id: 'custom_strategy_run_${symbol}_${DateTime.now().microsecondsSinceEpoch}',
-              name: 'MarketData',
-              input: {
-                'action': 'custom_strategy_run',
-                'strategyId': selectedStrategyId,
-                'symbols': [symbol],
-              },
-            ),
-          );
-        }
+        final calls = _missingSubjectRunCalls(
+          turnMessages,
+          strategyId: selectedStrategyId,
+          subjects: commandState!.subjects,
+        );
         if (calls.isNotEmpty) return calls;
       }
       final wrongIdentitySymbol = _latestWrongIdentityRunSymbol(
@@ -142,6 +137,16 @@ class FinanceCustomStrategyPreflight {
                 'strategySpec': latestBacktest.strategySpec,
                 'evidence': latestBacktest.evidence,
               },
+            ),
+          ];
+        }
+        if (commandState?.intentMode == FinanceIntentMode.rerun &&
+            !_hasSuccessfulStrategyList(toolCalls, results)) {
+          return [
+            ToolUse(
+              id: 'custom_strategy_list_${DateTime.now().microsecondsSinceEpoch}',
+              name: 'MarketData',
+              input: {'action': 'custom_strategy_list'},
             ),
           ];
         }
@@ -292,12 +297,49 @@ class FinanceCustomStrategyPreflight {
   Map<String, dynamic>? _structuredPayload(String content) {
     final marker = content.lastIndexOf('data:');
     if (marker < 0) return null;
+    final text = content.substring(marker + 'data:'.length).trim();
     try {
-      final decoded = jsonDecode(content.substring(marker + 'data:'.length));
+      final decoded = jsonDecode(text);
       return decoded is Map<String, dynamic> ? decoded : null;
     } catch (_) {
-      return null;
+      final prefix = _balancedJsonObjectPrefix(text);
+      if (prefix == null) return null;
+      try {
+        final decoded = jsonDecode(prefix);
+        return decoded is Map<String, dynamic> ? decoded : null;
+      } catch (_) {
+        return null;
+      }
     }
+  }
+
+  String? _balancedJsonObjectPrefix(String text) {
+    if (!text.startsWith('{')) return null;
+    var depth = 0;
+    var inString = false;
+    var escaped = false;
+    for (var i = 0; i < text.length; i++) {
+      final code = text.codeUnitAt(i);
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (code == 0x5c) {
+          escaped = true;
+        } else if (code == 0x22) {
+          inString = false;
+        }
+        continue;
+      }
+      if (code == 0x22) {
+        inString = true;
+      } else if (code == 0x7b) {
+        depth++;
+      } else if (code == 0x7d) {
+        depth--;
+        if (depth == 0) return text.substring(0, i + 1);
+      }
+    }
+    return null;
   }
 
   String? _requestedStrategyIdFromState(FinanceWorkflowState? state) {
@@ -427,6 +469,18 @@ class FinanceCustomStrategyPreflight {
     });
   }
 
+  bool _hasSuccessfulStrategyList(
+    List<ToolUse> toolCalls,
+    Set<String> successfulResults,
+  ) {
+    return toolCalls.any(
+      (call) =>
+          call.name == 'MarketData' &&
+          call.input['action'] == 'custom_strategy_list' &&
+          successfulResults.contains(call.id),
+    );
+  }
+
   bool _hasSuccessfulRunForSymbol(
     List<Message> messages, {
     required String strategyId,
@@ -453,6 +507,107 @@ class FinanceCustomStrategyPreflight {
       }
     }
     return false;
+  }
+
+  List<ToolUse> _missingSubjectRunCalls(
+    List<Message> messages, {
+    required String strategyId,
+    required List<String> subjects,
+  }) {
+    final calls = <ToolUse>[];
+    for (final subject in subjects) {
+      final symbol = _normalizeSymbol(subject);
+      if (symbol.isEmpty || !_isStockCode(symbol)) continue;
+      if (_hasSuccessfulRunForSymbol(
+        messages,
+        strategyId: strategyId,
+        symbol: symbol,
+      )) {
+        continue;
+      }
+      calls.add(
+        ToolUse(
+          id: 'custom_strategy_run_${symbol}_${DateTime.now().microsecondsSinceEpoch}',
+          name: 'MarketData',
+          input: {
+            'action': 'custom_strategy_run',
+            'strategyId': strategyId,
+            'symbols': [symbol],
+          },
+        ),
+      );
+    }
+    return calls;
+  }
+
+  String? _latestRunnableStrategyIdFromList(
+    List<Message> messages,
+    List<String> subjects,
+  ) {
+    final subjectSymbols = subjects
+        .map(_normalizeSymbol)
+        .where(_isStockCode)
+        .toSet();
+    for (final message in messages.reversed) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is! Map<String, dynamic> ||
+            decoded['action'] != 'custom_strategy_list') {
+          continue;
+        }
+        final strategies = decoded['strategies'];
+        if (strategies is! List) continue;
+        final candidates = strategies
+            .whereType<Map>()
+            .map((strategy) => Map<String, dynamic>.from(strategy))
+            .where(_isRunnableListedStockStrategy)
+            .toList(growable: false);
+        if (candidates.isEmpty) continue;
+        final fullCoverage = candidates.firstWhere(
+          (strategy) => _listedStrategySymbols(strategy).containsAll(
+            subjectSymbols,
+          ),
+          orElse: () => const <String, dynamic>{},
+        );
+        final selected = fullCoverage.isNotEmpty
+            ? fullCoverage
+            : candidates.firstWhere(
+                (strategy) => _listedStrategySymbols(
+                  strategy,
+                ).intersection(subjectSymbols).isNotEmpty,
+                orElse: () => candidates.first,
+              );
+        final strategyId = '${selected['strategyId'] ?? ''}'.trim();
+        if (strategyId.isNotEmpty && !_isStockCode(strategyId)) {
+          return strategyId;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  bool _isRunnableListedStockStrategy(Map<String, dynamic> strategy) {
+    if ('${strategy['status'] ?? ''}' != 'backtested') return false;
+    final strategyId = '${strategy['strategyId'] ?? ''}'.trim();
+    if (strategyId.isEmpty || _isStockCode(strategyId)) return false;
+    final assetClass = '${strategy['assetClass'] ?? ''}'.trim().toLowerCase();
+    return assetClass.isEmpty || assetClass == 'stock' || assetClass == 'cn';
+  }
+
+  Set<String> _listedStrategySymbols(Map<String, dynamic> strategy) {
+    final symbols = <String>{};
+    final values = strategy['symbols'];
+    if (values is List) {
+      for (final value in values) {
+        final symbol = _normalizeSymbol('$value');
+        if (_isStockCode(symbol)) symbols.add(symbol);
+      }
+    }
+    return symbols;
   }
 
   String? _selectedStrategyIdFromQuestionAnswer(List<Message> messages) {

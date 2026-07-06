@@ -22,6 +22,9 @@ FinAgent Mobile is a Flutter mobile agent. Its primary bundled domain is finance
 - Using available local or configured provider data, what is driving today’s A-share market, and which risks should I watch?
 - Analyze 600519 using the latest available price and fundamentals, and state the data sources and freshness.
 - Screen A-share stocks for profitable, reasonably valued candidates, and explain the data coverage and main risks.
+- Backtest an RSI and volume strategy for 600519 without saving it.
+- Compare RSI and moving-average strategies for 600519, including return, drawdown, and data coverage.
+- Rerun my saved 600519 strategy and explain why its metrics changed from the previous run.
 
 ## Quick Start
 

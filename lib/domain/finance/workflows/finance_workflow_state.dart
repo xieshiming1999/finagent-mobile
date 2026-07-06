@@ -381,12 +381,49 @@ class FinanceWorkflowState {
   }
 
   static Map<String, dynamic>? _jsonObject(String content) {
+    final text = content.trim();
     try {
-      final decoded = jsonDecode(content);
+      final decoded = jsonDecode(text);
       return decoded is Map<String, dynamic> ? decoded : null;
     } catch (_) {
-      return null;
+      final prefix = _balancedJsonObjectPrefix(text);
+      if (prefix == null) return null;
+      try {
+        final decoded = jsonDecode(prefix);
+        return decoded is Map<String, dynamic> ? decoded : null;
+      } catch (_) {
+        return null;
+      }
     }
+  }
+
+  static String? _balancedJsonObjectPrefix(String text) {
+    if (!text.startsWith('{')) return null;
+    var depth = 0;
+    var inString = false;
+    var escaped = false;
+    for (var i = 0; i < text.length; i++) {
+      final code = text.codeUnitAt(i);
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (code == 0x5c) {
+          escaped = true;
+        } else if (code == 0x22) {
+          inString = false;
+        }
+        continue;
+      }
+      if (code == 0x22) {
+        inString = true;
+      } else if (code == 0x7b) {
+        depth++;
+      } else if (code == 0x7d) {
+        depth--;
+        if (depth == 0) return text.substring(0, i + 1);
+      }
+    }
+    return null;
   }
 
   static T _enumByName<T extends Enum>(

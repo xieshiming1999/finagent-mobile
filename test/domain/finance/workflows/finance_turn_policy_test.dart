@@ -68,7 +68,20 @@ void main() {
 
     policy.recordToolResult(runCall, result);
 
-    expect(policy.shouldStopToolBatchAfterResult(runCall, result), isTrue);
+    expect(policy.shouldStopToolBatchAfterResult(runCall, result), isFalse);
+
+    final sameStrategyReason = policy.blockedToolUseReason(
+      const ToolUse(
+        id: 'run-same',
+        name: 'MarketData',
+        input: {
+          'action': 'custom_strategy_run',
+          'strategyId': 'custom_saved_strategy_v1',
+          'symbols': ['300059'],
+        },
+      ),
+    );
+    expect(sameStrategyReason, isNull);
 
     final reason = policy.blockedToolUseReason(
       const ToolUse(
