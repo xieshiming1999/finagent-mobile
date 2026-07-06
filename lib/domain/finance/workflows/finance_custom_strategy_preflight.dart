@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../../agent/ask_user_question_contract.dart';
 import '../../../agent/message.dart';
 import 'finance_workflow_state.dart';
 
@@ -26,6 +27,81 @@ class FinanceCustomStrategyPreflight {
     final structuredSpec = _structuredStrategySpec(userContent);
     final comparisonSymbols = _comparisonSymbolsFromSpec(structuredSpec);
     if (_isCustomStrategySaveAndRunWorkflow(commandState)) {
+      final activeRun = _latestSuccessfulRun(turnMessages);
+      if (activeRun != null) {
+        final missingSubject = _missingRunSubject(
+          commandState,
+          turnMessages,
+          activeRun.strategyId,
+        );
+        if (missingSubject != null) {
+          return [
+            ToolUse(
+              id: 'custom_strategy_run_${DateTime.now().microsecondsSinceEpoch}',
+              name: 'MarketData',
+              input: {
+                'action': 'custom_strategy_run',
+                'strategyId': activeRun.strategyId,
+                'symbols': [missingSubject],
+              },
+            ),
+          ];
+        }
+      }
+      final selectedStrategyId = _selectedStrategyIdFromQuestionAnswer(
+        turnMessages,
+      );
+      if (selectedStrategyId != null &&
+          commandState?.subjects.isNotEmpty == true) {
+        final calls = <ToolUse>[];
+        for (final subject in commandState!.subjects) {
+          final symbol = _normalizeSymbol(subject);
+          if (symbol.isEmpty || !_isStockCode(symbol)) continue;
+          if (_hasSuccessfulRunForSymbol(
+            turnMessages,
+            strategyId: selectedStrategyId,
+            symbol: symbol,
+          )) {
+            continue;
+          }
+          calls.add(
+            ToolUse(
+              id: 'custom_strategy_run_${symbol}_${DateTime.now().microsecondsSinceEpoch}',
+              name: 'MarketData',
+              input: {
+                'action': 'custom_strategy_run',
+                'strategyId': selectedStrategyId,
+                'symbols': [symbol],
+              },
+            ),
+          );
+        }
+        if (calls.isNotEmpty) return calls;
+      }
+      final wrongIdentitySymbol = _latestWrongIdentityRunSymbol(
+        toolCalls,
+        activeRun?.strategyId,
+      );
+      if (activeRun != null &&
+          wrongIdentitySymbol != null &&
+          wrongIdentitySymbol != activeRun.symbol &&
+          !_hasSuccessfulRunForSymbol(
+            turnMessages,
+            strategyId: activeRun.strategyId,
+            symbol: wrongIdentitySymbol,
+          )) {
+        return [
+          ToolUse(
+            id: 'custom_strategy_run_${DateTime.now().microsecondsSinceEpoch}',
+            name: 'MarketData',
+            input: {
+              'action': 'custom_strategy_run',
+              'strategyId': activeRun.strategyId,
+              'symbols': [wrongIdentitySymbol],
+            },
+          ),
+        ];
+      }
       final requestedStrategyId = _requestedStrategyIdFromState(commandState);
       final saved = requestedStrategyId == null
           ? _latestSavedStrategy(turnMessages)
@@ -351,6 +427,117 @@ class FinanceCustomStrategyPreflight {
     });
   }
 
+  bool _hasSuccessfulRunForSymbol(
+    List<Message> messages, {
+    required String strategyId,
+    required String symbol,
+  }) {
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    for (final message in messages) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is! Map<String, dynamic>) continue;
+        if (decoded['action'] != 'custom_strategy_run' ||
+            decoded['status'] != 'backtested') {
+          continue;
+        }
+        if ('${decoded['strategyId'] ?? ''}' != strategyId) continue;
+        if (_normalizeSymbol('${decoded['symbol'] ?? ''}') ==
+            normalizedSymbol) {
+          return true;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return false;
+  }
+
+  String? _selectedStrategyIdFromQuestionAnswer(List<Message> messages) {
+    for (final message in messages.reversed) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      final structured = latestAskUserQuestionStructuredAnswer(result.content);
+      if (structured == null) continue;
+      final label = '${structured['selectedOptionLabel'] ?? ''}'.trim();
+      if (label.isNotEmpty && !_isStockCode(label)) return label;
+    }
+    return null;
+  }
+
+  String? _missingRunSubject(
+    FinanceWorkflowState? state,
+    List<Message> messages,
+    String strategyId,
+  ) {
+    if (state == null || state.subjects.isEmpty) return null;
+    for (final subject in state.subjects) {
+      final symbol = _normalizeSymbol(subject);
+      if (symbol.isEmpty || !_isStockCode(symbol)) continue;
+      if (!_hasSuccessfulRunForSymbol(
+        messages,
+        strategyId: strategyId,
+        symbol: symbol,
+      )) {
+        return symbol;
+      }
+    }
+    return null;
+  }
+
+  _SavedStrategy? _latestSuccessfulRun(List<Message> messages) {
+    for (final message in messages.reversed) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is! Map<String, dynamic>) continue;
+        if (decoded['action'] != 'custom_strategy_run' ||
+            decoded['status'] != 'backtested') {
+          continue;
+        }
+        var strategyId = '${decoded['strategyId'] ?? ''}'.trim();
+        if (_isStockCode(strategyId)) {
+          final validation = decoded['validation'];
+          if (validation is Map) {
+            final validationStrategyId = '${validation['strategyId'] ?? ''}'
+                .trim();
+            if (validationStrategyId.isNotEmpty &&
+                !_isStockCode(validationStrategyId)) {
+              strategyId = validationStrategyId;
+            }
+          }
+        }
+        final symbol = '${decoded['symbol'] ?? ''}'.trim();
+        if (strategyId.isEmpty || symbol.isEmpty) continue;
+        return _SavedStrategy(strategyId: strategyId, symbol: symbol);
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  String? _latestWrongIdentityRunSymbol(
+    List<ToolUse> toolCalls,
+    String? activeStrategyId,
+  ) {
+    for (final call in toolCalls.reversed) {
+      if (call.name != 'MarketData' ||
+          call.input['action'] != 'custom_strategy_run') {
+        continue;
+      }
+      final strategyId = '${call.input['strategyId'] ?? ''}'.trim();
+      if (!_isStockCode(strategyId) || strategyId == activeStrategyId) {
+        continue;
+      }
+      return strategyId;
+    }
+    return null;
+  }
+
   List<ToolUse> _collectToolCalls(List<Message> messages) {
     final calls = <ToolUse>[];
     for (final message in messages) {
@@ -589,6 +776,14 @@ class FinanceCustomStrategyPreflight {
     if (value is String) return num.tryParse(value);
     return null;
   }
+
+  bool _isStockCode(String value) => RegExp(r'^[036]\d{5}$').hasMatch(value);
+
+  String _normalizeSymbol(String value) => value
+      .trim()
+      .toUpperCase()
+      .replaceFirst(RegExp(r'\.(SH|SZ)$'), '')
+      .replaceFirst(RegExp(r'^(SH|SZ)'), '');
 }
 
 class _ValidatedStrategy {

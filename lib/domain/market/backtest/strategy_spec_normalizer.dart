@@ -446,8 +446,12 @@ Map<String, dynamic>? _normalizeRuleGroup(
         'left': _normalizedRuleLeft(condition, leftRef, indicatorIds),
         'op': op,
         'right': indicator == 'volume_sma'
-            ? _volumeComparisonRight(leftRef, condition)
-            : _rightValue(condition),
+            ? _volumeComparisonRight(
+                leftRef,
+                condition,
+                indicatorIds: indicatorIds,
+              )
+            : _rightValue(condition, indicatorIds: indicatorIds),
       });
     }
   }
@@ -494,8 +498,8 @@ Map<String, dynamic> _normalizeExplicitRule(
     'left': _normalizedRuleLeft(rule, leftRef, indicatorIds),
     'op': op,
     'right': indicator == 'volume_sma'
-        ? _volumeComparisonRight(leftRef, rule)
-        : _rightValue(rule),
+        ? _volumeComparisonRight(leftRef, rule, indicatorIds: indicatorIds)
+        : _rightValue(rule, indicatorIds: indicatorIds),
   };
 }
 
@@ -668,7 +672,10 @@ Iterable<StrategyIndicatorRef> _refsFromRightObject(Map raw) sync* {
   yield _refFromObject(input);
 }
 
-Object? _rightValue(Map<String, dynamic> condition) {
+Object? _rightValue(
+  Map<String, dynamic> condition, {
+  Set<String> indicatorIds = const {},
+}) {
   final reference = condition['reference'];
   if (reference is Map) {
     final ref = _refFromObject(reference);
@@ -694,7 +701,9 @@ Object? _rightValue(Map<String, dynamic> condition) {
   }
   final value = condition['value'];
   if (value is Map) {
-    if (value['mul'] is List) return _normalizeMulRight(value);
+    if (value['mul'] is List) {
+      return _normalizeMulRight(value, indicatorIds: indicatorIds);
+    }
     final ref = _refFromObject(value);
     return {
       'mul': [
@@ -725,7 +734,9 @@ Object? _rightValue(Map<String, dynamic> condition) {
   }
   final right = condition['right'];
   if (right is Map) {
-    if (right['mul'] is List) return _normalizeMulRight(right);
+    if (right['mul'] is List) {
+      return _normalizeMulRight(right, indicatorIds: indicatorIds);
+    }
     final ref = _refFromObject(right);
     return {
       'mul': [
@@ -740,7 +751,10 @@ Object? _rightValue(Map<String, dynamic> condition) {
   }
   final expressionObject = condition['expression'];
   if (expressionObject is Map) {
-    return _rightValue(Map<String, dynamic>.from(expressionObject));
+    return _rightValue(
+      Map<String, dynamic>.from(expressionObject),
+      indicatorIds: indicatorIds,
+    );
   }
   final expression =
       '${condition['valueExpression'] ?? ''} ${condition['expression'] ?? ''}';
@@ -775,13 +789,15 @@ Object? _rightValue(Map<String, dynamic> condition) {
   return _numOf(condition['value']) ?? right;
 }
 
-Object? _normalizeMulRight(Map raw) {
+Object? _normalizeMulRight(Map raw, {Set<String> indicatorIds = const {}}) {
   final mul = raw['mul'];
   if (mul is! List) return raw;
   final left = mul.isNotEmpty ? mul[0] : null;
   final right = mul.length > 1 ? mul[1] : null;
   final normalizedLeft = left is String
-      ? parseStrategyIndicatorRef(left).id
+      ? indicatorIds.contains(left)
+            ? left
+            : parseStrategyIndicatorRef(left).id
       : left;
   return {
     'mul': [normalizedLeft, _numOf(right) ?? right],
@@ -790,8 +806,9 @@ Object? _normalizeMulRight(Map raw) {
 
 Object? _volumeComparisonRight(
   StrategyIndicatorRef leftRef,
-  Map<String, dynamic> condition,
-) {
+  Map<String, dynamic> condition, {
+  Set<String> indicatorIds = const {},
+}) {
   if (condition['reference'] is Map ||
       condition['referenceIndicator'] != null ||
       condition['referencePeriod'] != null ||
@@ -801,7 +818,7 @@ Object? _volumeComparisonRight(
       '${condition['valueExpression'] ?? ''} ${condition['expression'] ?? ''}'
           .trim()
           .isNotEmpty) {
-    return _rightValue(condition);
+    return _rightValue(condition, indicatorIds: indicatorIds);
   }
   return {
     'mul': [leftRef.id, _numOf(condition['value']) ?? 1],

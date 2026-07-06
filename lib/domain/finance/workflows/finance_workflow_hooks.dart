@@ -421,6 +421,11 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       if (portfolioMonitor != null) return portfolioMonitor;
     }
     if (start >= 0) {
+      final runComparisonEvidence = _customStrategyEvidence.runComparison(
+        messages: messages,
+        turnStartIndex: start,
+      );
+      if (runComparisonEvidence != null) return runComparisonEvidence;
       final saveEvidence = _customStrategyEvidence.save(messages, start);
       if (saveEvidence != null &&
           _hasSuccessfulCustomStrategyRun(messages, start)) {
@@ -450,6 +455,52 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       }
     }
     return false;
+  }
+
+  @override
+  List<ToolUse> rewriteToolCalls({
+    required List<Message> messages,
+    required int turnStartIndex,
+    required String? prompt,
+    required List<ToolUse> toolCalls,
+  }) {
+    final activeStrategyId =
+        _latestSuccessfulCustomStrategyRunId(messages, turnStartIndex) ??
+        _firstProposedSavedStrategyRunId(toolCalls);
+    if (activeStrategyId == null) return toolCalls;
+    var changed = false;
+    final rewritten = <ToolUse>[];
+    final seenRunKeys = <String>{};
+    for (final call in toolCalls) {
+      if (call.name == 'MarketData' &&
+          call.input['action'] == 'custom_strategy_run') {
+        final requestedStrategyId = '${call.input['strategyId'] ?? ''}'.trim();
+        var normalizedInput = call.input;
+        if (_isStockCode(requestedStrategyId) &&
+            requestedStrategyId != activeStrategyId) {
+          changed = true;
+          normalizedInput = {
+            ...call.input,
+            'strategyId': activeStrategyId,
+            'symbols': [requestedStrategyId],
+          };
+        }
+        final runKey =
+            '${normalizedInput['strategyId'] ?? ''}::${_firstSymbolFromInput(normalizedInput)}';
+        if (!seenRunKeys.add(runKey)) {
+          changed = true;
+          continue;
+        }
+        if (!identical(normalizedInput, call.input)) {
+          rewritten.add(
+            ToolUse(id: call.id, name: call.name, input: normalizedInput),
+          );
+          continue;
+        }
+      }
+      rewritten.add(call);
+    }
+    return changed ? rewritten : toolCalls;
   }
 
   @override
@@ -583,6 +634,19 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       );
     }
 
+    final runComparisonEvidence = _customStrategyEvidence.runComparison(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+    );
+    if (runComparisonEvidence != null &&
+        _hasCustomStrategySaveOrRunCall(toolCalls)) {
+      return DomainToolInterception(
+        answer: runComparisonEvidence,
+        skippedReason:
+            'Skipped: saved custom strategy already has successful custom_strategy_run evidence for multiple symbols in this turn.',
+      );
+    }
+
     final saveRunBoundary = _customStrategyEvidence.saveRunBoundary(
       messages: messages,
       turnStartIndex: turnStartIndex,
@@ -708,6 +772,55 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       }
     }
     return false;
+  }
+
+  String? _latestSuccessfulCustomStrategyRunId(
+    List<Message> messages,
+    int start,
+  ) {
+    for (final message in messages.skip(start).toList().reversed) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      try {
+        final decoded = jsonDecode(result.content.trim());
+        if (decoded is! Map || decoded['action'] != 'custom_strategy_run') {
+          continue;
+        }
+        final strategyId = '${decoded['strategyId'] ?? ''}'.trim();
+        if (strategyId.isNotEmpty && !_isStockCode(strategyId)) {
+          return strategyId;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  bool _isStockCode(String value) {
+    return RegExp(r'^[036]\d{5}$').hasMatch(value.trim());
+  }
+
+  String _firstSymbolFromInput(Map<String, dynamic> input) {
+    final symbols = input['symbols'];
+    if (symbols is List && symbols.isNotEmpty) {
+      return '${symbols.first}'.trim();
+    }
+    return '${input['symbol'] ?? input['code'] ?? ''}'.trim();
+  }
+
+  String? _firstProposedSavedStrategyRunId(List<ToolUse> toolCalls) {
+    for (final call in toolCalls) {
+      if (call.name != 'MarketData' ||
+          call.input['action'] != 'custom_strategy_run') {
+        continue;
+      }
+      final strategyId = '${call.input['strategyId'] ?? ''}'.trim();
+      if (strategyId.isNotEmpty && !_isStockCode(strategyId)) {
+        return strategyId;
+      }
+    }
+    return null;
   }
 
   @override

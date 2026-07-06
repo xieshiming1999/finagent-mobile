@@ -223,6 +223,8 @@ class WorkflowAutomationControl {
           maxToolCalls: _optionalPositiveInt(turn['maxToolCalls']),
           maxDataToolCalls: _optionalPositiveInt(turn['maxDataToolCalls']),
           expectTools: _stringList(turn['expectTools']),
+          expectToolActions: _stringList(turn['expectToolActions']),
+          maxToolActionCounts: _stringIntMap(turn['maxToolActionCounts']),
           expectNoToolErrors: turn['expectNoToolErrors'] == true,
           expectToolErrors: _stringList(turn['expectToolErrors']),
           expectToolResultContains: _stringList(
@@ -725,6 +727,7 @@ class WorkflowAutomationScenario {
     this.maxDataToolCalls,
     this.expectTools = const [],
     this.expectToolActions = const [],
+    this.maxToolActionCounts = const {},
     this.expectNoToolErrors = false,
     this.expectToolErrors = const [],
     this.expectToolResultContains = const [],
@@ -746,6 +749,7 @@ class WorkflowAutomationScenario {
   final int? maxDataToolCalls;
   final List<String> expectTools;
   final List<String> expectToolActions;
+  final Map<String, int> maxToolActionCounts;
   final bool expectNoToolErrors;
   final List<String> expectToolErrors;
   final List<String> expectToolResultContains;
@@ -1143,6 +1147,7 @@ class WorkflowAutomationHttpHost {
           maxDataToolCalls: _optionalPositiveInt(parsed['maxDataToolCalls']),
           expectTools: _stringList(parsed['expectTools']),
           expectToolActions: _stringList(parsed['expectToolActions']),
+          maxToolActionCounts: _stringIntMap(parsed['maxToolActionCounts']),
           expectNoToolErrors: parsed['expectNoToolErrors'] == true,
           expectToolErrors: _stringList(parsed['expectToolErrors']),
           expectToolResultContains: _stringList(
@@ -1458,9 +1463,24 @@ List<WorkflowAutomationScenarioAssertion> _evaluateScenario(
     assertions.add(
       WorkflowAutomationScenarioAssertion(
         name: 'toolAction.$expected',
-        ok: toolActions.contains(expected),
+        ok: _toolActionMatches(toolActions, expected),
         expected: expected,
         actual: toolActions,
+      ),
+    );
+  }
+  for (final entry in scenario.maxToolActionCounts.entries) {
+    final action = entry.key;
+    final maxCount = entry.value;
+    final count = toolActions
+        .where((actual) => _toolActionNameMatches(actual, action))
+        .length;
+    assertions.add(
+      WorkflowAutomationScenarioAssertion(
+        name: 'maxToolActionCounts.$action',
+        ok: count <= maxCount,
+        expected: '<= $maxCount',
+        actual: count,
       ),
     );
   }
@@ -1618,6 +1638,27 @@ List<String> _stringList(Object? value) {
       .where((item) => item.isNotEmpty)
       .toList();
 }
+
+Map<String, int> _stringIntMap(Object? value) {
+  if (value is! Map) return const {};
+  final out = <String, int>{};
+  for (final entry in value.entries) {
+    final key = '${entry.key}'.trim();
+    if (key.isEmpty) continue;
+    final count = entry.value is num
+        ? (entry.value as num).toInt()
+        : int.tryParse('${entry.value}');
+    if (count == null || count < 0) continue;
+    out[key] = count;
+  }
+  return out;
+}
+
+bool _toolActionMatches(List<String> toolActions, String expected) =>
+    toolActions.any((actual) => _toolActionNameMatches(actual, expected));
+
+bool _toolActionNameMatches(String actual, String expected) =>
+    actual == expected || actual.endsWith('.$expected');
 
 int? _optionalPositiveInt(Object? value) {
   final parsed = value is num ? value.toInt() : int.tryParse('$value');

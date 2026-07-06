@@ -141,6 +141,24 @@ Use the canonical stock `StrategySpec` shape. Do not invent fields such as
 `entryRules.conditions` or `exitRules.stop_loss_pct`; the validator expects
 declared indicators plus `entry` / `exit` rule groups:
 
+For "volume greater than 1.5x average volume" style rules, declare
+`volume_sma` and compare built-in `volume` to a multiplied indicator reference.
+Do not put `multiplier` inside `volume_breakout.params`; that parameter is not
+part of the executable schema. Use this pattern:
+
+```json
+{
+  "indicators": [
+    {"id": "volSma20", "type": "volume_sma", "source": "volume", "params": {"period": 20}}
+  ],
+  "entry": {
+    "all": [
+      {"left": "volume", "op": ">", "right": {"mul": ["volSma20", 1.5]}}
+    ]
+  }
+}
+```
+
 ```json
 {
   "name": "low_risk_pullback",

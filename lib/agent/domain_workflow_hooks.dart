@@ -79,6 +79,15 @@ abstract class DomainWorkflowHooks {
 
   String? buildPreflightAnswer(List<Message> messages);
 
+  List<ToolUse> rewriteToolCalls({
+    required List<Message> messages,
+    required int turnStartIndex,
+    required String? prompt,
+    required List<ToolUse> toolCalls,
+  }) {
+    return toolCalls;
+  }
+
   DomainToolInterception? interceptToolCalls({
     required List<Message> messages,
     required int turnStartIndex,
@@ -116,6 +125,16 @@ class NoopDomainWorkflowHooks extends DomainWorkflowHooks {
 
   @override
   String? buildPreflightAnswer(List<Message> messages) => null;
+
+  @override
+  List<ToolUse> rewriteToolCalls({
+    required List<Message> messages,
+    required int turnStartIndex,
+    required String? prompt,
+    required List<ToolUse> toolCalls,
+  }) {
+    return toolCalls;
+  }
 
   @override
   DomainToolInterception? interceptToolCalls({

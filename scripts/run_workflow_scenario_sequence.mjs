@@ -53,6 +53,7 @@ for (const scenario of selected) {
       disallowTools: runtimeTurn.disallowTools,
       expectTools: runtimeTurn.expectTools,
       expectToolActions: runtimeTurn.expectToolActions,
+      maxToolActionCounts: runtimeTurn.maxToolActionCounts,
       expectNoToolErrors: runtimeTurn.expectNoToolErrors,
       expectToolErrors: runtimeTurn.expectToolErrors,
       expectToolResultContains: runtimeTurn.expectToolResultContains,

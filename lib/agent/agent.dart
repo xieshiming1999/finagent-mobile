@@ -822,7 +822,7 @@ class Agent {
 
     final textBuffer = StringBuffer();
     final reasoningBuffer = StringBuffer();
-    final toolCalls = <ToolUse>[];
+    var toolCalls = <ToolUse>[];
     var hasError = false;
 
     // 通知 UI: LLM 请求开始
@@ -1017,6 +1017,14 @@ class Agent {
     _contextExceededRetried = false;
 
     var finalText = textBuffer.toString();
+    if (toolCalls.isNotEmpty) {
+      toolCalls = _domainWorkflowHooks.rewriteToolCalls(
+        messages: messages,
+        turnStartIndex: _turnMessageStartIndex,
+        prompt: _currentPrompt,
+        toolCalls: toolCalls,
+      );
+    }
     if (toolCalls.isEmpty) {
       final rewritten = _domainWorkflowHooks.rewriteFinalAnswer(
         messages: messages,

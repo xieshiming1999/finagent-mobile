@@ -251,6 +251,130 @@ class FinanceCustomStrategyEvidence {
     ].join('\n');
   }
 
+  String? runComparison({
+    required List<Message> messages,
+    required int turnStartIndex,
+  }) {
+    final workflowState = _workflowStateForTurn(messages, turnStartIndex);
+    if (!_isStrategyRerunWorkflow(workflowState)) return null;
+
+    final calls = _toolCalls(messages.skip(turnStartIndex));
+    final results = _toolResults(messages.skip(turnStartIndex));
+    final rows = <Map<String, dynamic>>[];
+    for (final call in calls) {
+      if (call.name != 'MarketData' ||
+          call.input['action'] != 'custom_strategy_run') {
+        continue;
+      }
+      final result = results[call.id];
+      if (result == null || result.isError) continue;
+      final decoded = _decodeResultMap(result.content);
+      if (decoded == null ||
+          decoded['action'] != 'custom_strategy_run' ||
+          decoded['status'] != 'backtested') {
+        continue;
+      }
+      final metrics = decoded['metrics'];
+      final metricsMap = metrics is Map ? metrics : const {};
+      final assumptions = decoded['assumptions'];
+      final assumptionsMap = assumptions is Map ? assumptions : const {};
+      rows.add({
+        'symbol':
+            decoded['symbol'] ??
+            (call.input['symbols'] is List &&
+                    (call.input['symbols'] as List).isNotEmpty
+                ? (call.input['symbols'] as List).first
+                : call.input['symbol']) ??
+            '-',
+        'strategyId': decoded['strategyId'] ?? call.input['strategyId'] ?? '-',
+        'bars': decoded['bars'] ?? '-',
+        'start': decoded['actualStartDate'] ?? '-',
+        'end': decoded['actualEndDate'] ?? '-',
+        'trades':
+            metricsMap['tradeCount'] ??
+            metricsMap['trades'] ??
+            decoded['trades'] ??
+            0,
+        'totalReturn':
+            metricsMap['totalReturnPct'] ??
+            metricsMap['totalReturn'] ??
+            decoded['totalReturn'] ??
+            0,
+        'maxDrawdown':
+            metricsMap['maxDrawdownPct'] ??
+            metricsMap['maxDrawdown'] ??
+            decoded['maxDrawdown'] ??
+            0,
+        'winRate':
+            metricsMap['winRatePct'] ??
+            metricsMap['winRate'] ??
+            decoded['winRate'] ??
+            0,
+        'commission': assumptionsMap['commissionPct'] ?? '-',
+        'slippage': assumptionsMap['slippagePct'] ?? '-',
+        'dataCoverage': _strategyDataCoverageSummary(decoded),
+      });
+    }
+
+    final grouped = <String, Map<String, Map<String, dynamic>>>{};
+    for (final row in rows) {
+      final strategyId = '${row['strategyId']}';
+      final symbol = _normalizeSymbolKey('${row['symbol']}');
+      if (strategyId.isEmpty || symbol.isEmpty) continue;
+      grouped.putIfAbsent(
+        strategyId,
+        () => <String, Map<String, dynamic>>{},
+      )[symbol] = row;
+    }
+
+    MapEntry<String, Map<String, Map<String, dynamic>>>? selectedGroup;
+    for (final entry in grouped.entries) {
+      if (entry.value.length < 2) continue;
+      if (selectedGroup == null ||
+          entry.value.length > selectedGroup.value.length) {
+        selectedGroup = entry;
+      }
+    }
+    if (selectedGroup == null) return null;
+
+    final comparableRows = selectedGroup.value.values.toList();
+    comparableRows.sort((left, right) {
+      final returns = _numValue(
+        right['totalReturn'],
+      ).compareTo(_numValue(left['totalReturn']));
+      if (returns != 0) return returns;
+      final drawdown = _numValue(
+        left['maxDrawdown'],
+      ).compareTo(_numValue(right['maxDrawdown']));
+      if (drawdown != 0) return drawdown;
+      return _numValue(right['trades']).compareTo(_numValue(left['trades']));
+    });
+    final selected = comparableRows.first;
+
+    return [
+      '## 已保存策略重跑比较',
+      '',
+      '已完成同一已保存 StrategySpec 的多标的重跑，并停止追加保存、文件读取、脚本、provider 或交易工具调用。本回答只基于 `custom_strategy_list` 与成功的 `custom_strategy_run` 结构化结果。',
+      '',
+      '- strategyId：${selectedGroup.key}。',
+      '- 比较标的：${comparableRows.map((row) => row['symbol']).join('、')}。',
+      '',
+      '| 标的 | K线 | 区间 | 交易数 | 总收益 | 最大回撤 | 胜率 |',
+      '|---|---:|---|---:|---:|---:|---:|',
+      for (final row in comparableRows)
+        '| ${row['symbol']} | ${row['bars']} | ${row['start']} ~ ${row['end']} | ${row['trades']} | ${row['totalReturn']}% | ${row['maxDrawdown']}% | ${row['winRate']}% |',
+      '',
+      '结论：当前重跑结果中，${selected['symbol']} 的排序更靠前。排序依据是总收益、最大回撤和交易触发数；如果交易次数很少，该结论只能作为策略复核证据，不能直接转成买入或监控动作。',
+      '',
+      '## 数据与边界',
+      '',
+      '- 代表性数据覆盖：${selected['dataCoverage']}。',
+      '- 成本假设：佣金 ${selected['commission']}%；滑点 ${selected['slippage']}%。',
+      '- 本轮没有保存新策略、没有创建监控、没有写入观察池、没有模拟盘或真实交易。',
+      '- 若需要保存新的策略版本或创建监控，必须作为新的明确请求，并重新经过验证/确认边界。',
+    ].join('\n');
+  }
+
   String? rejectedValidation(List<Message> messages, int turnStartIndex) {
     for (final message in messages.skip(turnStartIndex).toList().reversed) {
       final result = message.toolResult;

@@ -125,6 +125,27 @@ class CustomStrategyEngine {
         'minScore',
         'maxPairwiseCorrelation',
       ],
+      'ruleCompositionExamples': {
+        'volumeGreaterThanMovingAverageMultiple': {
+          'description':
+              'For volume > N times average volume, declare volume_sma and compare built-in volume against {"mul":["volSma20", N]}. Do not put multiplier inside volume_breakout params.',
+          'indicators': [
+            {
+              'id': 'volSma20',
+              'type': 'volume_sma',
+              'source': 'volume',
+              'params': {'period': 20},
+            },
+          ],
+          'entryRule': {
+            'left': 'volume',
+            'op': '>',
+            'right': {
+              'mul': ['volSma20', 1.5],
+            },
+          },
+        },
+      },
     },
     'fundObservationV1': {
       'requires': ['assetClass:fund', 'market:fund', 'fundRows'],
@@ -224,7 +245,12 @@ class CustomStrategyEngine {
       },
       'custom_strategy_backtest': {
         'requiredFields': ['strategySpec'],
-        'symbolFields': ['code', 'symbol', 'symbols[0]', 'strategySpec.universe.symbols[0]'],
+        'symbolFields': [
+          'code',
+          'symbol',
+          'symbols[0]',
+          'strategySpec.universe.symbols[0]',
+        ],
         'optionalFields': [
           {
             'name': 'period',
@@ -364,7 +390,12 @@ class CustomStrategyEngine {
       },
       'custom_strategy_run': {
         'requiredFields': ['strategyId'],
-        'symbolFields': ['code', 'symbol', 'symbols[0]', 'saved strategy symbol'],
+        'symbolFields': [
+          'code',
+          'symbol',
+          'symbols[0]',
+          'saved strategy symbol',
+        ],
         'optionalFields': [
           {
             'name': 'period',
