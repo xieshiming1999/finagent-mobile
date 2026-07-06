@@ -300,6 +300,10 @@ class FetcherMarketDataProvider implements MarketDataProvider {
       call: (capability) async {
         final fetcher = _fetcherForProvider(capability.provider);
         if (fetcher == null) return null;
+        if (_klineCapabilityRequiresUnadjusted(capability) &&
+            adjust != 'none') {
+          return null;
+        }
         final bars = capability.provider == FinanceProvider.tencent
             ? interfaceId == 'index.daily_kline'
                   ? await _tencentFetcher.getIndexDailyKline(
@@ -341,6 +345,13 @@ class FetcherMarketDataProvider implements MarketDataProvider {
       constraint: constraint,
     );
     return (bars: result.data, source: result.source);
+  }
+
+  bool _klineCapabilityRequiresUnadjusted(
+    DataApiProviderCapability capability,
+  ) {
+    return capability.provider == FinanceProvider.sina ||
+        capability.provider == FinanceProvider.tencent;
   }
 
   Future<({List<KlineBar> bars, String source})> _fetchEtfKlineFromSources(

@@ -87,6 +87,23 @@ class FinanceStockCandidateSummary {
             ).compareTo(_candidateScore(a, candidatePayload['action'])),
           );
     final displayCandidates = candidates.take(3).toList(growable: false);
+    final distinctCodes = candidates
+        .map((row) => row['code']?.toString().trim() ?? '')
+        .where((code) => code.isNotEmpty)
+        .toSet();
+    final hasSingleStockAnalysisEvidence =
+        distinctCodes.length == 1 &&
+        (kline != null || valuation != null || moneyFlow != null);
+    if (hasSingleStockAnalysisEvidence && displayCandidates.isNotEmpty) {
+      return _singleStockAnalysisSummary(
+        row: displayCandidates.first,
+        quote: candidatePayload,
+        valuation: valuation,
+        kline: kline,
+        moneyFlow: moneyFlow,
+        failureSummary: failureSummary,
+      );
+    }
 
     final hotCodes = _rankCodes(hotRank);
     final flowCodes = _rankCodes(flowRank);
@@ -245,6 +262,110 @@ class FinanceStockCandidateSummary {
     if (payload == null) return '未取得。';
     final count = payload['count'];
     return '${_sourceLine(payload)} ${count == 0 ? '本轮候选个股资金流读回为空，不能作为支持理由。' : '已取得个股资金流读回。'}';
+  }
+
+  String _singleStockAnalysisSummary({
+    required Map<String, dynamic> row,
+    required Map<String, dynamic> quote,
+    required Map<String, dynamic>? valuation,
+    required Map<String, dynamic>? kline,
+    required Map<String, dynamic>? moneyFlow,
+    required String failureSummary,
+  }) {
+    final code = row['code']?.toString() ?? '-';
+    final name = _textValue(row['name'], fallback: code);
+    final price = _fmtNum(row['price'] ?? row['quote_price']);
+    final changePct = _fmtPct(row['changePct'] ?? row['quote_change_pct']);
+    final source = _textValue(row['source'], fallback: quote['source']);
+    final dataTime = _textValue(
+      row['timestamp'] ?? row['quote_data_time'] ?? row['trade_date'],
+      fallback: quote['sourceDataTime'],
+    );
+    final fetchedAt = _textValue(
+      row['fetchedAt'] ?? row['fetched_at'] ?? row['quote_fetched_at'],
+      fallback: quote['fetchedAt'],
+    );
+    final lines = <String>[
+      '已达到本轮受控数据调用预算，下面直接使用已经取得的单股分析证据作答；未继续调用更多 provider，也未触发交易。',
+      '',
+      '## $name $code 分析摘要',
+      '',
+      '- 行情：$price，涨跌幅 $changePct。',
+      '- 行情来源：$source；数据时间：$dataTime；获取时间：$fetchedAt；缓存状态：${quote['cacheStatus'] ?? '-'}。',
+      '- K线：${_klineBudgetSummary(kline)}',
+      '- 估值/基本面：${_valuationBudgetSummary(valuation)}',
+      '- 资金流：${_moneyFlowBudgetSummary(moneyFlow)}',
+      '',
+      '## 结论边界',
+      '',
+      '- 本回答是单股研究摘要，不是买入建议。',
+      '- 已使用 governed MarketData readback/cache-first 证据；预算拦截后的额外请求没有发出 provider 调用。',
+      '- 本轮失败/跳过：$failureSummary',
+      '- 若要进入交易或观察池，需要单独给出入场、止损、止盈和仓位规则，并由用户确认。',
+      '',
+      'analysisEvidence:${jsonEncode(_singleStockAnalysisEvidence(row: row, quote: quote, valuation: valuation, kline: kline, moneyFlow: moneyFlow, failureSummary: failureSummary))}',
+    ];
+    return lines.join('\n');
+  }
+
+  Map<String, dynamic> _singleStockAnalysisEvidence({
+    required Map<String, dynamic> row,
+    required Map<String, dynamic> quote,
+    required Map<String, dynamic>? valuation,
+    required Map<String, dynamic>? kline,
+    required Map<String, dynamic>? moneyFlow,
+    required String failureSummary,
+  }) {
+    final code = row['code']?.toString().trim() ?? '';
+    return AnalysisEvidencePackage(
+      kind: AnalysisEvidenceKind.stock,
+      subjectType: AnalysisSubjectType.stock,
+      subjectId: code,
+      subjectName: _textValue(row['name'], fallback: code),
+      observedFacts: [
+        'quote=available',
+        if (kline != null) 'kline=available',
+        if (valuation != null) 'valuation=available',
+        if (moneyFlow != null) 'money_flow=available',
+      ],
+      interpretations: [
+        'single_stock_analysis:bounded_budget_summary',
+        'trade_action:not_requested',
+      ],
+      missingEvidence: [
+        if (valuation == null) 'valuation_confirmation',
+        if (kline == null) 'technical_kline_confirmation',
+        if (moneyFlow == null) 'money_flow_confirmation',
+        'strategy_validation',
+        'user_confirmed_trade_plan',
+        if (failureSummary.trim().isNotEmpty && failureSummary.trim() != 'none')
+          'visible_failures:$failureSummary',
+      ],
+      confidence: kline != null && valuation != null
+          ? AnalysisConfidence.medium
+          : AnalysisConfidence.low,
+      strategyReadiness: AnalysisStrategyReadiness.analysisOnly,
+      sourceCoverage: AnalysisSourceCoverage(
+        sources: [_textValue(quote['source'], fallback: 'local')],
+        interfaceId: _textValue(quote['interfaceId'], fallback: 'stock.quote'),
+        capabilityId: _textValue(quote['capabilityId'], fallback: 'local.cache'),
+        canonicalSchema: _textValue(
+          quote['canonicalSchema'],
+          fallback: 'quote_snapshot',
+        ),
+        canonicalTable: _textValue(
+          quote['canonicalTable'],
+          fallback: 'quote_snapshot',
+        ),
+        readbackAction: _textValue(quote['action'], fallback: 'query_quote'),
+        sourceDataTime: _textValue(quote['sourceDataTime']),
+        fetchedAt: _textValue(quote['fetchedAt']),
+        cacheStatus: _textValue(quote['cacheStatus']),
+        coverageStatus: kline != null || valuation != null || moneyFlow != null
+            ? AnalysisCoverageStatus.sufficientForAnalysis
+            : AnalysisCoverageStatus.partial,
+      ),
+    ).toJson();
   }
 
   Map<String, dynamic> _candidateAnalysisEvidence({

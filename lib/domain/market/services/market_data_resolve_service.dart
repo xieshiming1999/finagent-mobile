@@ -99,8 +99,9 @@ class MarketDataResolveService {
       return (bars: const <KlineBar>[], source: 'local kline_daily');
     }
 
-    final result = await _fetchService.fetchKline(
+    final result = await _fetchKlineWithLocalFallback(
       symbol,
+      context: context,
       source: source,
       period: period,
       startDate: startDate,
@@ -117,6 +118,44 @@ class MarketDataResolveService {
       );
     }
     return result;
+  }
+
+  Future<({List<KlineBar> bars, String source})> _fetchKlineWithLocalFallback(
+    String symbol, {
+    ToolContext? context,
+    String? source,
+    String period = 'daily',
+    String startDate = '',
+    String endDate = '',
+    String adjust = 'qfq',
+  }) async {
+    try {
+      return await _fetchService.fetchKline(
+        symbol,
+        source: source,
+        period: period,
+        startDate: startDate,
+        endDate: endDate,
+        adjust: adjust,
+      );
+    } on DataFetchError catch (error) {
+      if (period != 'daily') rethrow;
+      final local = _readService.readPersistedKline(
+        symbol,
+        context: context,
+        startDate: '',
+        endDate: endDate,
+        adjust: adjust,
+        source: source,
+        limit: 120,
+      );
+      if (local.isEmpty) rethrow;
+      return (
+        bars: local,
+        source:
+            'local kline_daily partial; provider refresh failed: ${error.message}',
+      );
+    }
   }
 
   bool _localKlineCovers(

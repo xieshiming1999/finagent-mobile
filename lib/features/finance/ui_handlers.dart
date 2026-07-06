@@ -212,6 +212,66 @@ extension _UIHandlers on _FinAgentScreenState {
         });
       }
     }
+    if (action == 'showChartFromStore') {
+      final rawSymbol =
+          (params['symbol'] ?? params['code'] ?? params['ts_code'] ?? '')
+              .toString()
+              .trim();
+      if (rawSymbol.isEmpty) {
+        return json.encode({
+          'error': 'symbol is required for showChartFromStore',
+          'hint': 'Pass a stock code such as 600519.',
+        });
+      }
+      final limit = ((params['limit'] as num?)?.toInt() ?? 120)
+          .clamp(20, 240)
+          .toInt();
+      final adjust = (params['adjust'] ?? 'qfq').toString();
+      final basePath = widget.agent.toolContext.basePath;
+      final rows = ReusableDataStore(
+        basePath,
+      ).queryKline(rawSymbol, adjust: adjust, limit: limit);
+      if (rows.isEmpty) {
+        return json.encode({
+          'error': 'No local kline rows for $rawSymbol',
+          'hint':
+              'Call MarketData(action:"query_kline", symbols:["$rawSymbol"]) first, or fetch kline if local data is stale/missing.',
+          'symbol': rawSymbol,
+          'adjust': adjust,
+        });
+      }
+      final safeSymbol = rawSymbol.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+      final filePath = 'memory/data/${safeSymbol}_kline_${adjust}_$limit.json';
+      final file = File('$basePath/$filePath');
+      file.parent.createSync(recursive: true);
+      final data = {
+        'columns': ['date', 'open', 'high', 'low', 'close', 'volume'],
+        'data': rows
+            .map(
+              (row) => [
+                row.date,
+                row.open,
+                row.high,
+                row.low,
+                row.close,
+                row.volume,
+              ],
+            )
+            .toList(),
+        'provenance': {
+          'symbol': rawSymbol,
+          'adjust': adjust,
+          'rows': rows.length,
+          'startDate': rows.first.date,
+          'endDate': rows.last.date,
+        },
+      };
+      file.writeAsStringSync(json.encode(data));
+      return _handleChatUIControl('showChart', {
+        'dataFile': filePath,
+        'title': params['title'] ?? '$rawSymbol K-line',
+      });
+    }
     if (action == 'showHtml') {
       final html = params['html'] as String? ?? '';
       _items.add(

@@ -12,11 +12,9 @@ const prompt =
 - closePage: Close the WebView panel (hide it). params: {}
 - removePage: Remove a page from the list. params: {id}
 
-EXAMPLE — create and show a K-line chart:
+EXAMPLE — show a K-line chart from persisted rows:
 ```json
-// Step 1: Agent writes HTML file via FileWrite to memory/pages/maotai_kline.html
-// Step 2: Open it in WebView
-{"action": "openPage", "params": {"title": "茅台K线", "file": "memory/pages/maotai_kline.html"}}
+{"action": "showChartFromStore", "params": {"symbol": "600519", "limit": 120, "title": "贵州茅台K线"}}
 ```
 
 ## Tile actions (persistent UI elements in the tile grid)
@@ -36,13 +34,17 @@ EXAMPLE — create and show a K-line chart:
 - showChart: Show a K-line candlestick chart inline. params: {dataFile: "path/to/kline.json"}
   The dataFile must be a JSON file in Tushare format: {"columns": [...], "data": [[...], ...]}
   Agent writes the data file via FileWrite first, then calls showChart.
+- showChartFromStore: Create a bounded K-line chart directly from local persisted rows and show it inline. params: {symbol: "600519", adjust?: "qfq", limit?: 120, title?}
+  Prefer this for stock dashboards after `MarketData(query_kline)` has confirmed local coverage; it avoids sending large K-line arrays through Write tool arguments.
 - showHtml: Show HTML content inline. params: {html: "<div>...</div>"}
 
 ## Guidelines
-- **Prefer inline actions** (showChart/showTable/showQuote/showHtml) — they display directly in chat without switching screens.
+- **Prefer inline actions** (showChartFromStore/showChart/showTable/showQuote/showHtml) — they display directly in chat without switching screens.
+- For normal analysis dashboard/report requests, use inline app-native actions plus the final Markdown answer. Do not create HTML/dashboard files unless the user explicitly asks for a standalone page or complex interactive visualization.
 - Only use openPage when user explicitly requests a standalone page, or when complex multi-chart interaction is needed.
 - For K-line charts: FileWrite JSON → showChart (inline, no screen switch). dataFile must be JSON, NOT HTML.
-- For complex HTML visualizations (multi-chart interaction, custom dashboards): FileWrite HTML → openPage
+- For K-line charts from known local store rows: prefer showChartFromStore instead of writing a large JSON file through the model.
+- For complex HTML visualizations (multi-chart interaction, custom dashboards): Write bounded HTML → openPage. Do not embed large quote/K-line arrays in Write arguments when the data is already in the local store.
 - For persistent data displays: use tiles (createTile with schedule for auto-update)
 - For one-off quick answers: use inline actions (showQuote/showTable)
 - NEVER draw charts in markdown/ASCII — always use showChart or openPage

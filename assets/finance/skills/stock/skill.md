@@ -60,13 +60,14 @@ Load the `tradingview-scanner` skill when you need live technical indicators suc
 
 ### 4. TradingView visualization
 
-Before generating stock dashboards, technical panels, or dynamic market pages, load:
-
-```text
-Skill(skill: "tradingview")
-```
-
-On mobile, TradingView is an enhancement layer only. Critical prices, K-line data, scoring, alerts, and persistence must still come from `MarketData`, `DataProcess`, and local reusable data.
+On mobile, TradingView can supplement analysis when it adds chart,
+indicator, scanner, or interactive-view evidence. For a normal stock-analysis
+dashboard request, first use `MarketData`, `DataProcess`, local reusable data,
+and app-native `UIControl` surfaces. Load `Skill(skill: "tradingview")` when
+the user asks for TradingView, when live chart/scanner evidence is materially
+needed, or when a standalone interactive chart page is the right surface. Do
+not switch into TradingView or custom HTML merely to satisfy a generic
+"analysis dashboard" request.
 
 ## Analysis workflow
 
@@ -79,11 +80,24 @@ On mobile, TradingView is an enhancement layer only. Critical prices, K-line dat
 5. Answer normal analysis requests in Markdown/text, not fenced or inline HTML.
    If the user asks for a rendered card, dashboard, panel, or page in FinAgent,
    prefer a compact app-native UI surface:
-   `Write` a small JSON data file under `memory/data/`, then call
-   `UIControl(action:"showChart", params:{dataFile:"memory/data/..."})` for
-   K-line evidence and `UIControl(action:"showTable", ...)` for compact
-   valuation/flow summaries. Do not generate a large standalone HTML dashboard
-   from a template unless the user explicitly asks for a custom page.
+   after `MarketData(action:"query_kline", ...)` confirms local K-line
+   coverage, call `UIControl(action:"showChartFromStore", params:{symbol:"600519", limit:120})`
+   for K-line evidence and `UIControl(action:"showTable", ...)` for compact
+   valuation/flow summaries. Use `Write` for a chart JSON file only when the
+   chart data is small and not already in the local store. Do not generate a
+   large standalone HTML dashboard from a template unless the user explicitly
+   asks for a custom page.
+
+For a normal mobile stock-analysis dashboard request, keep the route bounded:
+reuse quote/K-line/fundamental/flow evidence, display app-native inline
+surfaces with `UIControl(showQuote|showChartFromStore|showChart|showTable)`
+when useful, then
+finish with a concise answer that states source, data time, fetched time,
+cache/provider status, and missing evidence. Do not load
+`trading-analysis-dashboard-template`, `html-artifact`, or custom HTML page
+skills unless the user explicitly asks for a standalone custom HTML page or
+TradingView widget. Do not continue visual-polish loops after the mobile UI
+surface or final evidence summary is inspectable.
 
 When `DataProcess(action:"summary")`, `DataProcess(action:"support_summary")`,
 or `DataProcess(action:"volume")` returns `analysisEvidence`, use that
@@ -182,30 +196,19 @@ corroborating list. Do not call broad `query_quote`; quote readback requires
 explicit symbols. Stop after the above readbacks and answer with source/provider,
 data time, retrieval time when present, and coverage gaps.
 
-## Dashboard templates
-
-Templates live in `bundle/dashboards/`.
-
-| Template | Path                                      | Best for                            |
-| -------- | ----------------------------------------- | ----------------------------------- |
-| chart    | `bundle/dashboards/chart/template.html`   | K-line, moving average, MACD panels |
-| table    | `bundle/dashboards/table/template.html`   | watchlists, ranking tables          |
-| kpi      | `bundle/dashboards/kpi/template.html`     | market overview KPI cards           |
-| monitor  | `bundle/dashboards/monitor/template.html` | price alerts and threshold views    |
-
-### Dashboard creation flow
+## Dashboard creation flow
 
 For FinAgent stock analysis, use the lightweight inline path first:
 
 ```text
-Write(file_path:"memory/data/maotai_kline.json", content:"{\"columns\":[\"date\",\"open\",\"high\",\"low\",\"close\",\"volume\"],\"data\":[...]}")
-UIControl(action:"showChart", params:{"dataFile":"memory/data/maotai_kline.json"})
+UIControl(action:"showQuote", params:{"data":{...}})
+UIControl(action:"showChartFromStore", params:{"symbol":"600519","limit":120})
 UIControl(action:"showTable", params:{"title":"估值与资金证据","data":[...]})
 ```
 
-Keep the JSON compact: latest 60-120 daily bars are enough for a chart. Put
-the full analysis, provenance, PE/PB gap, and risk judgment in the final chat
-answer instead of embedding a large HTML report.
+Put the full analysis, provenance, PE/PB gap, and risk judgment in the final
+chat answer instead of embedding a large HTML report. Do not use `Write` to
+serialize quote/K-line rows that already exist in the local store.
 
 Use the file-backed HTML page path only for custom standalone pages:
 
