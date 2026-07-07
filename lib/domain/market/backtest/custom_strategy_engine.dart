@@ -789,16 +789,102 @@ class CustomStrategyEngine {
           Map<String, dynamic>.from(payload['executableV1'] as Map)
             ..remove('indicators')
             ..remove('indicatorCatalog')
-            ..remove('indicatorCatalogByCategory');
+            ..remove('indicatorCatalogByCategory')
+            ..remove('stockExample')
+            ..remove('ruleCompositionExamples');
       final fundObservation =
           Map<String, dynamic>.from(payload['fundObservationV1'] as Map)
             ..remove('indicators')
             ..remove('indicatorCatalog')
-            ..remove('indicatorCatalogByCategory');
+            ..remove('indicatorCatalogByCategory')
+            ..remove('ordinaryFundExample')
+            ..remove('moneyFundExample');
       payload['executableV1'] = executable;
       payload['fundObservationV1'] = fundObservation;
+      payload.remove('unsupportedV1');
+      payload.remove('proxyContract');
+      payload['inputContracts'] = {
+        'custom_strategy_validate': {
+          'requiredFields': ['strategySpec'],
+        },
+        'custom_strategy_backtest': {
+          'requiredFields': ['strategySpec'],
+          'boundary': 'stock only',
+        },
+        'custom_strategy_observe': {
+          'requiredFields': ['strategySpec', 'fundRows'],
+          'boundary': 'fund evidence only',
+        },
+        'custom_strategy_fund_backtest': {
+          'requiredFields': ['strategySpec', 'fundRows'],
+          'boundary': 'fund NAV/yield evidence only',
+        },
+        'custom_strategy_rank': {
+          'requiredFields': ['strategySpec', 'symbols'],
+          'boundary': 'portfolio/ranking evidence only',
+        },
+        'custom_strategy_save': {
+          'requiredFields': ['strategySpec', 'evidence'],
+        },
+        'custom_strategy_list': {
+          'requiredFields': [],
+        },
+        'custom_strategy_compare': {
+          'requiredFields': ['strategyIds'],
+        },
+        'custom_strategy_run': {
+          'requiredFields': ['strategyId'],
+        },
+      };
+      payload['outputContracts'] = {
+        'custom_strategy_validate': [
+          'status',
+          'validationSummary',
+          'repairPlan',
+          'unsupportedDetails',
+          'dataRequirements',
+        ],
+        'custom_strategy_backtest': [
+          'metrics',
+          'lifecycleAdvice',
+          'dataCoverage',
+          'assumptions',
+        ],
+        'custom_strategy_rank': [
+          'ranked',
+          'portfolioEvidence',
+          'rebalanceDraft',
+          'dataCoverage',
+        ],
+        'custom_strategy_observe': [
+          'observation',
+          'dcaObservation',
+          'monitorDraft',
+          'fundRiskEvidence',
+        ],
+        'custom_strategy_fund_backtest': [
+          'periodEvidence',
+          'fundRiskEvidence',
+          'fundCoverageEvidence',
+        ],
+        'custom_strategy_save': [
+          'strategyId',
+          'status',
+          'paths',
+          'lifecycle',
+          'dataAndAssumptionSummary',
+        ],
+        'custom_strategy_list': ['count', 'strategies'],
+        'custom_strategy_compare': [
+          'count',
+          'strategies',
+          'bestBy',
+          'comparisonNotes',
+        ],
+        'custom_strategy_run': ['metrics', 'readback_only', 'lifecycleIssue'],
+      };
       payload['text'] =
-          'Custom StrategySpec v1 compact help. Use detail:"catalog" only when the full stock or fund indicator catalog is needed. Use inputContracts and outputContracts to construct structured calls.';
+          'Custom StrategySpec v1 compact help. Use custom_strategy_validate before executable actions. Use detail:"catalog" only when the full stock or fund indicator catalog is needed.';
     } else {
       payload['text'] =
           'Custom StrategySpec v1 full catalog help. Use compact help for normal lifecycle calls.';
@@ -818,10 +904,7 @@ class CustomStrategyEngine {
 
   List<String> _preview(List<String> values, List<String> preferred) {
     final valueSet = values.toSet();
-    final preview = <String>[
-      ...preferred.where(valueSet.contains),
-      ...values.where((value) => !preferred.contains(value)).take(12),
-    ];
+    final preview = <String>[...preferred.where(valueSet.contains).take(8)];
     return preview;
   }
 

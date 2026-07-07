@@ -35,6 +35,12 @@ void main() {
     expect(executable.containsKey('indicators'), isFalse);
     expect(executable.containsKey('indicatorCatalog'), isFalse);
     expect(executable.containsKey('indicatorCatalogByCategory'), isFalse);
+    expect(executable.containsKey('stockExample'), isFalse);
+    expect(executable.containsKey('ruleCompositionExamples'), isFalse);
+    expect(
+      (executable['indicatorPreviewCatalog'] as List).length,
+      lessThanOrEqualTo(8),
+    );
 
     final fundObservation = help['fundObservationV1'] as Map;
     expect(fundObservation['indicatorCount'], greaterThan(5));
@@ -54,6 +60,14 @@ void main() {
     expect(fundObservation.containsKey('indicators'), isFalse);
     expect(fundObservation.containsKey('indicatorCatalog'), isFalse);
     expect(fundObservation.containsKey('indicatorCatalogByCategory'), isFalse);
+    expect(fundObservation.containsKey('ordinaryFundExample'), isFalse);
+    expect(fundObservation.containsKey('moneyFundExample'), isFalse);
+    expect(
+      (fundObservation['indicatorPreviewCatalog'] as List).length,
+      lessThanOrEqualTo(8),
+    );
+    expect(help.containsKey('proxyContract'), isFalse);
+    expect(help.containsKey('unsupportedV1'), isFalse);
 
     final inputContracts = help['inputContracts'] as Map;
     expect(
@@ -90,6 +104,7 @@ void main() {
         'custom_strategy_run',
       ]),
     );
+    expect(outputContracts['custom_strategy_run'], contains('lifecycleIssue'));
   });
 
   test('custom strategy help exposes full catalogs only when requested', () {
