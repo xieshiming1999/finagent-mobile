@@ -814,10 +814,27 @@ class BacktestMarketDataService {
   }
 
   Future<BacktestServiceResponse> customStrategyList(
+    Map<String, dynamic> input,
     ToolContext context,
   ) async {
+    final ids = input['strategyIds'] ?? input['strategy_ids'];
+    final strategyIds = ids is List
+        ? ids.map((value) => '$value').toList(growable: false)
+        : [
+            if ('${input['strategyId'] ?? input['strategy_id'] ?? ''}'
+                .trim()
+                .isNotEmpty)
+              '${input['strategyId'] ?? input['strategy_id']}',
+          ];
     return BacktestServiceResponse(
-      content: _customStrategyEngine.list(context),
+      content: _customStrategyEngine.list(
+        context,
+        limit: input['limit'] is num ? (input['limit'] as num).toInt() : null,
+        detail: '${input['detail'] ?? 'summary'}'.toLowerCase() == 'full'
+            ? 'full'
+            : 'summary',
+        strategyIds: strategyIds,
+      ),
     );
   }
 

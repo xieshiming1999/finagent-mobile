@@ -1045,7 +1045,17 @@ class CustomStrategyEngine {
     return _store.save(context, validation, evidence: evidence);
   }
 
-  Map<String, dynamic> list(ToolContext context) => _store.list(context);
+  Map<String, dynamic> list(
+    ToolContext context, {
+    int? limit,
+    String detail = 'summary',
+    List<String> strategyIds = const [],
+  }) => _store.list(
+    context,
+    limit: limit,
+    detail: detail,
+    strategyIds: strategyIds,
+  );
 
   Map<String, dynamic> compare(
     ToolContext context, {

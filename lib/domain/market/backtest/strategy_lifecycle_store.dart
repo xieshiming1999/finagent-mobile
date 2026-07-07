@@ -100,60 +100,107 @@ class StrategyLifecycleStore {
     _ => 0,
   };
 
-  Map<String, dynamic> list(ToolContext context) {
+  Map<String, dynamic> list(
+    ToolContext context, {
+    int? limit,
+    String detail = 'summary',
+    List<String> strategyIds = const [],
+  }) {
     final rows = readRows(context);
+    final requested = strategyIds
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+    final maxRows = _clampListLimit(limit);
+    final allStrategies = rows.map((row) {
+      final spec = _strategySpecOf(row) ?? const <String, dynamic>{};
+      final evidence =
+          _mapOf(row['backtestEvidence']) ??
+          _mapOf(row['evidence']) ??
+          const <String, dynamic>{};
+      return {
+        'strategyId': row['strategyId'],
+        'version': row['version'],
+        'status': row['status'],
+        'updatedAt': row['updatedAt'],
+        'name': spec['name'],
+        'assetClass': spec['assetClass'] ?? spec['market'] ?? 'stock',
+        'symbols': _symbolsOf(spec),
+        'evidenceAction': evidence['action'],
+        'validationSummary':
+            row['validationSummary'] ??
+            _mapOf(row['validationReport'])?['validationSummary'] ??
+            _mapOf(evidence)?['validationSummary'],
+        'validationIssues':
+            row['validationIssues'] ??
+            _mapOf(row['validationReport'])?['validationIssues'] ??
+            _mapOf(evidence)?['validationIssues'] ??
+            const [],
+        'repairPlan':
+            row['repairPlan'] ??
+            _mapOf(row['validationReport'])?['repairPlan'] ??
+            _mapOf(evidence)?['repairPlan'] ??
+            const [],
+        'unsupportedDetails':
+            row['unsupportedDetails'] ??
+            _mapOf(row['validationReport'])?['unsupportedDetails'] ??
+            _mapOf(evidence)?['unsupportedDetails'] ??
+            const [],
+        'dataRequirements':
+            row['dataRequirements'] ??
+            _mapOf(row['validationReport'])?['dataRequirements'] ??
+            _mapOf(evidence)?['dataRequirements'],
+        'dataAndAssumptionSummary':
+            row['dataAndAssumptionSummary'] ?? const <String, dynamic>{},
+        'lifecycle': row['lifecycle'] ?? const <String, dynamic>{},
+        'itemPath': strategyItemPath(
+          context.basePath,
+          '${row['strategyId']}',
+        ),
+      };
+    }).toList(growable: false);
+    final filtered = requested.isEmpty
+        ? allStrategies
+        : allStrategies
+              .where((row) => requested.contains('${row['strategyId']}'))
+              .toList(growable: false);
+    final selected = filtered.take(maxRows).toList(growable: false);
+    final summary = detail == 'full'
+        ? selected
+        : selected.map(_compactListRow).toList(growable: false);
+    final runnableRows = allStrategies
+        .where((row) => _mapOf(row['lifecycle'])?['runnable'] == true)
+        .take(maxRows < 8 ? maxRows : 8)
+        .map(_compactListRow)
+        .toList(growable: false);
     return {
       'action': 'custom_strategy_list',
+      'detail': detail == 'full' ? 'full' : 'summary',
       'count': rows.length,
+      'returned': summary.length,
+      'limit': maxRows,
+      'hasMore': filtered.length > selected.length,
+      'requestedStrategyIds': requested.toList(growable: false),
+      'missingStrategyIds': requested
+          .where(
+            (id) => allStrategies.every((row) => row['strategyId'] != id),
+          )
+          .toList(growable: false),
+      'runnableCount': allStrategies
+          .where((row) => _mapOf(row['lifecycle'])?['runnable'] == true)
+          .length,
+      'invalidCount': allStrategies
+          .where((row) => row['status'] == 'invalid')
+          .length,
       'artifactContract': strategyArtifactContract,
       'paths': strategyArtifactPaths(context.basePath).toJson(),
-      'strategies': rows.map((row) {
-        final spec = _strategySpecOf(row) ?? const <String, dynamic>{};
-        final evidence =
-            _mapOf(row['backtestEvidence']) ??
-            _mapOf(row['evidence']) ??
-            const <String, dynamic>{};
-        return {
-          'strategyId': row['strategyId'],
-          'version': row['version'],
-          'status': row['status'],
-          'updatedAt': row['updatedAt'],
-          'name': spec['name'],
-          'assetClass': spec['assetClass'] ?? spec['market'] ?? 'stock',
-          'symbols': _symbolsOf(spec),
-          'evidenceAction': evidence['action'],
-          'validationSummary':
-              row['validationSummary'] ??
-              _mapOf(row['validationReport'])?['validationSummary'] ??
-              _mapOf(evidence)?['validationSummary'],
-          'validationIssues':
-              row['validationIssues'] ??
-              _mapOf(row['validationReport'])?['validationIssues'] ??
-              _mapOf(evidence)?['validationIssues'] ??
-              const [],
-          'repairPlan':
-              row['repairPlan'] ??
-              _mapOf(row['validationReport'])?['repairPlan'] ??
-              _mapOf(evidence)?['repairPlan'] ??
-              const [],
-          'unsupportedDetails':
-              row['unsupportedDetails'] ??
-              _mapOf(row['validationReport'])?['unsupportedDetails'] ??
-              _mapOf(evidence)?['unsupportedDetails'] ??
-              const [],
-          'dataRequirements':
-              row['dataRequirements'] ??
-              _mapOf(row['validationReport'])?['dataRequirements'] ??
-              _mapOf(evidence)?['dataRequirements'],
-          'dataAndAssumptionSummary':
-              row['dataAndAssumptionSummary'] ?? const <String, dynamic>{},
-          'lifecycle': row['lifecycle'] ?? const <String, dynamic>{},
-          'itemPath': strategyItemPath(
-            context.basePath,
-            '${row['strategyId']}',
-          ),
-        };
-      }).toList(),
+      'runnableStrategies': runnableRows,
+      'strategies': summary,
+      'nextActions': const [
+        'Use custom_strategy_run with strategyId for executable readback.',
+        'Use custom_strategy_compare with strategyIds for saved evidence comparison.',
+        'Use custom_strategy_list with detail:"full" and strategyIds only when a full row is needed.',
+      ],
     };
   }
 
@@ -688,6 +735,87 @@ class StrategyLifecycleStore {
   }
 
   int _listLength(Object? value) => value is List ? value.length : 0;
+
+  Map<String, dynamic> _compactListRow(Map<String, dynamic> row) {
+    final lifecycle = _mapOf(row['lifecycle']) ?? const <String, dynamic>{};
+    final validationIssues = row['validationIssues'];
+    final repairPlan = row['repairPlan'];
+    final unsupportedDetails = row['unsupportedDetails'];
+    return {
+      'strategyId': row['strategyId'],
+      'version': row['version'],
+      'status': row['status'],
+      'updatedAt': row['updatedAt'],
+      'name': row['name'],
+      'assetClass': row['assetClass'],
+      'symbols': row['symbols'],
+      'evidenceAction': row['evidenceAction'],
+      'runnable': lifecycle['runnable'] == true,
+      'lifecycleStatus': lifecycle['status'] ?? row['status'],
+      'lifecycleIssue': lifecycle['lifecycleIssue'],
+      'validationSummary': row['validationSummary'],
+      'validationIssueCount': _listLength(validationIssues),
+      'repairStepCount': _listLength(repairPlan),
+      'unsupportedCount': _listLength(unsupportedDetails),
+      'dataRequirements': row['dataRequirements'],
+      'dataAndAssumptionSummary': _compactDataAndAssumptionSummary(
+        row['dataAndAssumptionSummary'],
+      ),
+      'itemPath': row['itemPath'],
+    };
+  }
+
+  Map<String, dynamic> _compactDataAndAssumptionSummary(Object? value) {
+    final payload = _mapOf(value);
+    if (payload == null) return const <String, dynamic>{};
+    final dataCoverage = _mapOf(payload['dataCoverage']);
+    final dataEvidence = _mapOf(payload['dataEvidence']);
+    final fundCategoryEvidence = _mapOf(payload['fundCategoryEvidence']);
+    final portfolioEvidence = _mapOf(payload['portfolioEvidence']);
+    final riskRewardEvidence = _mapOf(payload['riskRewardEvidence']);
+    return {
+      'assetClass': payload['assetClass'],
+      'symbols': payload['symbols'],
+      if (dataCoverage != null)
+        'dataCoverage': {
+          'symbol': dataCoverage['symbol'],
+          'source': dataCoverage['source'],
+          'rows': dataCoverage['rows'] ?? dataCoverage['actualRows'],
+          'sufficient': dataCoverage['sufficient'],
+          'actualStartDate': dataCoverage['actualStartDate'],
+          'actualEndDate': dataCoverage['actualEndDate'],
+        },
+      if (dataEvidence != null)
+        'dataEvidence': {
+          'source': dataEvidence['source'],
+          'cacheStatus': dataEvidence['cacheStatus'],
+          'fetchedAt': dataEvidence['fetchedAt'],
+          'sourceDataTime': dataEvidence['sourceDataTime'],
+        },
+      if (fundCategoryEvidence != null)
+        'fundCategoryEvidence': fundCategoryEvidence,
+      if (portfolioEvidence != null)
+        'portfolioEvidence': {
+          'selectedSymbols': portfolioEvidence['selectedSymbols'],
+          'portfolioReturnPct': portfolioEvidence['portfolioReturnPct'],
+          'portfolioMaxDrawdownPct':
+              portfolioEvidence['portfolioMaxDrawdownPct'],
+        },
+      if (riskRewardEvidence != null)
+        'riskRewardEvidence': {
+          'profitFactor': riskRewardEvidence['profitFactor'],
+          'payoffRatio': riskRewardEvidence['payoffRatio'],
+          'expectancyPct': riskRewardEvidence['expectancyPct'],
+        },
+    };
+  }
+
+  int _clampListLimit(int? value) {
+    if (value == null) return 8;
+    if (value < 1) return 1;
+    if (value > 50) return 50;
+    return value;
+  }
 
   double? _num(Object? value) {
     if (value is num && value.isFinite) return value.toDouble();

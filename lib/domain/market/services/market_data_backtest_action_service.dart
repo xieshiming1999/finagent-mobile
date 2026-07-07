@@ -60,7 +60,7 @@ class MarketDataBacktestActionService {
       case 'custom_strategy_save':
         return _backtest.customStrategySave(input, context);
       case 'custom_strategy_list':
-        return _backtest.customStrategyList(context);
+        return _backtest.customStrategyList(input, context);
       case 'custom_strategy_compare':
         return _backtest.customStrategyCompare(input, context);
       case 'custom_strategy_run':
