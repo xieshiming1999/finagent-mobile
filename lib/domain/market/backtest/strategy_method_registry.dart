@@ -362,6 +362,15 @@ const strategyIndicatorRegistry = [
     description:
         'Aroon Down component: recency of the rolling low over the configured high-low window, scaled 0-100.',
   ),
+  StrategyIndicatorDefinition(
+    'vortex_spread',
+    14,
+    [r'vortex', r'vortex_spread', r'vortex_indicator', r'vi_spread'],
+    category: 'trend',
+    requiredFields: ['high', 'low', 'close'],
+    description:
+        'Vortex Indicator spread: VI+ minus VI- over the rolling window; positive values indicate stronger upward trend pressure.',
+  ),
   StrategyIndicatorDefinition('rolling_volatility', 20, [
     r'volatility',
     r'rolling_volatility',

@@ -1,4 +1,7 @@
 import 'package:finagent/domain/market/backtest/custom_strategy_engine.dart';
+import 'package:finagent/domain/market/backtest/backtest_core.dart';
+import 'package:finagent/domain/market/backtest/strategy_indicator_calculators.dart';
+import 'package:finagent/domain/market/backtest/strategy_spec_validator.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -101,6 +104,22 @@ void main() {
       executable['indicatorCatalogByCategory'],
       containsPair('momentum', isNotEmpty),
     );
+    expect(
+      executable['indicatorCatalogByCategory'],
+      containsPair(
+        'trend',
+        contains(
+          isA<Map>()
+              .having((row) => row['type'], 'type', 'vortex_spread')
+              .having((row) => row['requiredFields'], 'requiredFields', [
+                'high',
+                'low',
+                'close',
+              ])
+              .having((row) => row['lookbackBars'], 'lookbackBars', 14),
+        ),
+      ),
+    );
 
     final fundObservation = help['fundObservationV1'] as Map;
     expect(fundObservation['indicators'], contains('fund_drawdown'));
@@ -109,5 +128,60 @@ void main() {
       fundObservation['indicatorCatalogByCategory'],
       containsPair('fund_return_quality', isNotEmpty),
     );
+  });
+
+  test('vortex_spread is a validated executable strategy indicator', () {
+    final candles = List<Candle>.generate(36, (index) {
+      final close = 10.0 + index * 0.4;
+      return Candle(
+        date: '2026-01-${(index + 1).toString().padLeft(2, '0')}',
+        open: close - 0.1,
+        high: close + 0.5,
+        low: close - 0.4,
+        close: close,
+        volume: 1000 + index * 10,
+      );
+    });
+    final spec = {
+      'id': 'vortex_test',
+      'name': 'Vortex trend test',
+      'version': 1,
+      'market': 'stock',
+      'universe': {
+        'symbols': ['600519'],
+      },
+      'dataRequirements': {'minBars': 30},
+      'indicators': [
+        {
+          'id': 'vortex',
+          'type': 'vortex_spread',
+          'params': {'period': 14},
+        },
+      ],
+      'entry': {
+        'all': [
+          {'left': 'vortex', 'op': '>', 'right': 0},
+        ],
+      },
+      'exit': {
+        'any': [
+          {'type': 'stop_loss_pct', 'value': 8},
+        ],
+      },
+      'positionSizing': {'type': 'fixed_fraction', 'fraction': 0.5},
+    };
+
+    final validation = validateStockStrategySpec(spec);
+    expect(validation['status'], 'validated');
+    expect(validation['errors'], isEmpty);
+    final requirements = validation['dataRequirements'] as Map;
+    final indicators = requirements['indicators'] as Map;
+    expect(indicators['vortex']['requiredFields'], ['high', 'low', 'close']);
+    expect(indicators['vortex']['lookbackBars'], 14);
+
+    final values = computeStrategyIndicators(spec, candles)['vortex']!;
+    expect(values.take(14), everyElement(isNull));
+    expect(values.skip(14).whereType<double>(), isNotEmpty);
+    expect(values.last, greaterThan(0));
   });
 }

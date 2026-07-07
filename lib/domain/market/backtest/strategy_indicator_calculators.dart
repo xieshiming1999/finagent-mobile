@@ -60,6 +60,7 @@ final Map<String, StrategyIndicatorCalculator> _indicatorCalculators = {
   'aroon_up': (candles, _, period, _) => _aroonComponent(candles, period, 'up'),
   'aroon_down': (candles, _, period, _) =>
       _aroonComponent(candles, period, 'down'),
+  'vortex_spread': (candles, _, period, _) => _vortexSpread(candles, period),
   'rolling_volatility': (_, values, period, _) =>
       _rollingVolatility(values, period),
   'donchian_width_pct': (candles, _, period, _) =>
@@ -702,6 +703,29 @@ List<double?> _aroonComponent(
   final aroonDown = 100 * (period - periodsSinceLow) / period;
   return component == 'down' ? aroonDown : aroonUp;
 });
+
+List<double?> _vortexSpread(List<Candle> candles, int period) =>
+    List.generate(candles.length, (index) {
+      if (index < period || period <= 0) return null;
+      var plusMovement = 0.0;
+      var minusMovement = 0.0;
+      var trueRange = 0.0;
+      for (var i = index - period + 1; i <= index; i++) {
+        final current = candles[i];
+        final previous = candles[i - 1];
+        plusMovement += (current.high - previous.low).abs();
+        minusMovement += (current.low - previous.high).abs();
+        trueRange += max(
+          current.high - current.low,
+          max(
+            (current.high - previous.close).abs(),
+            (current.low - previous.close).abs(),
+          ),
+        );
+      }
+      if (trueRange == 0) return 0.0;
+      return plusMovement / trueRange - minusMovement / trueRange;
+    });
 
 List<double?> _donchianWidthPct(List<Candle> candles, int period) =>
     List.generate(candles.length, (index) {
