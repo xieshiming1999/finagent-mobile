@@ -89,6 +89,19 @@ design. Use `MarketData(action:"etf")`, `MarketData(action:"quote")` for a
 small ETF basket, or local `MarketData(query_quote/query_kline)` when rows are
 already available. In the final answer, explicitly separate:
 
+If the user has not supplied ETF codes yet, use a single mobile-safe default
+quote sample before the design:
+
+```text
+MarketData(action: "quote", symbols: ["510300.SH"])
+```
+
+Label it as sample listed-market evidence only. Do not claim NAV/IOPV,
+premium-discount, or underlying-index confirmation unless those rows were
+also retrieved. Do not run `custom_strategy_rank`, `custom_strategy_backtest`,
+or broad `Research(search)` after ETF K-line evidence is unavailable; state the
+data gap and keep the answer at design/observation level.
+
 - observed listed market price / quote / K-line evidence;
 - missing or not retrieved NAV / IOPV evidence;
 - missing or not retrieved underlying-index evidence.

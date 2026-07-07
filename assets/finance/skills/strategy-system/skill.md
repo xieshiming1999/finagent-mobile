@@ -329,12 +329,19 @@ or still requires an explicit pricing basis.
 For ETF/listed-fund rotation, pricing-basis disclosure is mandatory:
 before giving a concrete rotation design, make one bounded listed-price
 evidence read with `MarketData(action:"etf")`, `MarketData(action:"quote")`, or
-local `MarketData(query_quote/query_kline)` for a small ETF basket. Then report
+local `MarketData(query_quote/query_kline)` for a small ETF basket. If the user
+has not supplied an ETF universe, use the mobile-safe quote sample
+`MarketData(action: "quote", symbols: ["510300.SH"])` as a bounded listed-price
+read before answering, and clearly label it as a sample rather than the user's
+final ETF basket. Then report
 observed listed-price/quote/K-line evidence, observed or missing NAV/IOPV
 evidence, and observed or missing underlying-index evidence. Premium or
 discount claims require NAV/IOPV rows; tracking or trend confirmation claims
-require underlying-index rows. If those rows were not retrieved, state that
-they are missing instead of presenting the check as verified.
+require underlying-index rows. ETF ranking/backtest requires K-line rows. If
+ETF K-line rows are missing or a provider returns a K-line error, do not call
+`custom_strategy_rank`, `custom_strategy_backtest`, or broad
+`Research(search)` in the same turn; state that ranking/backtest is blocked by
+K-line coverage and keep the answer at design/observation level.
 
 Saved strategy artifacts expose a code-owned `strategyType`. Use it when
 choosing lifecycle actions instead of reclassifying from prompt wording:

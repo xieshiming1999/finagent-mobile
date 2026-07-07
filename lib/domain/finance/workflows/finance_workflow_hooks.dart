@@ -611,6 +611,18 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       messages: messages,
       turnStartIndex: turnStartIndex,
     );
+    final etfQuoteOnlyEvidence = _etfQuoteOnlyStrategyBoundary(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+      proposedToolCalls: toolCalls,
+    );
+    if (etfQuoteOnlyEvidence != null) {
+      return DomainToolInterception(
+        answer: etfQuoteOnlyEvidence,
+        skippedReason:
+            'Skipped: ETF quote evidence exists but no successful ETF K-line evidence exists; custom_strategy_rank/backtest requires K-line rows.',
+      );
+    }
     if (portfolioRankEvidence != null &&
         toolCalls.any(
           (call) =>
@@ -760,6 +772,138 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     }
 
     return null;
+  }
+
+  String? _etfQuoteOnlyStrategyBoundary({
+    required List<Message> messages,
+    required int turnStartIndex,
+    required List<ToolUse> proposedToolCalls,
+  }) {
+    final proposedEtfKline = proposedToolCalls.any(_isProposedEtfKlineCall);
+    final proposedRankOrBacktest = proposedToolCalls.any((call) {
+      if (call.name != 'MarketData') return false;
+      final action = '${call.input['action'] ?? ''}';
+      return action == 'custom_strategy_rank' ||
+          action == 'custom_strategy_backtest';
+    });
+    if (!proposedEtfKline && !proposedRankOrBacktest) {
+      return null;
+    }
+    final quotes = _latestEtfQuoteRows(messages, turnStartIndex);
+    if (quotes.isEmpty || _hasSuccessfulEtfKline(messages, turnStartIndex)) {
+      return null;
+    }
+    final quoteLines = quotes.take(6).map((row) {
+      final code = _textValue(row['code'] ?? row['symbol'], '-');
+      final name = _textValue(row['name'], code);
+      final price = _textValue(row['price'], '-');
+      final pct = _textValue(row['changePct'] ?? row['pct_chg'], '-');
+      return '| $code | $name | $price | $pct |';
+    }).join('\n');
+    return [
+      '已取得 ETF 场内报价证据，但本轮尚无成功的 ETF 日线 K 线证据；因此已停止后续 ETF K-line / `custom_strategy_rank` / `custom_strategy_backtest` 扩展调用，不把报价快照冒充为可回测排名证据。',
+      '',
+      '## ETF 轮动观察策略',
+      '',
+      '- 策略阶段：设计 / 观察，不是已回测排名。',
+      '- 调仓依据：未来需要场内日线 K 线的 close、open、high、low、volume 才能计算动量、均线、波动和止损。',
+      '- 当前可用证据：场内报价快照，可证明 ETF 使用上市市场价格作为交易基础。',
+      '- 当前缺口：未取得 NAV / IOPV，不能验证折溢价；未取得底层指数，不能验证跟踪误差或指数趋势；未取得 ETF K-line，不能排名或回测。',
+      '',
+      '| 代码 | 名称 | 最新价 | 涨跌幅 |',
+      '|---|---|---:|---:|',
+      quoteLines,
+      '',
+      '## 数据口径',
+      '',
+      '- 场内价格 / Quote：已观察，用于交易价格基础。',
+      '- 场内 K-line：本轮缺失，策略排名和回测等待该证据。',
+      '- NAV / IOPV：本轮未取，折溢价过滤不能声称已验证。',
+      '- 底层指数：本轮未取，指数趋势确认不能声称已验证。',
+      '',
+      '## 下一步',
+      '',
+      '- 先修复或补齐 ETF K-line provider/readback，再运行 `custom_strategy_rank`。',
+      '- 用户给定 ETF 篮子后，应先读取报价与 K-line；若 K-line 仍缺失，只能输出观察设计和数据缺口。',
+    ].join('\n');
+  }
+
+  bool _isProposedEtfKlineCall(ToolUse call) {
+    if (call.name != 'MarketData') return false;
+    final action = '${call.input['action'] ?? ''}';
+    if (action != 'kline' && action != 'query_kline') return false;
+    final symbols = call.input['symbols'];
+    if (symbols is List) {
+      return symbols.any((symbol) => _isEtfCode(_textValue(symbol, '')));
+    }
+    return _isEtfCode(
+      _textValue(call.input['symbol'] ?? call.input['code'], ''),
+    );
+  }
+
+  List<Map<String, dynamic>> _latestEtfQuoteRows(
+    List<Message> messages,
+    int turnStartIndex,
+  ) {
+    for (final message in messages.skip(turnStartIndex).toList().reversed) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is! Map<String, dynamic>) continue;
+        final action = '${decoded['action'] ?? ''}';
+        if (action != 'quote' &&
+            action != 'query_quote' &&
+            action != 'query_etf_quote' &&
+            action != 'listed_fund_quote') {
+          continue;
+        }
+        final rows = decoded['data'];
+        if (rows is! List) continue;
+        final mapped = rows
+            .whereType<Map>()
+            .map((row) => Map<String, dynamic>.from(row))
+            .where((row) => _isEtfCode(_textValue(row['code'] ?? row['symbol'], '')))
+            .toList(growable: false);
+        if (mapped.isNotEmpty) return mapped;
+      } catch (_) {
+        continue;
+      }
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
+  bool _hasSuccessfulEtfKline(List<Message> messages, int turnStartIndex) {
+    for (final message in messages.skip(turnStartIndex)) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is! Map<String, dynamic>) continue;
+        final action = '${decoded['action'] ?? ''}';
+        if (action != 'kline' && action != 'query_kline') continue;
+        final rows = decoded['data'];
+        if (rows is! List || rows.isEmpty) continue;
+        final symbol = _textValue(
+          decoded['symbol'] ?? decoded['code'] ?? rows.first['code'],
+          '',
+        );
+        if (symbol.isEmpty || _isEtfCode(symbol)) return true;
+      } catch (_) {
+        continue;
+      }
+    }
+    return false;
+  }
+
+  bool _isEtfCode(String value) {
+    final text = value.trim().toUpperCase();
+    return RegExp(r'^(51|15|58)\d{4}(\.(SH|SZ))?$').hasMatch(text);
+  }
+
+  String _textValue(Object? value, String fallback) {
+    final text = '${value ?? ''}'.trim();
+    return text.isEmpty ? fallback : text;
   }
 
   bool _isFundStockDataDrift(ToolUse call) {

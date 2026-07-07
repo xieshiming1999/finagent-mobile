@@ -136,6 +136,17 @@ separate contract validates the next step.
    small ETF basket, or local `MarketData(query_quote/query_kline)` when rows
    are already available. Do not answer as if ETF evidence was observed when the
    only tool used was `Skill`.
+   On mobile, use quote-first evidence for the default sample because ETF daily
+   K-line support may be provider-limited. If the user asks for an ETF rotation
+   design but does not provide a concrete ETF universe, use one bounded default
+   sample to prove the listed-price path before giving the design:
+   `MarketData(action: "quote", symbols: ["510300.SH"])`.
+   State that `510300.SH` is only the sample listed-market evidence used to
+   demonstrate the pricing basis, and ask for the user's ETF basket only after
+   reporting what was observed and what NAV/IOPV/index evidence remains missing.
+   Do not call `custom_strategy_rank`, `custom_strategy_backtest`, or broad
+   `Research(search)` when the required ETF K-line rows are missing; report the
+   strategy as design/observation-only until K-line evidence is available.
 3. Always disclose pricing-basis status in the final answer:
    - observed: listed market price / quote / K-line when `MarketData(quote)`,
      ETF quote rows, or ETF K-line rows were used;
