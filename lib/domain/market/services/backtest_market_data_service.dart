@@ -697,34 +697,36 @@ class BacktestMarketDataService {
       );
     }
     try {
-      return BacktestServiceResponse(
-        content: _customStrategyEngine.rank(
-          spec,
-          candidates,
-          topN: ((input['topN'] as num?)?.toInt() ?? 3).clamp(1, 10),
-          rankingMetric: '${input['rankingMetric'] ?? 'score'}',
-          rebalanceInterval:
-              '${input['rebalanceInterval'] ?? input['rebalance_interval'] ?? 'single_period_draft'}',
-          maxPositionWeight:
-              (input['maxPositionWeight'] ?? input['max_position_weight'])
-                  is num
-              ? ((input['maxPositionWeight'] ?? input['max_position_weight'])
-                        as num)
-                    .toDouble()
-              : null,
-          minScore: (input['minScore'] ?? input['min_score']) is num
-              ? ((input['minScore'] ?? input['min_score']) as num).toDouble()
-              : null,
-          maxPairwiseCorrelation:
-              (input['maxPairwiseCorrelation'] ??
+      final ranked = _customStrategyEngine.rank(
+        spec,
+        candidates,
+        topN: ((input['topN'] as num?)?.toInt() ?? 3).clamp(1, 10),
+        rankingMetric: '${input['rankingMetric'] ?? 'score'}',
+        rebalanceInterval:
+            '${input['rebalanceInterval'] ?? input['rebalance_interval'] ?? 'single_period_draft'}',
+        maxPositionWeight:
+            (input['maxPositionWeight'] ?? input['max_position_weight']) is num
+            ? ((input['maxPositionWeight'] ?? input['max_position_weight'])
+                      as num)
+                  .toDouble()
+            : null,
+        minScore: (input['minScore'] ?? input['min_score']) is num
+            ? ((input['minScore'] ?? input['min_score']) as num).toDouble()
+            : null,
+        maxPairwiseCorrelation:
+            (input['maxPairwiseCorrelation'] ??
+                    input['max_pairwise_correlation'])
+                is num
+            ? ((input['maxPairwiseCorrelation'] ??
                       input['max_pairwise_correlation'])
-                  is num
-              ? ((input['maxPairwiseCorrelation'] ??
-                            input['max_pairwise_correlation'])
-                        as num)
-                    .toDouble()
-              : null,
-        ),
+                  as num).toDouble()
+            : null,
+      );
+      final detail = '${input['detail'] ?? input['mode'] ?? ''}'.toLowerCase();
+      return BacktestServiceResponse(
+        content: detail == 'full'
+            ? ranked
+            : _compactCustomStrategyRankResult(ranked),
       );
     } catch (error) {
       return BacktestServiceResponse(content: '$error', isError: true);
@@ -1253,6 +1255,220 @@ class BacktestMarketDataService {
     addIfPresent('portfolioRebalanceSimulation', rebalanceSimulation);
     addIfPresent('concentrationEvidence', concentrationEvidence);
     return fields;
+  }
+
+  Map<String, dynamic> _compactCustomStrategyRankResult(
+    Map<String, dynamic> full,
+  ) {
+    final portfolioEvidence = _mapOf(full['portfolioEvidence']);
+    final rebalanceDraft = _mapOf(full['rebalanceDraft']);
+    final selectedPositions = _compactList(
+      rebalanceDraft?['positions'],
+      5,
+      _compactPortfolioPosition,
+    );
+    return {
+      'action': full['action'] ?? 'custom_strategy_rank',
+      'detail': 'summary',
+      'status': full['status'],
+      'strategyId': full['strategyId'],
+      'version': full['version'],
+      'validationSummary': full['validationSummary'],
+      'validationIssues': full['validationIssues'] ?? const [],
+      'unsupportedDetails': full['unsupportedDetails'] ?? const [],
+      'dataRequirements': _compactDataRequirements(full['dataRequirements']),
+      'rankingMetric': full['rankingMetric'],
+      'candidateCount': full['candidateCount'],
+      'rankedCount': full['rankedCount'],
+      'failedCount': full['failedCount'],
+      'ranked': _compactList(full['ranked'], 10, _compactRankedRow),
+      'excluded': _compactList(full['excluded'], 10, _compactExcludedRow),
+      'candidateFailureEvidence': full['candidateFailureEvidence'],
+      'selectedSymbols': selectedPositions
+          .map((position) => '${position['symbol'] ?? ''}'.trim())
+          .where((symbol) => symbol.isNotEmpty)
+          .toList(growable: false),
+      if (portfolioEvidence != null)
+        'portfolioEvidence': {
+          'mode': portfolioEvidence['mode'],
+          'selectedCount': portfolioEvidence['selectedCount'],
+          'assumptions': portfolioEvidence['assumptions'],
+          'selectionEvidence': portfolioEvidence['selectionEvidence'],
+          'aggregateMetrics': portfolioEvidence['aggregateMetrics'],
+          'correlationEvidence': portfolioEvidence['correlationEvidence'],
+          'portfolioRiskEvidence': portfolioEvidence['portfolioRiskEvidence'],
+          'portfolioReturnQualityEvidence':
+              portfolioEvidence['portfolioReturnQualityEvidence'],
+          'concentrationEvidence': portfolioEvidence['concentrationEvidence'],
+          'portfolioStabilityEvidence':
+              portfolioEvidence['portfolioStabilityEvidence'],
+          'portfolioRebalanceSimulation':
+              portfolioEvidence['portfolioRebalanceSimulation'],
+          'portfolioBacktestEvidence':
+              portfolioEvidence['portfolioBacktestEvidence'],
+          'portfolioScoringEvidence':
+              portfolioEvidence['portfolioScoringEvidence'],
+          'portfolioDrawdownBudgetEvidence':
+              portfolioEvidence['portfolioDrawdownBudgetEvidence'],
+          'positionContributionEvidence':
+              _compactPositionContributionEvidence(
+                portfolioEvidence['positionContributionEvidence'],
+              ),
+          'portfolioValidation': portfolioEvidence['portfolioValidation'],
+          'riskNotes': portfolioEvidence['riskNotes'],
+        },
+      if (rebalanceDraft != null)
+        'rebalanceDraft': {
+          'mode': rebalanceDraft['mode'],
+          'topN': rebalanceDraft['topN'],
+          'rebalanceInterval': rebalanceDraft['rebalanceInterval'],
+          'maxPositionWeight': rebalanceDraft['maxPositionWeight'],
+          'minScore': rebalanceDraft['minScore'],
+          'maxPairwiseCorrelation': rebalanceDraft['maxPairwiseCorrelation'],
+          'positions': selectedPositions,
+          'tradeBoundary': rebalanceDraft['tradeBoundary'],
+          'evidenceSource':
+              'See portfolioEvidence for aggregate metrics, concentration, drawdown budget, validation, and rebalance simulation.',
+        },
+      'rankedRowsEvidence': full['rankedRowsEvidence'],
+      'allCandidates': _compactList(
+        full['allCandidates'],
+        12,
+        _compactCandidateRow,
+      ),
+      'workflowAdvice': full['workflowAdvice'],
+      'fullResultAdvice':
+          'Default custom_strategy_rank output is compact to avoid tool-output spill. Use detail:"full" only for explicit diagnostics; do not open memory/.tool_outputs files for normal workflow answers.',
+    };
+  }
+
+  List<Map<String, dynamic>> _compactList(
+    Object? value,
+    int limit,
+    Map<String, dynamic> Function(Map<String, dynamic>) mapper,
+  ) {
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map((row) => row.map((key, value) => MapEntry('$key', value)))
+        .take(limit)
+        .map(mapper)
+        .toList(growable: false);
+  }
+
+  Map<String, dynamic>? _compactDataRequirements(Object? value) {
+    final dataRequirements = _mapOf(value);
+    if (dataRequirements == null) return null;
+    final indicators = _mapOf(dataRequirements['indicators']);
+    return {
+      'indicatorKeys': indicators?.keys.toList(growable: false) ?? const [],
+      'minimumBars': dataRequirements['minimumBars'],
+      'notes': 'Compact summary only. Use detail:"full" for full indicator schemas.',
+    };
+  }
+
+  Map<String, dynamic>? _compactPositionContributionEvidence(Object? value) {
+    final evidence = _mapOf(value);
+    if (evidence == null) return null;
+    return {
+      'mode': evidence['mode'],
+      'targetWeight': evidence['targetWeight'],
+      'selectedCount': evidence['selectedCount'],
+      'tradeBoundary': evidence['tradeBoundary'],
+      'positions': _compactList(evidence['positions'], 5, (row) {
+        return {
+          'symbol': row['symbol'],
+          'rankingMetric': row['rankingMetric'],
+          'relativeStrengthPercentile': row['relativeStrengthPercentile'],
+          'weightedReturnContributionPct': row['weightedReturnContributionPct'],
+          'weightedDrawdownContributionPct':
+              row['weightedDrawdownContributionPct'],
+          'selectionEvidence': row['selectionEvidence'],
+          'weightEvidence': row['weightEvidence'],
+          'dataCoverage': row['dataCoverage'],
+        };
+      }),
+    };
+  }
+
+  Map<String, dynamic> _compactRankedRow(Map<String, dynamic> row) {
+    final selection = _mapOf(row['selectionEvidence']);
+    return {
+      'symbol': row['symbol'],
+      'name': row['name'],
+      'rank': row['rank'],
+      'score': row['score'],
+      'rankingMetric': row['rankingMetric'],
+      'status': row['status'],
+      'relativeStrength': row['relativeStrength'],
+      'selectionEvidence': row['selectionEvidence'],
+      'weightEvidence': row['weightEvidence'],
+      'assumptions': row['assumptions'],
+      'selectedForDraft': selection?['selectedForDraft'],
+      'exclusionReason': selection?['exclusionReason'],
+      'metrics': row['metrics'],
+      'dataCoverage': row['dataCoverage'],
+      'dataEvidence': row['dataEvidence'],
+      'benchmarkEvidence': row['benchmarkEvidence'],
+      'riskEvidence': _compactRiskEvidence(row['riskEvidence']),
+    };
+  }
+
+  Map<String, dynamic> _compactCandidateRow(Map<String, dynamic> row) {
+    final selection = _mapOf(row['selectionEvidence']);
+    return {
+      'symbol': row['symbol'],
+      'name': row['name'],
+      'rank': row['rank'],
+      'status': row['status'],
+      'score': row['score'],
+      'selectedForDraft': selection?['selectedForDraft'],
+      'exclusionReason': selection?['exclusionReason'],
+      'dataCoverage': row['dataCoverage'],
+    };
+  }
+
+  Object? _compactRiskEvidence(Object? value) {
+    final risk = _mapOf(value);
+    if (risk == null) return value;
+    return {
+      'mode': risk['mode'],
+      'maxDrawdownPct': risk['maxDrawdownPct'],
+      'sharpeRatio': risk['sharpeRatio'],
+      'volatilityPct': risk['volatilityPct'],
+      'atrPct': risk['atrPct'],
+      'riskWarnings': risk['riskWarnings'],
+    };
+  }
+
+  Map<String, dynamic> _compactExcludedRow(Map<String, dynamic> row) {
+    final selection = _mapOf(row['selectionEvidence']);
+    return {
+      'symbol': row['symbol'],
+      'name': row['name'],
+      'rank': row['rank'],
+      'score': row['score'],
+      'status': row['status'],
+      'error': row['error'],
+      'reason':
+          row['reason'] ?? row['exclusionReason'] ?? selection?['exclusionReason'],
+      'selectionEvidence': row['selectionEvidence'],
+      'dataCoverage': row['dataCoverage'],
+      'dataEvidence': row['dataEvidence'],
+      'validationIssues': row['validationIssues'],
+    };
+  }
+
+  Map<String, dynamic> _compactPortfolioPosition(Map<String, dynamic> row) {
+    return {
+      'symbol': row['symbol'],
+      'targetWeight': row['targetWeight'],
+      'weightCapped': row['weightCapped'],
+      'basis': row['basis'],
+      'selectionEvidence': row['selectionEvidence'],
+      'weightEvidence': row['weightEvidence'],
+      'contributionEvidence': row['contributionEvidence'],
+    };
   }
 
   Future<List<bt.Candle>> _loadCandles(

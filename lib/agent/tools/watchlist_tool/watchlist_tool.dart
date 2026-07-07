@@ -370,9 +370,30 @@ class WatchlistTool extends Tool {
           (item.type == 'fund' || item.type == 'etf') &&
           item.status == 'watching',
     );
+    final stockSymbols = <String>{
+      for (final item in results)
+        if (item.status == 'watching' &&
+            (item.type.isEmpty || item.type == 'stock') &&
+            item.symbol.isNotEmpty)
+          item.symbol,
+    }.take(12).toList();
     final payload = <String, dynamic>{'count': list.length, 'items': list};
-    if (hasFundSignals) {
+    if (stockSymbols.length >= 2) {
       payload['nextAction'] = {
+        'tool': 'MarketData',
+        'action': 'custom_strategy_rank',
+        'symbols': stockSymbols,
+        'topN': stockSymbols.length < 3 ? stockSymbols.length : 3,
+        'maxPositionWeight': 0.35,
+        'rebalanceInterval': 'monthly',
+        'boundary':
+            'Evidence-only portfolio observation. Use portfolioEvidence, concentrationEvidence, drawdown-budget evidence, candidateFailureEvidence, and rebalanceDraft. Do not create watchlist entries, Portfolio orders, XueqiuTrade actions, broker orders, or automatic rebalances unless a separate user confirmation authorizes that side effect.',
+        'reason':
+            'Multiple watched stock symbols are available. For portfolio observation, use the governed custom_strategy_rank contract instead of manually ranking quotes or K-line summaries.',
+      };
+    }
+    if (hasFundSignals) {
+      final fundNextAction = {
         'tool': 'DataProcess',
         'action': 'watch_signal_check',
         'type': 'fund',
@@ -380,6 +401,11 @@ class WatchlistTool extends Tool {
         'reason':
             'Use this structured contract to evaluate fund/ETF watchlist signals from WatchlistStore plus canonical fund NAV or money-yield rows. Do not interpret entryCondition text manually.',
       };
+      if (payload.containsKey('nextAction')) {
+        payload['fundSignalNextAction'] = fundNextAction;
+      } else {
+        payload['nextAction'] = fundNextAction;
+      }
     }
     return ToolResult(
       toolUseId: id,
