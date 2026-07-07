@@ -214,6 +214,69 @@ class FinanceCustomStrategyPreflight {
       }
       return null;
     }
+    if (hasValidate && _hasValidatedFundStrategy(turnMessages)) {
+      if (_hasSuccessfulCustomStrategyObserve(turnMessages)) return null;
+      final validation = _latestValidatedStrategy(turnMessages);
+      final fundRows = _latestFundRows(turnMessages);
+      if (validation != null && fundRows.isNotEmpty) {
+        return [
+          ToolUse(
+            id: 'custom_strategy_observe_${DateTime.now().microsecondsSinceEpoch}',
+            name: 'MarketData',
+            input: {
+              'action': 'custom_strategy_observe',
+              'strategySpec': validation.strategySpec,
+              'fundRows': fundRows,
+            },
+          ),
+        ];
+      }
+      final fundCode = _latestFundCodeFromAskUserQuestion(turnMessages);
+      if (fundCode != null &&
+          !_hasSuccessfulFundRowsForCode(turnMessages, fundCode) &&
+          !_hasPendingFundReadbackCall(toolCalls, fundCode)) {
+        return [
+          ToolUse(
+            id: 'fund_strategy_nav_${DateTime.now().microsecondsSinceEpoch}',
+            name: 'MarketData',
+            input: {
+              'action': 'query_fund_nav',
+              'symbols': [fundCode],
+              'limit': 120,
+            },
+          ),
+        ];
+      }
+      if (!_hasAskUserQuestionCall(turnMessages)) {
+        return [
+          ToolUse(
+            id: 'fund_strategy_target_${DateTime.now().microsecondsSinceEpoch}',
+            name: 'AskUserQuestion',
+            input: {
+              'questions': [
+                {
+                  'question':
+                      '基金观察策略已经通过验证。需要一个具体基金代码或名称才能读取净值并生成观察证据；请提供目标基金，或选择只保留策略验证结果。',
+                  'header': '基金标的',
+                  'options': [
+                    {
+                      'label': '提供基金代码',
+                      'description':
+                          '继续读取该基金的净值或收益数据，并生成 custom_strategy_observe 观察证据。',
+                    },
+                    {
+                      'label': '只保留验证',
+                      'description': '停止在 StrategySpec 验证结果，不读取基金数据。',
+                    },
+                  ],
+                  'multiSelect': false,
+                },
+              ],
+            },
+          ),
+        ];
+      }
+    }
     if (hasValidate) return null;
     if (toolCalls.any(_isCustomStrategyToolCall) &&
         !toolCalls.any(
@@ -481,6 +544,137 @@ class FinanceCustomStrategyPreflight {
     );
   }
 
+  bool _hasValidatedFundStrategy(List<Message> messages) {
+    for (final message in messages.reversed) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is! Map<String, dynamic>) continue;
+        if (decoded['action'] != 'custom_strategy_validate' ||
+            decoded['status'] != 'validated') {
+          continue;
+        }
+        final spec = decoded['normalizedSpec'] ?? decoded['spec'];
+        if (spec is Map && _isFundSpec(spec)) return true;
+      } catch (_) {
+        continue;
+      }
+    }
+    return false;
+  }
+
+  bool _isFundSpec(Map spec) {
+    final assetClass = '${spec['assetClass'] ?? ''}'.toLowerCase();
+    final market = '${spec['market'] ?? ''}'.toLowerCase();
+    return assetClass == 'fund' || market == 'fund';
+  }
+
+  bool _hasSuccessfulCustomStrategyObserve(List<Message> messages) {
+    for (final message in messages) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is Map && decoded['action'] == 'custom_strategy_observe') {
+          return true;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return false;
+  }
+
+  List<Map<String, dynamic>> _latestFundRows(List<Message> messages) {
+    for (final message in messages.reversed) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is! Map<String, dynamic>) continue;
+        final action = '${decoded['action'] ?? ''}';
+        if (action != 'query_fund_nav' &&
+            action != 'query_fund_money_yield' &&
+            action != 'query_fund_performance') {
+          continue;
+        }
+        final rows = decoded['data'];
+        if (rows is List) {
+          final mapped = rows
+              .whereType<Map>()
+              .map((row) => Map<String, dynamic>.from(row))
+              .toList(growable: false);
+          if (mapped.isNotEmpty) return mapped;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
+  bool _hasAskUserQuestionCall(List<Message> messages) {
+    return messages.any(
+      (message) => (message.toolUses ?? const <ToolUse>[]).any(
+        (call) => call.name == 'AskUserQuestion',
+      ),
+    );
+  }
+
+  String? _latestFundCodeFromAskUserQuestion(List<Message> messages) {
+    for (final message in messages.reversed) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      final structured = latestAskUserQuestionStructuredAnswer(result.content);
+      if (structured == null) continue;
+      final candidates = [
+        structured['fundCode'],
+        structured['code'],
+        structured['symbol'],
+        structured['selectedOptionLabel'],
+      ];
+      for (final candidate in candidates) {
+        final code = _normalizeFundCode('$candidate');
+        if (code != null) return code;
+      }
+    }
+    return null;
+  }
+
+  String? _normalizeFundCode(String value) {
+    final text = value.trim();
+    if (RegExp(r'^\d{6}$').hasMatch(text)) return text;
+    return null;
+  }
+
+  bool _hasPendingFundReadbackCall(List<ToolUse> toolCalls, String fundCode) {
+    return toolCalls.any((call) {
+      if (call.name != 'MarketData') return false;
+      final action = '${call.input['action'] ?? ''}';
+      if (action != 'query_fund_nav' &&
+          action != 'query_fund_money_yield' &&
+          action != 'query_fund_performance') {
+        return false;
+      }
+      final symbols = call.input['symbols'];
+      if (symbols is List) {
+        return symbols.map((value) => '$value'.trim()).contains(fundCode);
+      }
+      final symbol = '${call.input['symbol'] ?? call.input['code'] ?? ''}'
+          .trim();
+      return symbol == fundCode;
+    });
+  }
+
+  bool _hasSuccessfulFundRowsForCode(List<Message> messages, String fundCode) {
+    for (final row in _latestFundRows(messages)) {
+      final code = '${row['code'] ?? row['symbol'] ?? ''}'.trim();
+      if (code == fundCode) return true;
+    }
+    return false;
+  }
+
   bool _hasSuccessfulRunForSymbol(
     List<Message> messages, {
     required String strategyId,
@@ -566,9 +760,8 @@ class FinanceCustomStrategyPreflight {
             .toList(growable: false);
         if (candidates.isEmpty) continue;
         final fullCoverage = candidates.firstWhere(
-          (strategy) => _listedStrategySymbols(strategy).containsAll(
-            subjectSymbols,
-          ),
+          (strategy) =>
+              _listedStrategySymbols(strategy).containsAll(subjectSymbols),
           orElse: () => const <String, dynamic>{},
         );
         final selected = fullCoverage.isNotEmpty

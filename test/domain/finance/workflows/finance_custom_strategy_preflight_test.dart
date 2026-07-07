@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:finagent/agent/message.dart';
 import 'package:finagent/agent/tool.dart';
 import 'package:finagent/agent/tool_context.dart';
+import 'package:finagent/domain/finance/workflows/finance_custom_strategy_preflight.dart';
 import 'package:finagent/domain/finance/workflows/finance_workflow_hooks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -1215,6 +1216,200 @@ askUserQuestion:{"contract":"ask-user-question-v1","answers":[{"question":"策�
       );
     },
   );
+
+  test('validated fund strategy continues to observe with fund rows', () {
+    final preflight = FinanceCustomStrategyPreflight();
+    final messages = [
+      Message(
+        role: Role.user,
+        content:
+            'fund workflow\n'
+            'data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"strategy_design","assetClass":"fund","intentMode":"observe","executionMode":"preview_only","safetyBoundary":"fund observation only","evidenceRefs":["fund_nav"],"confirmationState":"none","source":"agent-structured-intent"}}',
+      ),
+      Message(
+        role: Role.assistant,
+        content: '',
+        toolUses: const [
+          ToolUse(
+            id: 'fund-nav',
+            name: 'MarketData',
+            input: {
+              'action': 'query_fund_nav',
+              'symbols': ['110011'],
+              'limit': 60,
+            },
+          ),
+          ToolUse(
+            id: 'validate',
+            name: 'MarketData',
+            input: {'action': 'custom_strategy_validate'},
+          ),
+        ],
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'fund-nav',
+          content: '''
+{
+  "action": "query_fund_nav",
+  "symbol": "110011",
+  "count": 2,
+  "data": [
+    {"code": "110011", "date": "2026-06-24", "nav": 3.91},
+    {"code": "110011", "date": "2026-06-25", "nav": 3.92}
+  ]
+}
+''',
+        ),
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'validate',
+          content: '''
+{
+  "action": "custom_strategy_validate",
+  "status": "validated",
+  "spec": {
+    "name": "fund_dca_drawdown_trend_v1",
+    "assetClass": "fund",
+    "market": "fund",
+    "symbol": "110011",
+    "indicators": [
+      {"id": "navTrend20", "type": "nav_trend", "source": "nav", "params": {"period": 20}}
+    ],
+    "entry": {"all": [{"left": "navTrend20", "op": ">", "right": 0}]}
+  }
+}
+''',
+        ),
+      ),
+    ];
+
+    final calls = preflight.buildToolCalls(messages);
+
+    expect(calls, isNotNull);
+    expect(calls!.single.name, 'MarketData');
+    expect(calls.single.input['action'], 'custom_strategy_observe');
+    expect(
+      calls.single.input['strategySpec'],
+      containsPair('symbol', '110011'),
+    );
+    expect(calls.single.input['fundRows'], isA<List>());
+    expect(calls.single.input['fundRows'], hasLength(2));
+  });
+
+  test('validated fund strategy asks for target before fund observation', () {
+    final preflight = FinanceCustomStrategyPreflight();
+    final messages = [
+      Message(
+        role: Role.user,
+        content:
+            'fund workflow\n'
+            'data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"strategy_design","assetClass":"fund","intentMode":"observe","executionMode":"preview_only","safetyBoundary":"fund observation only","evidenceRefs":[],"confirmationState":"none","source":"agent-structured-intent"}}',
+      ),
+      Message(
+        role: Role.assistant,
+        content: '',
+        toolUses: const [
+          ToolUse(
+            id: 'validate',
+            name: 'MarketData',
+            input: {'action': 'custom_strategy_validate'},
+          ),
+        ],
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'validate',
+          content: '''
+{
+  "action": "custom_strategy_validate",
+  "status": "validated",
+  "spec": {
+    "name": "fund_dca_drawdown_trend_v1",
+    "assetClass": "fund",
+    "market": "fund",
+    "indicators": [
+      {"id": "navTrend20", "type": "nav_trend", "source": "nav", "params": {"period": 20}}
+    ],
+    "entry": {"all": [{"left": "navTrend20", "op": ">", "right": 0}]}
+  }
+}
+''',
+        ),
+      ),
+    ];
+
+    final calls = preflight.buildToolCalls(messages);
+
+    expect(calls, isNotNull);
+    expect(calls!.single.name, 'AskUserQuestion');
+    expect(calls.single.input['questions'], isA<List>());
+  });
+
+  test('validated fund strategy reads nav after structured target answer', () {
+    final preflight = FinanceCustomStrategyPreflight();
+    final messages = [
+      Message(
+        role: Role.user,
+        content:
+            'fund workflow\n'
+            'data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"strategy_design","assetClass":"fund","intentMode":"observe","executionMode":"preview_only","safetyBoundary":"fund observation only","evidenceRefs":[],"confirmationState":"none","source":"agent-structured-intent"}}',
+      ),
+      Message(
+        role: Role.assistant,
+        content: '',
+        toolUses: const [
+          ToolUse(
+            id: 'validate',
+            name: 'MarketData',
+            input: {'action': 'custom_strategy_validate'},
+          ),
+          ToolUse(id: 'ask', name: 'AskUserQuestion', input: {'questions': []}),
+        ],
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'validate',
+          content: '''
+{
+  "action": "custom_strategy_validate",
+  "status": "validated",
+  "spec": {
+    "name": "fund_dca_drawdown_trend_v1",
+    "assetClass": "fund",
+    "market": "fund",
+    "indicators": [
+      {"id": "navTrend20", "type": "nav_trend", "source": "nav", "params": {"period": 20}}
+    ],
+    "entry": {"all": [{"left": "navTrend20", "op": ">", "right": 0}]}
+  }
+}
+''',
+        ),
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'ask',
+          content:
+              'User has answered your questions.\n'
+              'askUserQuestion:{"contract":"ask-user-question-v1","answers":[{"question":"基金标的","answer":"{\\"fundCode\\":\\"110011\\"}","structuredAnswer":{"fundCode":"110011"}}]}',
+        ),
+      ),
+    ];
+
+    final calls = preflight.buildToolCalls(messages);
+
+    expect(calls, isNotNull);
+    expect(calls!.single.name, 'MarketData');
+    expect(calls.single.input['action'], 'query_fund_nav');
+    expect(calls.single.input['symbols'], ['110011']);
+  });
 
   test('fund strategy evidence stops stock strategy tool drift', () {
     final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
