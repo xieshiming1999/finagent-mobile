@@ -656,9 +656,14 @@ class CustomStrategyEngine {
               'Saved strategy artifacts are reusable evidence; trade execution still requires explicit confirmation.',
         },
         'custom_strategy_list': {
-          'topFields': ['artifactContract', 'paths', 'count', 'strategies'],
+          'topFields': [
+            'artifactContract',
+            'count',
+            'strategies',
+            'requestedStrategyIds',
+            'missingStrategyIds',
+          ],
           'rowFields': [
-            'itemPath',
             'strategyId',
             'status',
             'assetClass',
@@ -826,9 +831,7 @@ class CustomStrategyEngine {
         'custom_strategy_save': {
           'requiredFields': ['strategySpec', 'evidence'],
         },
-        'custom_strategy_list': {
-          'requiredFields': [],
-        },
+        'custom_strategy_list': {'requiredFields': []},
         'custom_strategy_compare': {
           'requiredFields': ['strategyIds'],
         },

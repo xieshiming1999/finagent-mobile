@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:finagent/agent/tool_context.dart';
 import 'package:finagent/domain/market/backtest/custom_strategy_engine.dart';
 import 'package:finagent/domain/market/backtest/backtest_core.dart';
 import 'package:finagent/domain/market/backtest/strategy_indicator_calculators.dart';
@@ -142,6 +145,62 @@ void main() {
     expect(
       fundObservation['indicatorCatalogByCategory'],
       containsPair('fund_return_quality', isNotEmpty),
+    );
+  });
+
+  test('custom strategy list summary does not expose storage paths', () {
+    final dir = Directory.systemTemp.createTempSync(
+      'finagent_strategy_list_contract_',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
+    final engine = CustomStrategyEngine();
+    final spec = {
+      'id': 'path_free_summary_v1',
+      'name': 'Path Free Summary',
+      'assetClass': 'stock',
+      'symbols': ['300059'],
+      'indicators': [
+        {
+          'id': 'sma20',
+          'type': 'sma',
+          'params': {'period': 20},
+        },
+      ],
+      'entry': {
+        'all': [
+          {'left': 'close', 'op': '>', 'right': 'sma20'},
+        ],
+      },
+      'exit': {
+        'any': [
+          {'type': 'stop_loss_pct', 'value': 6},
+        ],
+      },
+      'positionSizing': {'type': 'fixed_fraction', 'value': 0.2},
+      'dataRequirements': {'minBars': 40},
+    };
+
+    engine.save(context, spec);
+    final summary = engine.list(context);
+
+    expect(summary['action'], 'custom_strategy_list');
+    expect(summary['detail'], 'summary');
+    expect(summary.containsKey('paths'), isFalse);
+    final rows = summary['strategies'] as List;
+    expect(rows, hasLength(1));
+    expect((rows.first as Map).containsKey('itemPath'), isFalse);
+
+    final full = engine.list(
+      context,
+      detail: 'full',
+      strategyIds: ['path_free_summary_v1'],
+    );
+    expect(full['detail'], 'full');
+    expect(full['paths'], isA<Map>());
+    expect(
+      ((full['strategies'] as List).first as Map)['itemPath'],
+      isA<String>(),
     );
   });
 

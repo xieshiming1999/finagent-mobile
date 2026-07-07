@@ -112,53 +112,55 @@ class StrategyLifecycleStore {
         .where((value) => value.isNotEmpty)
         .toSet();
     final maxRows = _clampListLimit(limit);
-    final allStrategies = rows.map((row) {
-      final spec = _strategySpecOf(row) ?? const <String, dynamic>{};
-      final evidence =
-          _mapOf(row['backtestEvidence']) ??
-          _mapOf(row['evidence']) ??
-          const <String, dynamic>{};
-      return {
-        'strategyId': row['strategyId'],
-        'version': row['version'],
-        'status': row['status'],
-        'updatedAt': row['updatedAt'],
-        'name': spec['name'],
-        'assetClass': spec['assetClass'] ?? spec['market'] ?? 'stock',
-        'symbols': _symbolsOf(spec),
-        'evidenceAction': evidence['action'],
-        'validationSummary':
-            row['validationSummary'] ??
-            _mapOf(row['validationReport'])?['validationSummary'] ??
-            _mapOf(evidence)?['validationSummary'],
-        'validationIssues':
-            row['validationIssues'] ??
-            _mapOf(row['validationReport'])?['validationIssues'] ??
-            _mapOf(evidence)?['validationIssues'] ??
-            const [],
-        'repairPlan':
-            row['repairPlan'] ??
-            _mapOf(row['validationReport'])?['repairPlan'] ??
-            _mapOf(evidence)?['repairPlan'] ??
-            const [],
-        'unsupportedDetails':
-            row['unsupportedDetails'] ??
-            _mapOf(row['validationReport'])?['unsupportedDetails'] ??
-            _mapOf(evidence)?['unsupportedDetails'] ??
-            const [],
-        'dataRequirements':
-            row['dataRequirements'] ??
-            _mapOf(row['validationReport'])?['dataRequirements'] ??
-            _mapOf(evidence)?['dataRequirements'],
-        'dataAndAssumptionSummary':
-            row['dataAndAssumptionSummary'] ?? const <String, dynamic>{},
-        'lifecycle': row['lifecycle'] ?? const <String, dynamic>{},
-        'itemPath': strategyItemPath(
-          context.basePath,
-          '${row['strategyId']}',
-        ),
-      };
-    }).toList(growable: false);
+    final allStrategies = rows
+        .map((row) {
+          final spec = _strategySpecOf(row) ?? const <String, dynamic>{};
+          final evidence =
+              _mapOf(row['backtestEvidence']) ??
+              _mapOf(row['evidence']) ??
+              const <String, dynamic>{};
+          return {
+            'strategyId': row['strategyId'],
+            'version': row['version'],
+            'status': row['status'],
+            'updatedAt': row['updatedAt'],
+            'name': spec['name'],
+            'assetClass': spec['assetClass'] ?? spec['market'] ?? 'stock',
+            'symbols': _symbolsOf(spec),
+            'evidenceAction': evidence['action'],
+            'validationSummary':
+                row['validationSummary'] ??
+                _mapOf(row['validationReport'])?['validationSummary'] ??
+                _mapOf(evidence)?['validationSummary'],
+            'validationIssues':
+                row['validationIssues'] ??
+                _mapOf(row['validationReport'])?['validationIssues'] ??
+                _mapOf(evidence)?['validationIssues'] ??
+                const [],
+            'repairPlan':
+                row['repairPlan'] ??
+                _mapOf(row['validationReport'])?['repairPlan'] ??
+                _mapOf(evidence)?['repairPlan'] ??
+                const [],
+            'unsupportedDetails':
+                row['unsupportedDetails'] ??
+                _mapOf(row['validationReport'])?['unsupportedDetails'] ??
+                _mapOf(evidence)?['unsupportedDetails'] ??
+                const [],
+            'dataRequirements':
+                row['dataRequirements'] ??
+                _mapOf(row['validationReport'])?['dataRequirements'] ??
+                _mapOf(evidence)?['dataRequirements'],
+            'dataAndAssumptionSummary':
+                row['dataAndAssumptionSummary'] ?? const <String, dynamic>{},
+            'lifecycle': row['lifecycle'] ?? const <String, dynamic>{},
+            'itemPath': strategyItemPath(
+              context.basePath,
+              '${row['strategyId']}',
+            ),
+          };
+        })
+        .toList(growable: false);
     final filtered = requested.isEmpty
         ? allStrategies
         : allStrategies
@@ -182,9 +184,7 @@ class StrategyLifecycleStore {
       'hasMore': filtered.length > selected.length,
       'requestedStrategyIds': requested.toList(growable: false),
       'missingStrategyIds': requested
-          .where(
-            (id) => allStrategies.every((row) => row['strategyId'] != id),
-          )
+          .where((id) => allStrategies.every((row) => row['strategyId'] != id))
           .toList(growable: false),
       'runnableCount': allStrategies
           .where((row) => _mapOf(row['lifecycle'])?['runnable'] == true)
@@ -193,7 +193,8 @@ class StrategyLifecycleStore {
           .where((row) => row['status'] == 'invalid')
           .length,
       'artifactContract': strategyArtifactContract,
-      'paths': strategyArtifactPaths(context.basePath).toJson(),
+      if (detail == 'full')
+        'paths': strategyArtifactPaths(context.basePath).toJson(),
       'runnableStrategies': runnableRows,
       'strategies': summary,
       'nextActions': const [
@@ -761,7 +762,6 @@ class StrategyLifecycleStore {
       'dataAndAssumptionSummary': _compactDataAndAssumptionSummary(
         row['dataAndAssumptionSummary'],
       ),
-      'itemPath': row['itemPath'],
     };
   }
 
