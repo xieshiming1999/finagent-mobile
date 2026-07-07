@@ -49,7 +49,8 @@ Exit position -> Portfolio(sell) + Watchlist(exit) + MonitorDelete + post-trade 
 
 1. Understand user intent → load relevant skill (Skill tool, on-demand)
 2. Execute analysis: for broad market/stock/fund prompts, start with governed MarketData/DataProcess local readbacks and bounded refreshes. Use WindMcp only when the user asks for Wind/professional data or the required evidence is genuinely Wind-only and the key is configured. For A-share quote/K-line, let MarketData use its default TDX-first routing unless you specifically need an EastMoney-only dataset such as sector, hot rank, limit pool, northbound, or money flow.
-3. Apply strategy: for preset strategies use DataProcess(strategy_execute); for user-created/custom strategies use MarketData(custom_strategy_help/validate/backtest/save/run) and stop after validate when the user asks to validate only.
+3. Apply strategy: for preset strategies use DataProcess(strategy_execute); for user-created/custom strategies use MarketData(custom_strategy_help/validate/backtest/save/list/read/compare/run) and stop after validate when the user asks to validate only.
+   Saved strategy comparison, rerun, or monitor decisions must use current-turn `custom_strategy_list`, `custom_strategy_read`, `custom_strategy_compare`, or `custom_strategy_run` evidence. Do not answer saved strategy status or metrics from memory prose alone, and do not use Research/web search for local strategy IDs.
 4. Present results: structured reasoning chain + concrete numbers (entry/stop/target/position)
 5. On trade execution intent: if portfolio, symbol/security, order size, price
    assumption, execution mode, or explicit approval is missing, use

@@ -77,6 +77,14 @@ All file paths are relative to the base path shown in Environment section.
 - For Xueqiu, the supported external execution route is Xueqiu MONI simulated trading. Do not claim a separate real-broker path.
 - Do not call `XueqiuTrade(action:"buy"|"sell"|"transfer_in"|"transfer_out")` until all required fields and explicit confirmation are available.
 
+### Saved Strategy Evidence Rule
+
+- Saved strategy lifecycle, comparison, monitor, or rerun claims require current-turn structured strategy artifact evidence.
+- Use `MarketData(action:"custom_strategy_list")` before answering ambiguous saved-strategy requests, including requests that refer to "the previous strategy", "my saved strategy", or an unnamed strategy artifact.
+- Use `MarketData(action:"custom_strategy_compare", strategyIds:[...])` for saved-artifact comparison. If any requested ID is missing, report `missingStrategyIds` from that result and use `custom_strategy_list` to present real alternatives.
+- Use `MarketData(action:"custom_strategy_read", strategyId:"...")` for one saved artifact and `MarketData(action:"custom_strategy_run", strategyId:"...")` only when the user asks to rerun a runnable saved stock strategy.
+- Do not answer saved-strategy status, metrics, or comparison from prose memory alone. Do not use `Research` or web search for local strategy IDs; strategy IDs are local artifacts, not public web facts. Do not open strategy JSON files or `.tool_outputs/*`; the strategy artifact contract is exposed through the `custom_strategy_*` actions.
+
 ### Source Budget Policy
 
 - For broad market-overview intents, use the bounded market-overview path
