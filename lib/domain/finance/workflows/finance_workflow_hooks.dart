@@ -421,6 +421,11 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       if (portfolioMonitor != null) return portfolioMonitor;
     }
     if (start >= 0) {
+      final savedRunReadback = _customStrategyEvidence.savedRunReadback(
+        messages: messages,
+        turnStartIndex: start,
+      );
+      if (savedRunReadback != null) return savedRunReadback;
       final runComparisonEvidence = _customStrategyEvidence.runComparison(
         messages: messages,
         turnStartIndex: start,
@@ -633,6 +638,18 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
             'Skipped: saved custom strategy already has a successful custom_strategy_run result in this turn.',
       );
     }
+    final savedRunReadback = _customStrategyEvidence.savedRunReadback(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+    );
+    if (savedRunReadback != null &&
+        toolCalls.any(_isPostSavedStrategyRunOverrun)) {
+      return DomainToolInterception(
+        answer: savedRunReadback,
+        skippedReason:
+            'Skipped: saved custom strategy already has successful custom_strategy_read/run evidence for this turn.',
+      );
+    }
     if (saveEvidence != null &&
         customStrategyPolicy.shouldStopAfterSave(
           state: workflowState,
@@ -755,6 +772,25 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
           (toolCall.input['action'] == 'custom_strategy_save' ||
               toolCall.input['action'] == 'custom_strategy_run'),
     );
+  }
+
+  bool _isPostSavedStrategyRunOverrun(ToolUse toolCall) {
+    if (toolCall.name == 'MarketData') {
+      final action = '${toolCall.input['action'] ?? ''}';
+      return action == 'custom_strategy_run' ||
+          action == 'custom_strategy_save' ||
+          action.startsWith('query_') ||
+          action == 'kline' ||
+          action == 'quote' ||
+          action == 'price' ||
+          action == 'technical_indicator';
+    }
+    return toolCall.name == 'DataProcess' ||
+        toolCall.name == 'Read' ||
+        toolCall.name == 'Grep' ||
+        toolCall.name == 'Glob' ||
+        toolCall.name == 'LS' ||
+        customStrategyPolicy.isBypassTool(toolCall.name);
   }
 
   bool _hasPostCustomStrategySaveBlock(List<Message> messages, int start) {

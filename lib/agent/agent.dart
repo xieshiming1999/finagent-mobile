@@ -1275,6 +1275,13 @@ class Agent {
   ) async {
     const maxPreflightBatches = 4;
     for (var i = 0; i < maxPreflightBatches; i++) {
+      final existingAnswer = _domainWorkflowHooks.buildPreflightAnswer(
+        messages,
+      );
+      if (existingAnswer != null) {
+        await _finishTurnWithAssistantText(existingAnswer, controller);
+        return true;
+      }
       final calls = _domainWorkflowHooks.buildPreflightToolCalls(messages);
       if (calls == null || calls.isEmpty) return false;
       final assistantMsg = Message(

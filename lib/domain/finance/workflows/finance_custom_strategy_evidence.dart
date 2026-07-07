@@ -86,6 +86,51 @@ class FinanceCustomStrategyEvidence {
     return null;
   }
 
+  String? savedRunReadback({
+    required List<Message> messages,
+    required int turnStartIndex,
+  }) {
+    Map<String, dynamic>? read;
+    Map<String, dynamic>? save;
+    Map<String, dynamic>? run;
+    for (final message in messages.skip(turnStartIndex)) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      final decoded = _decodeResultMap(result.content);
+      if (decoded == null) continue;
+      if (decoded['action'] == 'custom_strategy_read') read = decoded;
+      if (decoded['action'] == 'custom_strategy_save') save = decoded;
+      if (decoded['action'] == 'custom_strategy_run' &&
+          decoded['status'] == 'backtested') {
+        run = decoded;
+      }
+    }
+    if (run == null) return null;
+    final strategyId = run['strategyId'] ?? read?['strategyId'] ?? '-';
+    final spec = read?['strategySpec'];
+    final lifecycle = save?['lifecycle'];
+    final lifecycleMap = lifecycle is Map ? lifecycle : const {};
+    final metrics = run['metrics'];
+    final metricsMap = metrics is Map ? metrics : const {};
+    final assumptions = run['assumptions'];
+    final assumptionMap = assumptions is Map ? assumptions : const {};
+    return [
+      '已完成已保存策略的读取与重跑，并停止追加保存、文件读取、脚本、重复运行或交易工具调用。本回答只基于 `custom_strategy_read` 与 `custom_strategy_run` 的结构化结果。',
+      '',
+      '- strategyId：$strategyId。',
+      '- 标的：${run['symbol'] ?? _customStrategySymbol(spec) ?? '-'}。',
+      '- 保存状态：${save?['status'] ?? lifecycleMap['status'] ?? read?['status'] ?? read?['savedStatus'] ?? '-'}；可运行：${lifecycleMap['runnable'] ?? read?['runnable'] ?? '-'}。',
+      '- 数据覆盖：${_strategyDataCoverageSummary(run)}。',
+      '- 交易次数：${metricsMap['tradeCount'] ?? metricsMap['trades'] ?? run['trades'] ?? 0}。',
+      '- 总收益率：${metricsMap['totalReturnPct'] ?? metricsMap['totalReturn'] ?? run['totalReturn'] ?? '-'}%。',
+      '- 最大回撤：${metricsMap['maxDrawdownPct'] ?? metricsMap['maxDrawdown'] ?? run['maxDrawdown'] ?? '-'}%。',
+      '- 胜率：${metricsMap['winRatePct'] ?? metricsMap['winRate'] ?? run['winRate'] ?? '-'}%。',
+      '- 佣金/滑点：${assumptionMap['commissionPct'] ?? '-'}% / ${assumptionMap['slippagePct'] ?? '-'}%。',
+      '',
+      '结果边界：${save == null ? '未创建新策略版本' : '已完成本轮保存/更新后未继续创建额外策略版本'}，未创建监控，未写入观察池，未调用 Portfolio、XueqiuTrade 或真实交易工具。若需要优化参数、保存新版本或创建监控，必须作为新的明确请求重新进入验证边界。',
+    ].join('\n');
+  }
+
   String? comparison({
     required List<Message> messages,
     required int turnStartIndex,

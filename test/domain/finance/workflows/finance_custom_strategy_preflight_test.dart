@@ -2355,6 +2355,104 @@ askUserQuestion:{"contract":"ask-user-question-v1","answers":[{"question":"策�
     expect(calls.single.input['symbols'], ['600519']);
   });
 
+  test('saved strategy read and run evidence finishes rerun workflow', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+    final answer = hooks.buildPreflightAnswer([
+      Message(
+        role: Role.user,
+        content:
+            'rerun saved strategy\n'
+            'data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"strategy_review","assetClass":"stock","intentMode":"rerun","executionMode":"preview_only","safetyBoundary":"reuse saved strategy artifact","evidenceRefs":["custom_strategy_read","custom_strategy_run"],"confirmationState":"none","subject":"custom_low_risk_entry_v1","source":"agent-structured-intent"}}',
+      ),
+      Message(
+        role: Role.assistant,
+        content: '',
+        toolUses: const [
+          ToolUse(
+            id: 'read',
+            name: 'MarketData',
+            input: {'action': 'custom_strategy_read'},
+          ),
+          ToolUse(
+            id: 'run',
+            name: 'MarketData',
+            input: {'action': 'custom_strategy_run'},
+          ),
+        ],
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(toolUseId: 'read', content: _strategyReadResult),
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(toolUseId: 'run', content: _strategyRunResult),
+      ),
+    ]);
+
+    expect(answer, isNotNull);
+    expect(answer, contains('已完成已保存策略的读取与重跑'));
+    expect(answer, contains('custom_low_risk_entry_v1'));
+    expect(answer, contains('未调用 Portfolio、XueqiuTrade'));
+  });
+
+  test('saved strategy run evidence stops repeated wrong identity rerun', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+    final messages = [
+      Message(
+        role: Role.user,
+        content:
+            'rerun saved strategy\n'
+            'data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"strategy_review","assetClass":"stock","intentMode":"rerun","executionMode":"preview_only","safetyBoundary":"reuse saved strategy artifact","evidenceRefs":["custom_strategy_read","custom_strategy_run"],"confirmationState":"none","subject":"custom_low_risk_entry_v1","source":"agent-structured-intent"}}',
+      ),
+      Message(
+        role: Role.assistant,
+        content: '',
+        toolUses: const [
+          ToolUse(
+            id: 'read',
+            name: 'MarketData',
+            input: {'action': 'custom_strategy_read'},
+          ),
+          ToolUse(
+            id: 'run',
+            name: 'MarketData',
+            input: {'action': 'custom_strategy_run'},
+          ),
+        ],
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(toolUseId: 'read', content: _strategyReadResult),
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(toolUseId: 'run', content: _strategyRunResult),
+      ),
+    ];
+
+    final interception = hooks.interceptToolCalls(
+      messages: messages,
+      turnStartIndex: 0,
+      prompt: messages.first.content,
+      toolCalls: const [
+        ToolUse(
+          id: 'wrong-run',
+          name: 'MarketData',
+          input: {
+            'action': 'custom_strategy_run',
+            'strategyId': '300059',
+            'symbols': ['300059'],
+          },
+        ),
+      ],
+    );
+
+    expect(interception, isNotNull);
+    expect(interception!.answer, contains('已完成已保存策略的读取与重跑'));
+    expect(interception.skippedReason, contains('successful custom_strategy'));
+  });
+
   test('portfolio rank evidence does not suppress structured backtest', () {
     final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
     final messages = [
@@ -2444,6 +2542,50 @@ askUserQuestion:{"contract":"ask-user-question-v1","answers":[{"question":"策�
     expect(interception.skippedReason, contains('custom_strategy_rank'));
   });
 }
+
+const _strategyReadResult = '''
+{
+  "action": "custom_strategy_read",
+  "strategyId": "custom_low_risk_entry_v1",
+  "status": "backtested",
+  "savedStatus": "backtested",
+  "runnable": true,
+  "strategySpec": {
+    "id": "custom_low_risk_entry_v1",
+    "symbol": "300059",
+    "symbols": ["300059"],
+    "indicators": [{"id": "sma20", "type": "sma"}]
+  }
+}
+''';
+
+const _strategyRunResult = '''
+{
+  "action": "custom_strategy_run",
+  "strategyId": "custom_low_risk_entry_v1",
+  "symbol": "300059",
+  "status": "backtested",
+  "actualStartDate": "2025-07-08",
+  "actualEndDate": "2026-07-01",
+  "bars": 238,
+  "metrics": {
+    "tradeCount": 7,
+    "totalReturnPct": -4.18,
+    "maxDrawdownPct": 7.47,
+    "winRatePct": 14.29
+  },
+  "assumptions": {
+    "commissionPct": 0.1,
+    "slippagePct": 0.05
+  },
+  "dataCoverage": {
+    "source": "local kline_daily",
+    "rows": 238,
+    "actualStartDate": "2025-07-08",
+    "actualEndDate": "2026-07-01"
+  }
+}
+''';
 
 const _rankResult = '''
 {
