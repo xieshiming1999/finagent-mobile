@@ -758,7 +758,6 @@ class StrategyLifecycleStore {
       'validationIssueCount': _listLength(validationIssues),
       'repairStepCount': _listLength(repairPlan),
       'unsupportedCount': _listLength(unsupportedDetails),
-      'dataRequirements': row['dataRequirements'],
       'dataAndAssumptionSummary': _compactDataAndAssumptionSummary(
         row['dataAndAssumptionSummary'],
       ),

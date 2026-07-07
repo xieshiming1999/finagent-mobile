@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:finagent/agent/tool_context.dart';
@@ -192,6 +193,8 @@ void main() {
     final rows = summary['strategies'] as List;
     expect(rows, hasLength(1));
     expect((rows.first as Map).containsKey('itemPath'), isFalse);
+    expect((rows.first as Map).containsKey('dataRequirements'), isFalse);
+    expect(jsonEncode(summary).length, lessThan(9000));
 
     final full = engine.list(
       context,
