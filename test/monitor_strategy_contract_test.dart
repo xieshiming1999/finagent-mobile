@@ -246,8 +246,9 @@ return {template:'fund_rule_monitor', value: rows[rows.length - 1].nav, signal:'
       final templateDir = Directory(
         '${dir.path}/bundle/skills/monitor-templates',
       )..createSync(recursive: true);
-      File('${templateDir.path}/portfolio_rebalance_monitor.js')
-          .writeAsStringSync('''
+      File(
+        '${templateDir.path}/portfolio_rebalance_monitor.js',
+      ).writeAsStringSync('''
 var strategyId = '{{strategy_id}}';
 var portfolioEvidence = {{portfolio_evidence}};
 var rebalanceDraft = {{rebalance_draft}};
@@ -277,6 +278,7 @@ return {template:'portfolio_rebalance_monitor', signal:'review_rebalance', selec
                 },
               },
               'rebalanceDraft': {
+                'mode': 'equal_weight_top_n',
                 'rebalanceInterval': 'monthly',
                 'positions': [
                   {'symbol': '300059', 'targetWeight': 0.4},
@@ -294,7 +296,10 @@ return {template:'portfolio_rebalance_monitor', signal:'review_rebalance', selec
       expect(store.monitors.single.strategyId, 'ranked_portfolio_v1');
       expect(store.monitors.single.script, contains('portfolioEvidence'));
       expect(store.monitors.single.script, contains('rebalanceDraft'));
-      expect(store.monitors.single.script, contains('portfolio_rebalance_monitor'));
+      expect(
+        store.monitors.single.script,
+        contains('portfolio_rebalance_monitor'),
+      );
       expect(
         store.monitors.single.strategyRules,
         containsPair('portfolioEvidence', isA<Map>()),
@@ -303,6 +308,62 @@ return {template:'portfolio_rebalance_monitor', signal:'review_rebalance', selec
         store.monitors.single.strategyRules,
         containsPair('rebalanceDraft', isA<Map>()),
       );
+    },
+  );
+
+  test(
+    'MonitorCreate rejects portfolio_rebalance_monitor without ranked portfolio evidence modes',
+    () async {
+      final dir = await Directory.systemTemp.createTemp(
+        'monitor-portfolio-rebalance-weak-',
+      );
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final templateDir = Directory(
+        '${dir.path}/bundle/skills/monitor-templates',
+      )..createSync(recursive: true);
+      File(
+        '${templateDir.path}/portfolio_rebalance_monitor.js',
+      ).writeAsStringSync('''
+var strategyId = '{{strategy_id}}';
+var portfolioEvidence = {{portfolio_evidence}};
+var rebalanceDraft = {{rebalance_draft}};
+return {template:'portfolio_rebalance_monitor', strategyId:strategyId, selectedCount:rebalanceDraft.positions.length};
+''');
+      final store = MonitorStore(memoryDir: dir.path)..load();
+      final scheduler = MonitorScheduler(
+        store: store,
+        serviceBaseUrl: '',
+        basePath: dir.path,
+      );
+
+      final result = await MonitorCreateTool(store: store, scheduler: scheduler)
+          .call(
+            'create-weak-portfolio-rebalance-template',
+            {
+              'name': 'Weak portfolio rebalance review',
+              'template': 'portfolio_rebalance_monitor',
+              'strategyId': 'ranked_portfolio_v1',
+              'portfolioEvidence': {
+                'selectedCount': 2,
+                'tradeBoundary': 'review_only',
+              },
+              'rebalanceDraft': {
+                'rebalanceInterval': 'monthly',
+                'positions': [
+                  {'symbol': '300059', 'targetWeight': 0.4},
+                  {'symbol': '600519', 'targetWeight': 0.4},
+                ],
+              },
+              'user_prompt': 'portfolio rebalance monitor',
+              'description': 'Weak evidence should be rejected',
+            },
+            ToolContext(basePath: dir.path, serviceBaseUrl: ''),
+          );
+
+      expect(result.isError, isTrue);
+      expect(result.content, contains('custom_strategy_list/read'));
+      expect(result.content, contains('custom_strategy_rank'));
+      expect(store.monitors, isEmpty);
     },
   );
 

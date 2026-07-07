@@ -238,6 +238,16 @@ Choose `display` to match the return shape:
         if (input['rebalanceDraft'] != null)
           'rebalanceDraft': input['rebalanceDraft'],
       };
+      if (templateName == 'portfolio_rebalance_monitor') {
+        final error = _validatePortfolioRebalanceMonitorInput(templateInput);
+        if (error != null) {
+          return ToolResult(
+            toolUseId: toolUseId,
+            content: error,
+            isError: true,
+          );
+        }
+      }
       final resolved = _resolveTemplate(templateName, templateInput, context);
       if (resolved.startsWith('TEMPLATE_UNAVAILABLE:')) {
         return ToolResult(
@@ -356,6 +366,30 @@ Choose `display` to match the return shape:
     script = script.replaceAll(RegExp(r'\{\{(\w+)\}\}'), 'null');
 
     return script;
+  }
+
+  String? _validatePortfolioRebalanceMonitorInput(Map<String, dynamic> input) {
+    final rules = _normalizeStrategyRules(input);
+    final portfolioEvidence = rules?['portfolioEvidence'] is Map
+        ? Map<String, dynamic>.from(rules!['portfolioEvidence'] as Map)
+        : <String, dynamic>{};
+    final rebalanceDraft = rules?['rebalanceDraft'] is Map
+        ? Map<String, dynamic>.from(rules!['rebalanceDraft'] as Map)
+        : <String, dynamic>{};
+    final positions = rebalanceDraft['positions'];
+    final strategyId =
+        '${input['strategyId'] ?? rules?['id'] ?? rules?['strategyId'] ?? rebalanceDraft['strategyId'] ?? portfolioEvidence['strategyId'] ?? ''}'
+            .trim();
+    if (strategyId.isEmpty) {
+      return 'portfolio_rebalance_monitor requires strategyId.';
+    }
+    if (positions is! List || positions.isEmpty) {
+      return 'portfolio_rebalance_monitor requires rebalanceDraft.positions.';
+    }
+    if (portfolioEvidence['mode'] == null || rebalanceDraft['mode'] == null) {
+      return 'portfolio_rebalance_monitor requires structured portfolioEvidence.mode and rebalanceDraft.mode from MarketData(action:"custom_strategy_rank") or MarketData(action:"custom_strategy_read"). Use custom_strategy_list/read to retrieve the saved ranked strategy artifact before creating the monitor; do not invent portfolio evidence from quotes or monitor history.';
+    }
+    return null;
   }
 
   Map<String, dynamic> _expandTemplateParams(

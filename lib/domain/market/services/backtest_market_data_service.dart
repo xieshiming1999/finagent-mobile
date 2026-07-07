@@ -666,10 +666,11 @@ class BacktestMarketDataService {
     Map<String, dynamic> input,
     ToolContext context,
   ) async {
-    final spec = input['strategySpec'];
+    final spec =
+        input['strategySpec'] ?? _savedStrategySpecForInput(input, context);
     if (spec == null) {
       return const BacktestServiceResponse(
-        content: 'strategySpec required for custom_strategy_rank',
+        content: 'strategySpec or strategyId required for custom_strategy_rank',
         isError: true,
       );
     }
@@ -732,6 +733,19 @@ class BacktestMarketDataService {
     } catch (error) {
       return BacktestServiceResponse(content: '$error', isError: true);
     }
+  }
+
+  Object? _savedStrategySpecForInput(
+    Map<String, dynamic> input,
+    ToolContext context,
+  ) {
+    final params = _mapOf(input['params']) ?? const <String, dynamic>{};
+    final strategyId =
+        '${input['strategyId'] ?? input['strategy_id'] ?? params['strategyId'] ?? params['strategy_id'] ?? ''}'
+            .trim();
+    if (strategyId.isEmpty) return null;
+    final record = _customStrategyEngine.readSaved(context, strategyId);
+    return record['strategySpec'] ?? record['spec'];
   }
 
   Future<BacktestServiceResponse> customStrategySave(
@@ -1114,6 +1128,7 @@ class BacktestMarketDataService {
                 'strategyIds': [strategyId],
               },
             ],
+      ..._portfolioRankReadbackFields(summary, strategyId),
     };
   }
 
@@ -1177,12 +1192,13 @@ class BacktestMarketDataService {
       'repairPlan': record['repairPlan'] ?? const [],
       'workflowAdvice':
           'This saved strategy is not a runnable stock backtest artifact. Use this readback evidence directly, or create/save a backtested stock StrategySpec before requesting executable rerun.',
-      ..._portfolioRankReadbackFields(summary),
+      ..._portfolioRankReadbackFields(summary, strategyId),
     };
   }
 
   Map<String, dynamic> _portfolioRankReadbackFields(
     Map<String, dynamic> summary,
+    String strategyId,
   ) {
     final portfolioEvidence = _mapOf(summary['portfolioEvidence']);
     final rebalanceDraft = _mapOf(summary['rebalanceDraft']);
@@ -1238,6 +1254,25 @@ class BacktestMarketDataService {
         'create_monitor',
         'request_trade_preparation_after_confirmation',
       ],
+      'monitorAction': {
+        'tool': 'MonitorCreate',
+        'template': 'portfolio_rebalance_monitor',
+        'strategyId': strategyId,
+        'requiredFields': const [
+          'strategyId',
+          'portfolioEvidence',
+          'rebalanceDraft',
+        ],
+        'evidenceFields': const [
+          'portfolioEvidence',
+          'rebalanceDraft',
+          'portfolioDrawdownBudgetEvidence',
+          'concentrationEvidence',
+        ],
+        'boundary':
+            'Review-only portfolio rebalance monitor. It must not create per-symbol strategy_signal monitors, Portfolio orders, XueqiuTrade actions, broker orders, or automatic rebalances.',
+        'readbackAction': {'tool': 'MonitorList', 'strategyId': strategyId},
+      },
       'tradeBoundary':
           'Portfolio rank readback only; no simulated or real orders without explicit confirmation, separate sizing, and non-writing preview.',
     };
@@ -1340,6 +1375,29 @@ class BacktestMarketDataService {
           'tradeBoundary': rebalanceDraft['tradeBoundary'],
           'evidenceSource':
               'See portfolioEvidence for aggregate metrics, concentration, drawdown budget, validation, and rebalance simulation.',
+        },
+      if (portfolioEvidence != null && rebalanceDraft != null)
+        'monitorAction': {
+          'tool': 'MonitorCreate',
+          'template': 'portfolio_rebalance_monitor',
+          'strategyId': '${full['strategyId'] ?? ''}',
+          'requiredFields': const [
+            'strategyId',
+            'portfolioEvidence',
+            'rebalanceDraft',
+          ],
+          'evidenceFields': const [
+            'portfolioEvidence',
+            'rebalanceDraft',
+            'portfolioDrawdownBudgetEvidence',
+            'concentrationEvidence',
+          ],
+          'boundary':
+              'Review-only portfolio rebalance monitor. Use MonitorCreate(template:"portfolio_rebalance_monitor") with the returned portfolioEvidence and rebalanceDraft. Do not write raw monitor script, per-symbol strategy_signal monitors, Portfolio orders, XueqiuTrade actions, broker orders, or automatic rebalances.',
+          'readbackAction': {
+            'tool': 'MonitorList',
+            'strategyId': '${full['strategyId'] ?? ''}',
+          },
         },
       'allCandidates': _compactList(
         full['allCandidates'],

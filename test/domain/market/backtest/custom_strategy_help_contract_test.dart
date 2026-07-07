@@ -6,6 +6,7 @@ import 'package:finagent/domain/market/backtest/custom_strategy_engine.dart';
 import 'package:finagent/domain/market/backtest/backtest_core.dart';
 import 'package:finagent/domain/market/backtest/strategy_indicator_calculators.dart';
 import 'package:finagent/domain/market/backtest/strategy_spec_validator.dart';
+import 'package:finagent/domain/market/services/backtest_market_data_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -287,6 +288,167 @@ void main() {
     });
   });
 
+  test(
+    'custom strategy read exposes portfolio rebalance monitor contract',
+    () async {
+      final dir = Directory.systemTemp.createTempSync(
+        'finagent_ranked_strategy_read_contract_',
+      );
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
+      final service = BacktestMarketDataService(
+        candleLoader: (symbol, period, context) async =>
+            _relativeStrengthCandles(symbol),
+      );
+      final spec = {
+        'id': 'ranked_portfolio_read_v1',
+        'name': 'Ranked Portfolio Read',
+        'assetClass': 'stock',
+        'symbols': ['600519', '000858', '300059'],
+        'dataRequirements': {'minBars': 60},
+        'indicators': [
+          {
+            'id': 'rsi14',
+            'type': 'rsi',
+            'params': {'period': 14},
+          },
+        ],
+        'entry': {
+          'all': [
+            {'left': 'rsi14', 'op': '>', 'right': 50},
+          ],
+        },
+        'exit': {
+          'any': [
+            {'type': 'stop_loss_pct', 'value': 6},
+          ],
+        },
+        'positionSizing': {'type': 'fixed_fraction', 'value': 0.2},
+      };
+      final evidence = {
+        'action': 'custom_strategy_rank',
+        'status': 'ranked',
+        'portfolioEvidence': {
+          'mode': 'equal_weight_selected_metrics',
+          'selectedCount': 2,
+          'aggregateMetrics': {
+            'selectedSymbols': ['600519', '000858'],
+            'expectedReturnPct': 8.4,
+            'portfolioMaxDrawdownPct': -5.2,
+          },
+          'concentrationEvidence': {
+            'mode': 'portfolio_concentration_v1',
+            'status': 'within_cap',
+            'effectivePositionCount': 2,
+          },
+        },
+        'rebalanceDraft': {
+          'mode': 'equal_weight_top_n',
+          'rebalanceInterval': 'monthly',
+          'maxPositionWeight': 0.4,
+          'positions': [
+            {'symbol': '600519', 'targetWeight': 0.4, 'weightCapped': true},
+            {'symbol': '000858', 'targetWeight': 0.4},
+          ],
+          'tradeBoundary': 'evidence only; confirmation required before order',
+        },
+      };
+
+      final save = await service.customStrategySave({
+        'strategySpec': spec,
+        'evidence': evidence,
+      }, context);
+      expect(save.isError, isFalse);
+      expect(save.content, isA<Map>());
+      expect((save.content as Map)['status'], 'ranked');
+
+      final read = await service.customStrategyRead({
+        'strategyId': 'ranked_portfolio_read_v1',
+      }, context);
+      expect(read.isError, isFalse);
+      final readback = read.content as Map;
+      expect(readback['action'], 'custom_strategy_read');
+      expect(readback['strategyId'], 'ranked_portfolio_read_v1');
+      expect(readback['runnable'], isFalse);
+      expect(readback['readbackMode'], 'portfolio_rank_readback');
+      expect(readback['evidenceMode'], 'portfolio_rank_evidence');
+      expect(readback['portfolioEvidence'], isA<Map>());
+      expect(readback['rebalanceDraft'], isA<Map>());
+      expect(
+        readback['monitorAction'],
+        containsPair('template', 'portfolio_rebalance_monitor'),
+      );
+      expect(
+        readback['monitorAction'],
+        containsPair('strategyId', 'ranked_portfolio_read_v1'),
+      );
+      expect(
+        '${(readback['monitorAction'] as Map)['boundary']}',
+        allOf(
+          contains('Review-only portfolio rebalance monitor'),
+          contains('must not create per-symbol strategy_signal monitors'),
+        ),
+      );
+
+      final run = await service.customStrategyRun('', {
+        'strategyId': 'ranked_portfolio_read_v1',
+      }, context);
+      expect(run.isError, isFalse);
+      final runReadback = run.content as Map;
+      expect(runReadback['status'], 'readback_only');
+      expect(
+        runReadback['monitorAction'],
+        containsPair('template', 'portfolio_rebalance_monitor'),
+      );
+      final rerank = await service.customStrategyRank(
+        ['600519', '000858', '300059'],
+        {
+          'strategyId': 'ranked_portfolio_read_v1',
+          'topN': 2,
+          'rankingMetric': 'relative_strength_pct',
+          'rebalanceInterval': 'monthly',
+          'detail': 'full',
+        },
+        context,
+      );
+      expect(rerank.isError, isFalse);
+      final reranked = rerank.content as Map;
+      expect(reranked['action'], 'custom_strategy_rank');
+      expect(reranked['status'], 'ranked');
+      expect(
+        reranked['portfolioEvidence'],
+        containsPair('mode', 'equal_weight_selected_metrics'),
+      );
+      final compactRerank = await service.customStrategyRank(
+        ['600519', '000858', '300059'],
+        {
+          'strategyId': 'ranked_portfolio_read_v1',
+          'topN': 2,
+          'rankingMetric': 'relative_strength_pct',
+          'rebalanceInterval': 'monthly',
+        },
+        context,
+      );
+      expect(compactRerank.isError, isFalse);
+      final compact = compactRerank.content as Map;
+      expect(
+        compact['monitorAction'],
+        containsPair('template', 'portfolio_rebalance_monitor'),
+      );
+      expect(
+        compact['monitorAction'],
+        containsPair('strategyId', 'ranked_portfolio_read_v1'),
+      );
+      expect(
+        '${(compact['monitorAction'] as Map)['boundary']}',
+        allOf(
+          contains('Use MonitorCreate(template:"portfolio_rebalance_monitor")'),
+          contains('Do not write raw monitor script'),
+        ),
+      );
+    },
+  );
+
   test('vortex_spread is a validated executable strategy indicator', () {
     final candles = List<Candle>.generate(36, (index) {
       final close = 10.0 + index * 0.4;
@@ -340,5 +502,24 @@ void main() {
     expect(values.take(14), everyElement(isNull));
     expect(values.skip(14).whereType<double>(), isNotEmpty);
     expect(values.last, greaterThan(0));
+  });
+}
+
+List<Candle> _relativeStrengthCandles(String symbol) {
+  final drift = symbol == '300059'
+      ? 0.18
+      : symbol == '000858'
+      ? 0.1
+      : 0.04;
+  return List<Candle>.generate(80, (index) {
+    final close = 10 + index * drift + (index % 5) * 0.03;
+    return Candle(
+      date: '2026-01-${(index % 28 + 1).toString().padLeft(2, '0')}',
+      open: close - 0.05,
+      high: close + 0.2,
+      low: close - 0.2,
+      close: close,
+      volume: 1000 + index * 10,
+    );
   });
 }
