@@ -200,6 +200,88 @@ class FinanceCustomStrategyEvidence {
     ].join('\n');
   }
 
+  String? portfolioRank({
+    required List<Message> messages,
+    required int turnStartIndex,
+  }) {
+    for (final message in messages.skip(turnStartIndex).toList().reversed) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      final decoded = _decodeResultMap(result.content);
+      if (decoded == null) continue;
+      if (decoded['action'] != 'custom_strategy_rank') continue;
+      final ranked = decoded['ranked'] is List
+          ? (decoded['ranked'] as List).whereType<Map>().toList()
+          : const <Map>[];
+      final selected = ranked
+          .where((row) {
+            final selectedForDraft = row['selectedForDraft'];
+            final selection = row['selectionEvidence'];
+            return selectedForDraft == true ||
+                (selection is Map && selection['selectedForDraft'] == true);
+          })
+          .take(3)
+          .toList();
+      final rows = selected.isNotEmpty ? selected : ranked.take(3).toList();
+      final portfolio = decoded['portfolioEvidence'] is Map
+          ? decoded['portfolioEvidence'] as Map
+          : const {};
+      final risk = portfolio['portfolioRiskEvidence'] is Map
+          ? portfolio['portfolioRiskEvidence'] as Map
+          : const {};
+      final metrics = portfolio['aggregateMetrics'] is Map
+          ? portfolio['aggregateMetrics'] as Map
+          : const {};
+      final concentration = portfolio['concentrationEvidence'] is Map
+          ? portfolio['concentrationEvidence'] as Map
+          : const {};
+      final drawdown = portfolio['portfolioDrawdownBudgetEvidence'] is Map
+          ? portfolio['portfolioDrawdownBudgetEvidence'] as Map
+          : const {};
+      final rebalance = decoded['rebalanceDraft'] is Map
+          ? decoded['rebalanceDraft'] as Map
+          : const {};
+      final excluded = decoded['excluded'] is List
+          ? (decoded['excluded'] as List).whereType<Map>().take(5).toList()
+          : const <Map>[];
+      final failure = decoded['candidateFailureEvidence'] is Map
+          ? decoded['candidateFailureEvidence'] as Map
+          : const {};
+      return [
+        '## 自选股策略组合观察方案',
+        '',
+        '已取得 `custom_strategy_rank` 结构化组合排序证据，并停止追加文件读取、脚本、单股重跑、保存、监控或交易工具调用。本回答只基于该组合排序结果。',
+        '',
+        '| 排名 | 代码 | 目标权重 | 分数 | 相对强弱 | 数据覆盖 |',
+        '|---:|---|---:|---:|---:|---|',
+        for (final row in rows)
+          '| ${row['rank'] ?? '-'} | ${row['symbol'] ?? '-'} | ${_targetWeight(row)} | ${row['score'] ?? '-'} | ${_relativeStrengthText(row)} | ${_coverageText(row)} |',
+        '',
+        '## 组合风险与约束',
+        '',
+        '- 入选数量：${portfolio['selectedCount'] ?? rows.length}；候选数：${decoded['candidateCount'] ?? '-'}；成功排序：${decoded['rankedCount'] ?? '-'}；失败/排除：${decoded['failedCount'] ?? 0}。',
+        '- 单只仓位上限：${risk['maxPositionWeight'] ?? rebalance['maxPositionWeight'] ?? '-'}；目标权重：${risk['targetWeight'] ?? '-'}；剩余现金：${risk['residualCashWeight'] ?? '-'}。',
+        '- 组合收益/回撤：${metrics['portfolioReturnPct'] ?? '-'}% / ${metrics['portfolioMaxDrawdownPct'] ?? risk['portfolioMaxDrawdownPct'] ?? '-'}%。',
+        '- 回撤预算：${drawdown['status'] ?? '-'}；允许 ${drawdown['allowedDrawdownPct'] ?? '-'}%，组合最大回撤 ${drawdown['portfolioMaxDrawdownPct'] ?? '-'}%。',
+        '- 集中度：${concentration['status'] ?? '-'}；有效持仓数 ${concentration['effectivePositionCount'] ?? '-'}。',
+        '- 调仓草案：${rebalance['mode'] ?? '-'}；频率 ${rebalance['rebalanceInterval'] ?? '-'}；边界：${rebalance['tradeBoundary'] ?? '仅观察，不下单'}。',
+        if (excluded.isNotEmpty) '',
+        if (excluded.isNotEmpty) '## 排除或失败候选',
+        if (excluded.isNotEmpty) '',
+        for (final row in excluded)
+          '- ${row['symbol'] ?? '-'}：${row['status'] ?? '-'}；${row['error'] ?? row['exclusionReason'] ?? _coverageText(row)}。',
+        if (failure['summary'] != null) '- 失败摘要：${failure['summary']}。',
+        '',
+        '## 结论边界',
+        '',
+        '- 这是观察方案，不是买入建议。',
+        '- 本轮没有创建观察池、没有保存策略、没有设置监控、没有调用 Portfolio、XueqiuTrade 或真实交易工具。',
+        '- 若要进入下一步，应作为新的明确请求选择保存、监控或模拟盘测算，并重新经过确认边界。',
+      ].join('\n');
+    }
+    return null;
+  }
+
   String? saveRunBoundary({
     required List<Message> messages,
     required int turnStartIndex,
@@ -485,6 +567,32 @@ class FinanceCustomStrategyEvidence {
       if (cacheStatus != null) 'cache=$cacheStatus',
     ];
     return parts.join('；');
+  }
+
+  String _targetWeight(Map row) {
+    final weight = row['weightEvidence'] is Map
+        ? (row['weightEvidence'] as Map)['targetWeight']
+        : null;
+    if (weight is num) return '${(weight * 100).toStringAsFixed(2)}%';
+    return weight?.toString() ?? '-';
+  }
+
+  String _relativeStrengthText(Map row) {
+    final relative = row['relativeStrength'];
+    if (relative is! Map) return '-';
+    final pct = relative['percentile'];
+    final ret = relative['returnPct'];
+    return 'pct=${pct ?? '-'}；return=${ret ?? '-'}%';
+  }
+
+  String _coverageText(Map row) {
+    final coverage = row['dataCoverage'];
+    if (coverage is! Map) return '-';
+    final rows = coverage['rows'] ?? '-';
+    final required = coverage['requiredBars'] ?? '-';
+    final start = coverage['start'] ?? coverage['actualStartDate'] ?? '-';
+    final end = coverage['end'] ?? coverage['actualEndDate'] ?? '-';
+    return '$rows/$required；$start~$end';
   }
 
   String? save(List<Message> messages, int turnStartIndex) {

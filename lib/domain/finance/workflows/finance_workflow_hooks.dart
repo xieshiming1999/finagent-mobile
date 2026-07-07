@@ -557,6 +557,29 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       }
     }
 
+    final portfolioRankEvidence = _customStrategyEvidence.portfolioRank(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+    );
+    if (portfolioRankEvidence != null &&
+        toolCalls.any(
+          (call) =>
+              call.name == 'Read' ||
+              call.name == 'Grep' ||
+              call.name == 'Glob' ||
+              call.name == 'LS' ||
+              call.name == 'DataProcess' ||
+              (call.name == 'MarketData' &&
+                  (call.input['action'] == 'custom_strategy_backtest' ||
+                      call.input['action'] == 'custom_strategy_run')),
+        )) {
+      return DomainToolInterception(
+        answer: portfolioRankEvidence,
+        skippedReason:
+            'Skipped: custom_strategy_rank already returned portfolio evidence; no file-read, single-symbol backtest/run, DataProcess, or artifact inspection is needed for this observation workflow.',
+      );
+    }
+
     final validateEvidence = _customStrategyEvidence.validation(
       messages,
       turnStartIndex,
@@ -869,6 +892,11 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       turnStartIndex: turnStartIndex,
     );
     if (customStrategyComparison != null) return customStrategyComparison;
+    final portfolioRank = _customStrategyEvidence.portfolioRank(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+    );
+    if (portfolioRank != null) return portfolioRank;
     final optimized = _strategyBudgetSummary.buildOptimize(
       messages: messages,
       turnStartIndex: turnStartIndex,

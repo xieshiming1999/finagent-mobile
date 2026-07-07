@@ -381,15 +381,25 @@ class WatchlistTool extends Tool {
     if (stockSymbols.length >= 2) {
       payload['nextAction'] = {
         'tool': 'MarketData',
-        'action': 'custom_strategy_rank',
+        'action': 'custom_strategy_help',
+        'strategy': 'custom_strategy_rank',
         'symbols': stockSymbols,
         'topN': stockSymbols.length < 3 ? stockSymbols.length : 3,
         'maxPositionWeight': 0.35,
         'rebalanceInterval': 'monthly',
+        'requiresStrategySpec': true,
+        'afterStrategySpec': {
+          'tool': 'MarketData',
+          'action': 'custom_strategy_rank',
+          'symbols': stockSymbols,
+          'topN': stockSymbols.length < 3 ? stockSymbols.length : 3,
+          'maxPositionWeight': 0.35,
+          'rebalanceInterval': 'monthly',
+        },
         'boundary':
             'Evidence-only portfolio observation. Use portfolioEvidence, concentrationEvidence, drawdown-budget evidence, candidateFailureEvidence, and rebalanceDraft. Do not create watchlist entries, Portfolio orders, XueqiuTrade actions, broker orders, or automatic rebalances unless a separate user confirmation authorizes that side effect.',
         'reason':
-            'Multiple watched stock symbols are available. For portfolio observation, use the governed custom_strategy_rank contract instead of manually ranking quotes or K-line summaries.',
+            'Multiple watched stock symbols are available. For portfolio observation, inspect the governed custom_strategy_rank contract, construct a StrategySpec, then call custom_strategy_rank with that StrategySpec instead of manually ranking quotes or K-line summaries.',
       };
     }
     if (hasFundSignals) {

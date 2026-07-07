@@ -718,8 +718,9 @@ class BacktestMarketDataService {
                     input['max_pairwise_correlation'])
                 is num
             ? ((input['maxPairwiseCorrelation'] ??
-                      input['max_pairwise_correlation'])
-                  as num).toDouble()
+                          input['max_pairwise_correlation'])
+                      as num)
+                  .toDouble()
             : null,
       );
       final detail = '${input['detail'] ?? input['mode'] ?? ''}'.toLowerCase();
@@ -1281,9 +1282,11 @@ class BacktestMarketDataService {
       'candidateCount': full['candidateCount'],
       'rankedCount': full['rankedCount'],
       'failedCount': full['failedCount'],
-      'ranked': _compactList(full['ranked'], 5, _compactRankedRow),
-      'excluded': _compactList(full['excluded'], 10, _compactExcludedRow),
-      'candidateFailureEvidence': full['candidateFailureEvidence'],
+      'ranked': _compactList(full['ranked'], 3, _compactRankedRow),
+      'excluded': _compactList(full['excluded'], 6, _compactExcludedRow),
+      'candidateFailureEvidence': _compactCandidateFailureEvidence(
+        full['candidateFailureEvidence'],
+      ),
       'selectedSymbols': selectedPositions
           .map((position) => '${position['symbol'] ?? ''}'.trim())
           .where((symbol) => symbol.isNotEmpty)
@@ -1295,24 +1298,35 @@ class BacktestMarketDataService {
           'selectionEvidence': _compactPortfolioSelectionEvidence(
             portfolioEvidence['selectionEvidence'],
           ),
-          'aggregateMetrics': portfolioEvidence['aggregateMetrics'],
-          'correlationEvidence': portfolioEvidence['correlationEvidence'],
-          'portfolioRiskEvidence': portfolioEvidence['portfolioRiskEvidence'],
+          'aggregateMetrics': _compactPortfolioMetrics(
+            portfolioEvidence['aggregateMetrics'],
+          ),
+          'correlationEvidence': _compactCorrelationEvidence(
+            portfolioEvidence['correlationEvidence'],
+          ),
+          'portfolioRiskEvidence': _compactPortfolioRiskEvidence(
+            portfolioEvidence['portfolioRiskEvidence'],
+          ),
           'concentrationEvidence': portfolioEvidence['concentrationEvidence'],
-          'portfolioBacktestEvidence':
-              portfolioEvidence['portfolioBacktestEvidence'],
-          'portfolioScoringEvidence':
-              portfolioEvidence['portfolioScoringEvidence'],
+          'portfolioBacktestEvidence': _compactPortfolioBacktestEvidence(
+            portfolioEvidence['portfolioBacktestEvidence'],
+          ),
+          'portfolioScoringEvidence': _compactPortfolioScoringEvidence(
+            portfolioEvidence['portfolioScoringEvidence'],
+          ),
           'portfolioDrawdownBudgetEvidence':
-              portfolioEvidence['portfolioDrawdownBudgetEvidence'],
-          'positionContributionEvidence':
-              _compactPositionContributionEvidence(
-                portfolioEvidence['positionContributionEvidence'],
+              _compactPortfolioDrawdownBudgetEvidence(
+                portfolioEvidence['portfolioDrawdownBudgetEvidence'],
               ),
+          'positionContributionEvidence': _compactPositionContributionEvidence(
+            portfolioEvidence['positionContributionEvidence'],
+          ),
           'portfolioValidation': _compactPortfolioValidation(
             portfolioEvidence['portfolioValidation'],
           ),
-          'riskNotes': portfolioEvidence['riskNotes'],
+          'riskNotes': portfolioEvidence['riskNotes'] is List
+              ? (portfolioEvidence['riskNotes'] as List).take(2).toList()
+              : portfolioEvidence['riskNotes'],
         },
       if (rebalanceDraft != null)
         'rebalanceDraft': {
@@ -1329,7 +1343,7 @@ class BacktestMarketDataService {
         },
       'allCandidates': _compactList(
         full['allCandidates'],
-        8,
+        6,
         _compactCandidateRow,
       ),
       'workflowAdvice': full['workflowAdvice'],
@@ -1372,6 +1386,112 @@ class BacktestMarketDataService {
     };
   }
 
+  Map<String, dynamic>? _compactCandidateFailureEvidence(Object? value) {
+    final evidence = _mapOf(value);
+    if (evidence == null) return null;
+    return {
+      'failedCount': evidence['failedCount'],
+      'failures': evidence['failures'] is List
+          ? (evidence['failures'] as List).take(6).toList()
+          : evidence['failures'],
+      'summary': evidence['summary'],
+    };
+  }
+
+  Map<String, dynamic>? _compactPortfolioMetrics(Object? value) {
+    final metrics = _mapOf(value);
+    if (metrics == null) return null;
+    return {
+      'selectedSymbols': metrics['selectedSymbols'],
+      'portfolioReturnPct': metrics['portfolioReturnPct'],
+      'portfolioMaxDrawdownPct': metrics['portfolioMaxDrawdownPct'],
+      'portfolioSharpeRatio': metrics['portfolioSharpeRatio'],
+      'portfolioSortinoRatio': metrics['portfolioSortinoRatio'],
+      'selectedCount': metrics['selectedCount'],
+      'targetWeight': metrics['targetWeight'],
+    };
+  }
+
+  Map<String, dynamic>? _compactCorrelationEvidence(Object? value) {
+    final evidence = _mapOf(value);
+    if (evidence == null) return null;
+    return {
+      'mode': evidence['mode'],
+      'averageCorrelation': evidence['averageCorrelation'],
+      'maxCorrelation': evidence['maxCorrelation'],
+      'minCorrelation': evidence['minCorrelation'],
+      'pairCount': evidence['pairCount'],
+      'selectedSymbols': evidence['selectedSymbols'],
+    };
+  }
+
+  Map<String, dynamic>? _compactPortfolioRiskEvidence(Object? value) {
+    final evidence = _mapOf(value);
+    if (evidence == null) return null;
+    return {
+      'maxPositionWeight': evidence['maxPositionWeight'],
+      'targetWeight': evidence['targetWeight'],
+      'residualCashWeight': evidence['residualCashWeight'],
+      'maxSinglePositionDrawdownPct': evidence['maxSinglePositionDrawdownPct'],
+      'portfolioMaxDrawdownPct': evidence['portfolioMaxDrawdownPct'],
+      'status': evidence['status'],
+    };
+  }
+
+  Map<String, dynamic>? _compactPortfolioBacktestEvidence(Object? value) {
+    final evidence = _mapOf(value);
+    if (evidence == null) return null;
+    return {
+      'status': evidence['status'],
+      'selectedSymbols': evidence['selectedSymbols'],
+      'bars': evidence['bars'],
+      'portfolioReturnPct': evidence['portfolioReturnPct'],
+      'portfolioMaxDrawdownPct': evidence['portfolioMaxDrawdownPct'],
+      'portfolioSharpeRatio': evidence['portfolioSharpeRatio'],
+      'portfolioSortinoRatio': evidence['portfolioSortinoRatio'],
+      'transactionCostEvidence': _compactTransactionCostEvidence(
+        evidence['transactionCostEvidence'],
+      ),
+      'tradeBoundary': evidence['tradeBoundary'],
+    };
+  }
+
+  Map<String, dynamic>? _compactTransactionCostEvidence(Object? value) {
+    final evidence = _mapOf(value);
+    if (evidence == null) return null;
+    return {
+      'commissionPct': evidence['commissionPct'],
+      'slippagePct': evidence['slippagePct'],
+      'estimatedInitialCostPct': evidence['estimatedInitialCostPct'],
+      'estimatedRebalanceCostPct': evidence['estimatedRebalanceCostPct'],
+    };
+  }
+
+  Map<String, dynamic>? _compactPortfolioScoringEvidence(Object? value) {
+    final evidence = _mapOf(value);
+    if (evidence == null) return null;
+    return {
+      'status': evidence['status'],
+      'riskAdjustedScore': evidence['riskAdjustedScore'],
+      'tradeCount': evidence['tradeCount'],
+      'positionCapStatus': evidence['positionCapStatus'],
+      'drawdownBudgetStatus': evidence['drawdownBudgetStatus'],
+      'selectedSymbols': evidence['selectedSymbols'],
+      'tradeBoundary': evidence['tradeBoundary'],
+    };
+  }
+
+  Map<String, dynamic>? _compactPortfolioDrawdownBudgetEvidence(Object? value) {
+    final evidence = _mapOf(value);
+    if (evidence == null) return null;
+    return {
+      'status': evidence['status'],
+      'allowedDrawdownPct': evidence['allowedDrawdownPct'],
+      'portfolioMaxDrawdownPct': evidence['portfolioMaxDrawdownPct'],
+      'breachPct': evidence['breachPct'],
+    };
+  }
+
   List<Map<String, dynamic>> _compactList(
     Object? value,
     int limit,
@@ -1393,7 +1513,8 @@ class BacktestMarketDataService {
     return {
       'indicatorKeys': indicators?.keys.toList(growable: false) ?? const [],
       'minimumBars': dataRequirements['minimumBars'],
-      'notes': 'Compact summary only. Use detail:"full" for full indicator schemas.',
+      'notes':
+          'Compact summary only. Use detail:"full" for full indicator schemas.',
     };
   }
 
@@ -1413,9 +1534,11 @@ class BacktestMarketDataService {
           'weightedReturnContributionPct': row['weightedReturnContributionPct'],
           'weightedDrawdownContributionPct':
               row['weightedDrawdownContributionPct'],
-          'selectionEvidence': row['selectionEvidence'],
-          'weightEvidence': row['weightEvidence'],
-          'dataCoverage': row['dataCoverage'],
+          'selectedForDraft': _mapOf(
+            row['selectionEvidence'],
+          )?['selectedForDraft'],
+          'targetWeight': _mapOf(row['weightEvidence'])?['targetWeight'],
+          'dataCoverage': _compactCoverage(row['dataCoverage']),
         };
       }),
     };
@@ -1431,7 +1554,7 @@ class BacktestMarketDataService {
       'score': row['score'],
       'rankingMetric': row['rankingMetric'],
       'status': row['status'],
-      'relativeStrength': row['relativeStrength'],
+      'relativeStrength': _compactRelativeStrength(row['relativeStrength']),
       'selectionEvidence': selection == null
           ? null
           : {
@@ -1441,22 +1564,11 @@ class BacktestMarketDataService {
               'correlationConstraintEvidence':
                   selection['correlationConstraintEvidence'],
             },
-      'weightEvidence': row['weightEvidence'],
-      'assumptions': row['assumptions'],
+      'weightEvidence': _compactWeightEvidence(row['weightEvidence']),
       'selectedForDraft': selection?['selectedForDraft'],
       'exclusionReason': selection?['exclusionReason'],
-      'metrics': row['metrics'],
-      'dataCoverage': coverage == null
-          ? row['dataCoverage']
-          : {
-              'sufficient': coverage['sufficient'],
-              'rows': coverage['rows'],
-              'requiredBars': coverage['requiredBars'],
-              'start': coverage['start'],
-              'end': coverage['end'],
-              'source': coverage['source'],
-            },
-      'benchmarkEvidence': row['benchmarkEvidence'],
+      'metrics': _compactBacktestMetrics(row['metrics']),
+      'dataCoverage': _compactCoverage(coverage ?? row['dataCoverage']),
       'riskEvidence': _compactRiskEvidence(row['riskEvidence']),
     };
   }
@@ -1471,7 +1583,57 @@ class BacktestMarketDataService {
       'score': row['score'],
       'selectedForDraft': selection?['selectedForDraft'],
       'exclusionReason': selection?['exclusionReason'],
-      'dataCoverage': row['dataCoverage'],
+      'dataCoverage': _compactCoverage(row['dataCoverage']),
+    };
+  }
+
+  Map<String, dynamic>? _compactRelativeStrength(Object? value) {
+    final evidence = _mapOf(value);
+    if (evidence == null) return null;
+    return {
+      'lookbackBars': evidence['lookbackBars'],
+      'start': evidence['start'],
+      'end': evidence['end'],
+      'returnPct': evidence['returnPct'],
+      'rank': evidence['rank'],
+      'percentile': evidence['percentile'],
+    };
+  }
+
+  Map<String, dynamic>? _compactWeightEvidence(Object? value) {
+    final evidence = _mapOf(value);
+    if (evidence == null) return null;
+    return {
+      'targetWeight': evidence['targetWeight'],
+      'selectedForDraft': evidence['selectedForDraft'],
+      'reason': evidence['reason'],
+    };
+  }
+
+  Map<String, dynamic>? _compactBacktestMetrics(Object? value) {
+    final metrics = _mapOf(value);
+    if (metrics == null) return null;
+    return {
+      'totalReturnPct': metrics['totalReturnPct'],
+      'maxDrawdownPct': metrics['maxDrawdownPct'],
+      'sharpeRatio': metrics['sharpeRatio'],
+      'sortinoRatio': metrics['sortinoRatio'],
+      'winRatePct': metrics['winRatePct'],
+      'tradeCount': metrics['tradeCount'],
+    };
+  }
+
+  Map<String, dynamic>? _compactCoverage(Object? value) {
+    final coverage = _mapOf(value);
+    if (coverage == null) return null;
+    return {
+      'sufficient': coverage['sufficient'],
+      'rows': coverage['rows'],
+      'requiredBars': coverage['requiredBars'],
+      'start': coverage['start'] ?? coverage['actualStartDate'],
+      'end': coverage['end'] ?? coverage['actualEndDate'],
+      'source': coverage['source'],
+      'cacheStatus': coverage['cacheStatus'],
     };
   }
 
@@ -1498,7 +1660,9 @@ class BacktestMarketDataService {
       'status': row['status'],
       'error': row['error'],
       'reason':
-          row['reason'] ?? row['exclusionReason'] ?? selection?['exclusionReason'],
+          row['reason'] ??
+          row['exclusionReason'] ??
+          selection?['exclusionReason'],
       'selectionEvidence': row['selectionEvidence'],
       'dataCoverage': row['dataCoverage'],
       'dataEvidence': row['dataEvidence'],
