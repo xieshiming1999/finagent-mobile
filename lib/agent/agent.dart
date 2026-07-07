@@ -2150,7 +2150,7 @@ class Agent {
       content:
           '$preview\n\n'
           '... (${updatedResult.content.length} chars total, '
-          'full output saved to $filePath for diagnostics. '
+          'full output was persisted in diagnostic tool-output storage. '
           'For normal answers, use this preview and call a narrower query '
           'with limit/filters or a code-owned summary action instead of reading '
           'the full generated output.)',

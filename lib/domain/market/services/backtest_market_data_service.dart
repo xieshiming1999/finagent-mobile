@@ -1281,7 +1281,7 @@ class BacktestMarketDataService {
       'candidateCount': full['candidateCount'],
       'rankedCount': full['rankedCount'],
       'failedCount': full['failedCount'],
-      'ranked': _compactList(full['ranked'], 10, _compactRankedRow),
+      'ranked': _compactList(full['ranked'], 5, _compactRankedRow),
       'excluded': _compactList(full['excluded'], 10, _compactExcludedRow),
       'candidateFailureEvidence': full['candidateFailureEvidence'],
       'selectedSymbols': selectedPositions
@@ -1292,18 +1292,13 @@ class BacktestMarketDataService {
         'portfolioEvidence': {
           'mode': portfolioEvidence['mode'],
           'selectedCount': portfolioEvidence['selectedCount'],
-          'assumptions': portfolioEvidence['assumptions'],
-          'selectionEvidence': portfolioEvidence['selectionEvidence'],
+          'selectionEvidence': _compactPortfolioSelectionEvidence(
+            portfolioEvidence['selectionEvidence'],
+          ),
           'aggregateMetrics': portfolioEvidence['aggregateMetrics'],
           'correlationEvidence': portfolioEvidence['correlationEvidence'],
           'portfolioRiskEvidence': portfolioEvidence['portfolioRiskEvidence'],
-          'portfolioReturnQualityEvidence':
-              portfolioEvidence['portfolioReturnQualityEvidence'],
           'concentrationEvidence': portfolioEvidence['concentrationEvidence'],
-          'portfolioStabilityEvidence':
-              portfolioEvidence['portfolioStabilityEvidence'],
-          'portfolioRebalanceSimulation':
-              portfolioEvidence['portfolioRebalanceSimulation'],
           'portfolioBacktestEvidence':
               portfolioEvidence['portfolioBacktestEvidence'],
           'portfolioScoringEvidence':
@@ -1314,7 +1309,9 @@ class BacktestMarketDataService {
               _compactPositionContributionEvidence(
                 portfolioEvidence['positionContributionEvidence'],
               ),
-          'portfolioValidation': portfolioEvidence['portfolioValidation'],
+          'portfolioValidation': _compactPortfolioValidation(
+            portfolioEvidence['portfolioValidation'],
+          ),
           'riskNotes': portfolioEvidence['riskNotes'],
         },
       if (rebalanceDraft != null)
@@ -1330,15 +1327,48 @@ class BacktestMarketDataService {
           'evidenceSource':
               'See portfolioEvidence for aggregate metrics, concentration, drawdown budget, validation, and rebalance simulation.',
         },
-      'rankedRowsEvidence': full['rankedRowsEvidence'],
       'allCandidates': _compactList(
         full['allCandidates'],
-        12,
+        8,
         _compactCandidateRow,
       ),
       'workflowAdvice': full['workflowAdvice'],
       'fullResultAdvice':
           'Default custom_strategy_rank output is compact to avoid tool-output spill. Use detail:"full" only for explicit diagnostics; do not open memory/.tool_outputs files for normal workflow answers.',
+    };
+  }
+
+  Map<String, dynamic>? _compactPortfolioSelectionEvidence(Object? value) {
+    final evidence = _mapOf(value);
+    if (evidence == null) return null;
+    return {
+      'topN': evidence['topN'],
+      'selectedCount': evidence['selectedCount'],
+      'eligibleCount': evidence['eligibleCount'],
+      'selectedSymbols': evidence['selectedSymbols'],
+      'minScore': evidence['minScore'],
+      'maxPairwiseCorrelation': evidence['maxPairwiseCorrelation'],
+      'correlationEligibleCount': evidence['correlationEligibleCount'],
+      'correlationSkipped': evidence['correlationSkipped'] is List
+          ? (evidence['correlationSkipped'] as List).take(5).toList()
+          : evidence['correlationSkipped'],
+      'tradeBoundary': evidence['tradeBoundary'],
+    };
+  }
+
+  Map<String, dynamic>? _compactPortfolioValidation(Object? value) {
+    final validation = _mapOf(value);
+    if (validation == null) return null;
+    return {
+      'status': validation['status'],
+      'selectedCount': validation['selectedCount'],
+      'eligibleCount': validation['eligibleCount'],
+      'minScore': validation['minScore'],
+      'maxPairwiseCorrelation': validation['maxPairwiseCorrelation'],
+      'correlationEligibleCount': validation['correlationEligibleCount'],
+      'warnings': validation['warnings'] is List
+          ? (validation['warnings'] as List).take(4).toList()
+          : validation['warnings'],
     };
   }
 
@@ -1393,6 +1423,7 @@ class BacktestMarketDataService {
 
   Map<String, dynamic> _compactRankedRow(Map<String, dynamic> row) {
     final selection = _mapOf(row['selectionEvidence']);
+    final coverage = _mapOf(row['dataCoverage']);
     return {
       'symbol': row['symbol'],
       'name': row['name'],
@@ -1401,14 +1432,30 @@ class BacktestMarketDataService {
       'rankingMetric': row['rankingMetric'],
       'status': row['status'],
       'relativeStrength': row['relativeStrength'],
-      'selectionEvidence': row['selectionEvidence'],
+      'selectionEvidence': selection == null
+          ? null
+          : {
+              'selectedForDraft': selection['selectedForDraft'],
+              'exclusionReason': selection['exclusionReason'],
+              'selectionRule': selection['selectionRule'],
+              'correlationConstraintEvidence':
+                  selection['correlationConstraintEvidence'],
+            },
       'weightEvidence': row['weightEvidence'],
       'assumptions': row['assumptions'],
       'selectedForDraft': selection?['selectedForDraft'],
       'exclusionReason': selection?['exclusionReason'],
       'metrics': row['metrics'],
-      'dataCoverage': row['dataCoverage'],
-      'dataEvidence': row['dataEvidence'],
+      'dataCoverage': coverage == null
+          ? row['dataCoverage']
+          : {
+              'sufficient': coverage['sufficient'],
+              'rows': coverage['rows'],
+              'requiredBars': coverage['requiredBars'],
+              'start': coverage['start'],
+              'end': coverage['end'],
+              'source': coverage['source'],
+            },
       'benchmarkEvidence': row['benchmarkEvidence'],
       'riskEvidence': _compactRiskEvidence(row['riskEvidence']),
     };
