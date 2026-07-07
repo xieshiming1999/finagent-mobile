@@ -2156,13 +2156,10 @@ askUserQuestion:{"contract":"ask-user-question-v1","answers":[{"question":"策�
       calls.map((call) => call.input['strategyId']),
       everyElement('momentum_breakout_v1'),
     );
-    expect(
-      calls.map((call) => call.input['symbols']).toList(),
-      [
-        ['300059'],
-        ['600519'],
-      ],
-    );
+    expect(calls.map((call) => call.input['symbols']).toList(), [
+      ['300059'],
+      ['600519'],
+    ]);
   });
 
   test('saved strategy rerun discovers list before generic strategy help', () {
@@ -2357,7 +2354,135 @@ askUserQuestion:{"contract":"ask-user-question-v1","answers":[{"question":"策�
     expect(calls.single.input['strategyId'], 'custom_20_v1');
     expect(calls.single.input['symbols'], ['600519']);
   });
+
+  test('portfolio rank evidence does not suppress structured backtest', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+    final messages = [
+      Message(
+        role: Role.user,
+        content:
+            'structured strategy workflow\n'
+            'data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"strategy_design","assetClass":"stock","intentMode":"backtest","executionMode":"preview_only","safetyBoundary":"read-only backtest","evidenceRefs":["custom_strategy_rank"],"confirmationState":"none","source":"agent-structured-intent"},"strategySpec":{"id":"rank_then_backtest_v1","assetClass":"stock","symbols":["600519","300059"],"universe":{"symbols":["600519","300059"]}}}',
+      ),
+      Message(
+        role: Role.assistant,
+        content: '',
+        toolUses: const [
+          ToolUse(
+            id: 'rank',
+            name: 'MarketData',
+            input: {'action': 'custom_strategy_rank'},
+          ),
+        ],
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(toolUseId: 'rank', content: _rankResult),
+      ),
+    ];
+
+    final interception = hooks.interceptToolCalls(
+      messages: messages,
+      turnStartIndex: 0,
+      prompt: messages.first.content,
+      toolCalls: const [
+        ToolUse(
+          id: 'backtest',
+          name: 'MarketData',
+          input: {
+            'action': 'custom_strategy_backtest',
+            'symbols': ['600519'],
+          },
+        ),
+      ],
+    );
+
+    expect(interception, isNull);
+  });
+
+  test('portfolio rank evidence still stops file and DataProcess drift', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+    final messages = [
+      Message(
+        role: Role.user,
+        content:
+            'structured portfolio observation\n'
+            'data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"strategy_design","assetClass":"stock","intentMode":"backtest","executionMode":"preview_only","safetyBoundary":"portfolio observation only","evidenceRefs":["custom_strategy_rank"],"confirmationState":"none","source":"agent-structured-intent"}}',
+      ),
+      Message(
+        role: Role.assistant,
+        content: '',
+        toolUses: const [
+          ToolUse(
+            id: 'rank',
+            name: 'MarketData',
+            input: {'action': 'custom_strategy_rank'},
+          ),
+        ],
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(toolUseId: 'rank', content: _rankResult),
+      ),
+    ];
+
+    final interception = hooks.interceptToolCalls(
+      messages: messages,
+      turnStartIndex: 0,
+      prompt: messages.first.content,
+      toolCalls: const [
+        ToolUse(
+          id: 'score',
+          name: 'DataProcess',
+          input: {'action': 'score_technical'},
+        ),
+      ],
+    );
+
+    expect(interception, isNotNull);
+    expect(interception!.answer, contains('自选股策略组合观察方案'));
+    expect(interception.skippedReason, contains('custom_strategy_rank'));
+  });
 }
+
+const _rankResult = '''
+{
+  "action": "custom_strategy_rank",
+  "status": "ranked",
+  "strategyId": "custom_rank_then_backtest_v1",
+  "ranked": [
+    {
+      "symbol": "600519",
+      "rank": 1,
+      "score": 1.2,
+      "status": "ranked",
+      "selectionEvidence": {"selectedForDraft": true},
+      "dataCoverage": {"bars": 240}
+    },
+    {
+      "symbol": "300059",
+      "rank": 2,
+      "score": 0.8,
+      "status": "ranked",
+      "selectionEvidence": {"selectedForDraft": true},
+      "dataCoverage": {"bars": 240}
+    }
+  ],
+  "portfolioEvidence": {
+    "mode": "equal_weight_selected_metrics",
+    "selectedCount": 2,
+    "aggregateMetrics": {
+      "portfolioReturnPct": 6.1,
+      "portfolioMaxDrawdownPct": -5.2
+    }
+  },
+  "rebalanceDraft": {
+    "mode": "equal_weight_top_n",
+    "rebalanceInterval": "monthly",
+    "maxPositionWeight": 0.35
+  }
+}
+''';
 
 Message _customBacktestCall(String id, String symbol) => Message(
   role: Role.assistant,

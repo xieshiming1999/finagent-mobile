@@ -570,13 +570,12 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
               call.name == 'LS' ||
               call.name == 'DataProcess' ||
               (call.name == 'MarketData' &&
-                  (call.input['action'] == 'custom_strategy_backtest' ||
-                      call.input['action'] == 'custom_strategy_run')),
+                  call.input['action'] == 'custom_strategy_run'),
         )) {
       return DomainToolInterception(
         answer: portfolioRankEvidence,
         skippedReason:
-            'Skipped: custom_strategy_rank already returned portfolio evidence; no file-read, single-symbol backtest/run, DataProcess, or artifact inspection is needed for this observation workflow.',
+            'Skipped: custom_strategy_rank already returned portfolio evidence; no file-read, run, DataProcess, or artifact inspection is needed for this observation workflow.',
       );
     }
 
