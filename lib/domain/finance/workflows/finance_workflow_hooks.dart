@@ -6,6 +6,7 @@ import 'finance_custom_strategy_policy.dart';
 import 'finance_custom_strategy_preflight.dart';
 import 'finance_evidence_review_summary.dart';
 import 'finance_fund_candidate_summary.dart';
+import 'finance_fund_comparison_summary.dart';
 import 'finance_fund_monitor_summary.dart';
 import 'finance_fund_strategy_evidence_summary.dart';
 import 'finance_fund_watch_summary.dart';
@@ -36,6 +37,8 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       FinanceEvidenceReviewSummary();
   final FinanceFundCandidateSummary _fundCandidateSummary =
       FinanceFundCandidateSummary();
+  final FinanceFundComparisonSummary _fundComparisonSummary =
+      FinanceFundComparisonSummary();
   final FinanceFundMonitorSummary _fundMonitorSummary =
       FinanceFundMonitorSummary();
   final FinanceFundStrategyEvidenceSummary _fundStrategyEvidenceSummary =
@@ -196,6 +199,7 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
         _hasSuccessfulAction(turnMessages, 'custom_strategy_fund_backtest')) {
       return null;
     }
+    if (_hasOrdinaryAndMoneyFundEvidence(turnMessages)) return null;
     final readbackCode = _latestSuccessfulFundReadbackCode(turnMessages);
     if (readbackCode != null) {
       return [
@@ -253,6 +257,32 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       try {
         final decoded = jsonDecode(result.content);
         if (decoded is Map && decoded['action'] == action) return true;
+      } catch (_) {
+        continue;
+      }
+    }
+    return false;
+  }
+
+  bool _hasOrdinaryAndMoneyFundEvidence(List<Message> messages) {
+    var hasOrdinaryNav = false;
+    var hasMoneyYield = false;
+    for (final message in messages) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is! Map<String, dynamic>) continue;
+        final rows = decoded['data'];
+        final hasRows = rows is List && rows.isNotEmpty;
+        final action = '${decoded['action'] ?? ''}';
+        if (action == 'query_fund_nav' && hasRows) hasOrdinaryNav = true;
+        if ((action == 'query_fund_money_yield' ||
+                action == 'fund_money_yield') &&
+            hasRows) {
+          hasMoneyYield = true;
+        }
+        if (hasOrdinaryNav && hasMoneyYield) return true;
       } catch (_) {
         continue;
       }
@@ -533,9 +563,24 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
           customStrategyPolicy.isBypassTool(call.name) ||
           call.name == 'Read' ||
           call.name == 'Grep' ||
+          call.name == 'Glob' ||
+          call.name == 'LS' ||
+          call.name == 'Script' ||
           call.name == 'DataProcess' ||
           _isFundStockDataDrift(call),
     )) {
+      final fundComparisonSummary = _fundComparisonSummary.build(
+        messages: messages,
+        turnStartIndex: turnStartIndex,
+        failureSummary: '无阻断性工具错误；已停止脚本、文件读取、股票策略工具或额外 provider 调用。',
+      );
+      if (fundComparisonSummary != null) {
+        return DomainToolInterception(
+          answer: fundComparisonSummary,
+          skippedReason:
+              'Skipped: structured fund NAV and money-yield evidence already exists; no Script, file-read, or stock-strategy bypass is needed for this fund comparison workflow.',
+        );
+      }
       final fundStrategySummary = _fundStrategyEvidenceSummary.build(
         messages: messages,
         turnStartIndex: turnStartIndex,

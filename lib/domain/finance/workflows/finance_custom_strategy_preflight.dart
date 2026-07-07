@@ -215,17 +215,20 @@ class FinanceCustomStrategyPreflight {
       return null;
     }
     if (hasValidate && _hasValidatedFundStrategy(turnMessages)) {
+      if (_hasOrdinaryAndMoneyFundEvidence(turnMessages)) return null;
+      if (!_isCustomStrategyFundObservationWorkflow(commandState)) return null;
       if (_hasSuccessfulCustomStrategyObserve(turnMessages)) return null;
-      final validation = _latestValidatedStrategy(turnMessages);
+      final strategySpec = _latestValidatedFundStrategySpec(turnMessages);
+      if (strategySpec == null) return null;
       final fundRows = _latestFundRows(turnMessages);
-      if (validation != null && fundRows.isNotEmpty) {
+      if (fundRows.isNotEmpty) {
         return [
           ToolUse(
             id: 'custom_strategy_observe_${DateTime.now().microsecondsSinceEpoch}',
             name: 'MarketData',
             input: {
               'action': 'custom_strategy_observe',
-              'strategySpec': validation.strategySpec,
+              'strategySpec': strategySpec,
               'fundRows': fundRows,
             },
           ),
@@ -349,6 +352,12 @@ class FinanceCustomStrategyPreflight {
     return _isCustomStrategyWorkflow(state) &&
         (state?.intentMode == FinanceIntentMode.save ||
             state?.intentMode == FinanceIntentMode.rerun);
+  }
+
+  bool _isCustomStrategyFundObservationWorkflow(FinanceWorkflowState? state) {
+    return _isCustomStrategyWorkflow(state) &&
+        state?.assetClass == FinanceAssetClass.fund &&
+        state?.intentMode == FinanceIntentMode.observe;
   }
 
   Map<String, dynamic>? _structuredStrategySpec(String content) {
@@ -564,6 +573,30 @@ class FinanceCustomStrategyPreflight {
     return false;
   }
 
+  Map<String, dynamic>? _latestValidatedFundStrategySpec(
+    List<Message> messages,
+  ) {
+    for (final message in messages.reversed) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is! Map<String, dynamic>) continue;
+        if (decoded['action'] != 'custom_strategy_validate' ||
+            decoded['status'] != 'validated') {
+          continue;
+        }
+        final spec = decoded['normalizedSpec'] ?? decoded['spec'];
+        if (spec is Map && _isFundSpec(spec)) {
+          return Map<String, dynamic>.from(spec);
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
   bool _isFundSpec(Map spec) {
     final assetClass = '${spec['assetClass'] ?? ''}'.toLowerCase();
     final market = '${spec['market'] ?? ''}'.toLowerCase();
@@ -579,6 +612,32 @@ class FinanceCustomStrategyPreflight {
         if (decoded is Map && decoded['action'] == 'custom_strategy_observe') {
           return true;
         }
+      } catch (_) {
+        continue;
+      }
+    }
+    return false;
+  }
+
+  bool _hasOrdinaryAndMoneyFundEvidence(List<Message> messages) {
+    var hasOrdinaryNav = false;
+    var hasMoneyYield = false;
+    for (final message in messages) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is! Map<String, dynamic>) continue;
+        final action = '${decoded['action'] ?? ''}';
+        final rows = decoded['data'];
+        final hasRows = rows is List && rows.isNotEmpty;
+        if (action == 'query_fund_nav' && hasRows) hasOrdinaryNav = true;
+        if ((action == 'query_fund_money_yield' ||
+                action == 'fund_money_yield') &&
+            hasRows) {
+          hasMoneyYield = true;
+        }
+        if (hasOrdinaryNav && hasMoneyYield) return true;
       } catch (_) {
         continue;
       }

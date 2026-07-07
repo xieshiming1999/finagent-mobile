@@ -290,6 +290,15 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
     final perCodeLimit = requestedLimit == null || fundCodes.isEmpty
         ? 120
         : (requestedLimit / fundCodes.length).ceil().clamp(1, 500).toInt();
+    final fundClassHints = _fundClassHintsForCodes(context, fundCodes);
+    final knownMoneyFundCodes = fundClassHints
+        .where((row) => supportsMoneyFundYieldCategory(row['fundCategory']))
+        .map((row) => '${row['code'] ?? ''}')
+        .where((code) => code.isNotEmpty)
+        .toList();
+    final ordinaryFundCodes = fundCodes
+        .where((code) => !knownMoneyFundCodes.contains(_cleanFundCode(code)))
+        .toList(growable: false);
     final rows = <Map<String, dynamic>>[];
     if (fundCodes.isEmpty) {
       rows.addAll(
@@ -305,7 +314,7 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
         ),
       );
     } else {
-      for (final code in fundCodes) {
+      for (final code in ordinaryFundCodes) {
         rows.addAll(
           _queryMapsWithProviderConstraint(
             constraint: providerConstraint,
@@ -321,19 +330,13 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
         );
       }
     }
-    final deduped = _dedupeMapRows(rows, const ['code', 'date', 'source']);
+    final deduped = _stripProviderPayloadColumns(
+      _dedupeMapRows(rows, const ['code', 'date', 'source']),
+    );
     final seriesSummary = _fundNavSeriesSummary(deduped);
     final sourceDataTime = _latestValue(deduped, const ['date']);
     final fetchedAt = _latestValue(deduped, const ['fetched_at']);
     final requestedSymbol = symbols.length == 1 ? symbols.first : null;
-    final fundClassHints = deduped.isEmpty
-        ? _fundClassHintsForCodes(context, fundCodes)
-        : const <Map<String, dynamic>>[];
-    final knownMoneyFundCodes = fundClassHints
-        .where((row) => supportsMoneyFundYieldCategory(row['fundCategory']))
-        .map((row) => '${row['code'] ?? ''}')
-        .where((code) => code.isNotEmpty)
-        .toList();
     return {
       'action': 'query_fund_nav',
       if (fundCodes.isNotEmpty) 'fundCodes': fundCodes,
@@ -361,6 +364,8 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
                 : providerConstraint.isStrict
                 ? 'cacheFirst strict provider read rejected local cache rows that did not match ${providerConstraint.requestedProvider}; no fund_nav rows matched the requested fund codes'
                 : 'cacheFirst read reusable local data; no fund_nav rows matched the requested fund codes'
+          : knownMoneyFundCodes.isNotEmpty
+          ? 'cacheFirst read reusable ordinary fund_nav rows and excluded known money fund code(s) ${knownMoneyFundCodes.join(',')} from ordinary NAV semantics; use query_fund_money_yield for those codes.'
           : 'cacheFirst read reusable local data before provider routing; cache reader returned usable fund_nav rows for requested fund codes',
       'canonicalSchema': 'fund_nav',
       'canonicalTable': 'fund_nav',
@@ -371,6 +376,18 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
       'source': 'local fund_nav',
       'data': deduped,
     };
+  }
+
+  List<Map<String, dynamic>> _stripProviderPayloadColumns(
+    List<Map<String, dynamic>> rows,
+  ) {
+    return rows
+        .map((row) {
+          final clean = Map<String, dynamic>.from(row);
+          clean.remove('raw_json');
+          return clean;
+        })
+        .toList(growable: false);
   }
 
   List<Map<String, dynamic>> _fundClassHintsForCodes(

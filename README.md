@@ -25,6 +25,8 @@ FinAgent Mobile is a Flutter mobile agent. Its primary bundled domain is finance
 - Backtest an RSI and volume strategy for 600519 without saving it.
 - Compare RSI and moving-average strategies for 600519, including return, drawdown, and data coverage.
 - Rerun my saved 600519 strategy and explain why its metrics changed from the previous run.
+- Compare funds 110011 and 000083 using available performance and holdings data, and explain the main risks.
+- Which of funds 110011 and 000083 better fits a lower-risk portfolio based on available NAV, drawdown, and holdings evidence?
 
 ## Quick Start
 

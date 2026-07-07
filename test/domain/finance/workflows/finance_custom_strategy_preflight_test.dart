@@ -276,6 +276,77 @@ void main() {
     expect(calls.single.input['action'], 'list');
   });
 
+  test('fund comparison evidence does not ask for observation target', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+
+    final calls = hooks.buildPreflightToolCalls([
+      Message(
+        role: Role.user,
+        content:
+            'fund comparison\n'
+            'data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"strategy_design","assetClass":"fund","intentMode":"observe","executionMode":"preview_only","safetyBoundary":"fund comparison only","evidenceRefs":["fund_nav","fund_money_yield"],"confirmationState":"none","source":"agent-structured-intent"}}',
+      ),
+      Message(
+        role: Role.assistant,
+        content: '',
+        toolUses: const [
+          ToolUse(
+            id: 'nav',
+            name: 'MarketData',
+            input: {'action': 'query_fund_nav', 'code': '110011'},
+          ),
+          ToolUse(
+            id: 'yield',
+            name: 'MarketData',
+            input: {'action': 'query_fund_money_yield', 'code': '000009'},
+          ),
+          ToolUse(
+            id: 'validate',
+            name: 'MarketData',
+            input: {'action': 'custom_strategy_validate'},
+          ),
+        ],
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'nav',
+          content:
+              '{"action":"query_fund_nav","data":[{"code":"110011","date":"2026-07-01","nav":3.2}]}',
+        ),
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'yield',
+          content:
+              '{"action":"query_fund_money_yield","data":[{"code":"000009","date":"2026-07-01","moneyYield":0.23,"sevenDayYield":0.86}]}',
+        ),
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'validate',
+          content: '''
+{
+  "action": "custom_strategy_validate",
+  "status": "validated",
+  "normalizedSpec": {
+    "name": "money_yield_observation_v1",
+    "assetClass": "fund",
+    "market": "fund",
+    "symbols": ["000009"],
+    "dataRequirements": {"dataClass": "money_fund_yield"}
+  }
+}
+''',
+        ),
+      ),
+    ]);
+
+    expect(calls, isNull);
+  });
+
   test('prompt-only fund strategy wording does not enter preflight', () {
     final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
 
@@ -1530,6 +1601,112 @@ askUserQuestion:{"contract":"ask-user-question-v1","answers":[{"question":"策�
     expect(interception!.answer, contains('基金定投观察策略'));
     expect(interception.answer, contains('不使用股票 K 线'));
     expect(interception.skippedReason, contains('stock-strategy'));
+  });
+
+  test('fund comparison evidence stops script drift', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+    final messages = [
+      Message(
+        role: Role.user,
+        content: '比较普通基金 110011 和货币基金 000009，分别说明应该用什么策略证据观察。',
+      ),
+      Message(
+        role: Role.assistant,
+        content: '',
+        toolUses: const [
+          ToolUse(
+            id: 'fund-list',
+            name: 'MarketData',
+            input: {'action': 'query_fund_list'},
+          ),
+          ToolUse(
+            id: 'fund-nav',
+            name: 'MarketData',
+            input: {
+              'action': 'query_fund_nav',
+              'symbols': ['110011'],
+            },
+          ),
+          ToolUse(
+            id: 'fund-yield',
+            name: 'MarketData',
+            input: {
+              'action': 'query_fund_money_yield',
+              'symbols': ['000009'],
+            },
+          ),
+        ],
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'fund-list',
+          content: '''
+{
+  "action": "query_fund_list",
+  "data": [
+    {"code": "110011", "name": "易方达优质精选混合", "fund_type": "混合型"},
+    {"code": "000009", "name": "易方达天天理财货币A", "fund_type": "货币型"}
+  ]
+}
+''',
+        ),
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'fund-nav',
+          content: '''
+{
+  "action": "query_fund_nav",
+  "fundCodes": ["110011"],
+  "source": "local fund_nav",
+  "sourceDataTime": "2026-06-25",
+  "data": [
+    {"code": "110011", "date": "2026-06-24", "nav": 3.91},
+    {"code": "110011", "date": "2026-06-25", "nav": 3.92}
+  ],
+  "seriesSummary": [
+    {"code": "110011", "rows": 2, "startDate": "2026-06-24", "endDate": "2026-06-25", "cumulativeReturnPct": 0.25, "maxDrawdownPct": 0, "source": "eastmoney"}
+  ]
+}
+''',
+        ),
+      ),
+      Message(
+        role: Role.tool,
+        toolResult: ToolResult(
+          toolUseId: 'fund-yield',
+          content: '''
+{
+  "action": "query_fund_money_yield",
+  "fundCodes": ["000009"],
+  "source": "local fund_money_yield",
+  "sourceDataTime": "2026-07-06",
+  "data": [
+    {"code": "000009", "date": "2026-07-06", "million_copies_income": 0.2605, "seven_day_annualized_yield": 0.882, "source": "eastmoney"}
+  ]
+}
+''',
+        ),
+      ),
+    ];
+
+    final interception = hooks.interceptToolCalls(
+      messages: messages,
+      turnStartIndex: 0,
+      prompt: messages.first.content,
+      toolCalls: const [
+        ToolUse(id: 'script', name: 'Script', input: {'code': 'return 1;'}),
+      ],
+    );
+
+    expect(interception, isNotNull);
+    expect(interception!.answer, contains('基金类型与证据口径'));
+    expect(interception.answer, contains('易方达优质精选混合 110011'));
+    expect(interception.answer, contains('易方达天天理财货币A 000009'));
+    expect(interception.answer, contains('万份收益'));
+    expect(interception.skippedReason, contains('structured fund NAV'));
   });
 
   test('strategy comparison evidence owns the final comparison summary', () {
