@@ -278,6 +278,7 @@ class MarketDataSupportService {
       'custom_strategy_rank',
       'custom_strategy_save',
       'custom_strategy_list',
+      'custom_strategy_read',
       'custom_strategy_compare',
       'custom_strategy_run',
     };

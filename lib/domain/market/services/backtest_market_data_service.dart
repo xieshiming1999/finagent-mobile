@@ -817,25 +817,53 @@ class BacktestMarketDataService {
     Map<String, dynamic> input,
     ToolContext context,
   ) async {
-    final ids = input['strategyIds'] ?? input['strategy_ids'];
+    final params = _mapOf(input['params']) ?? const <String, dynamic>{};
+    final ids =
+        input['strategyIds'] ??
+        input['strategy_ids'] ??
+        input['strategyId'] ??
+        input['strategy_id'] ??
+        params['strategyIds'] ??
+        params['strategy_ids'] ??
+        params['strategyId'] ??
+        params['strategy_id'];
     final strategyIds = ids is List
         ? ids.map((value) => '$value').toList(growable: false)
-        : [
-            if ('${input['strategyId'] ?? input['strategy_id'] ?? ''}'
-                .trim()
-                .isNotEmpty)
-              '${input['strategyId'] ?? input['strategy_id']}',
-          ];
+        : [if (ids != null && '$ids'.trim().isNotEmpty) '$ids'];
+    final limitValue = input['limit'] ?? params['limit'];
+    final detailValue = input['detail'] ?? params['detail'];
     return BacktestServiceResponse(
       content: _customStrategyEngine.list(
         context,
-        limit: input['limit'] is num ? (input['limit'] as num).toInt() : null,
-        detail: '${input['detail'] ?? 'summary'}'.toLowerCase() == 'full'
-            ? 'full'
-            : 'summary',
+        limit: limitValue is num ? limitValue.toInt() : null,
+        detail: '$detailValue'.toLowerCase() == 'full' ? 'full' : 'summary',
         strategyIds: strategyIds,
       ),
     );
+  }
+
+  Future<BacktestServiceResponse> customStrategyRead(
+    Map<String, dynamic> input,
+    ToolContext context,
+  ) async {
+    final params = _mapOf(input['params']) ?? const <String, dynamic>{};
+    final strategyId =
+        '${input['strategyId'] ?? input['strategy_id'] ?? params['strategyId'] ?? params['strategy_id'] ?? ''}'
+            .trim();
+    if (strategyId.isEmpty) {
+      return const BacktestServiceResponse(
+        content: 'strategyId required for custom_strategy_read',
+        isError: true,
+      );
+    }
+    try {
+      final record = _customStrategyEngine.readSaved(context, strategyId);
+      return BacktestServiceResponse(
+        content: _savedStrategySummary(record, strategyId),
+      );
+    } catch (error) {
+      return BacktestServiceResponse(content: '$error', isError: true);
+    }
   }
 
   Future<BacktestServiceResponse> customStrategyCompare(
@@ -1020,6 +1048,94 @@ class BacktestMarketDataService {
     final match = RegExp(r'(?:^|_)(\d{6})(?:_|$)').firstMatch(name);
     return match?.group(1) ?? '';
   }
+
+  Map<String, dynamic> _savedStrategySummary(
+    Map<String, dynamic> record,
+    String fallbackStrategyId,
+  ) {
+    final spec =
+        _mapOf(record['strategySpec']) ??
+        _mapOf(record['spec']) ??
+        const <String, dynamic>{};
+    final evidence =
+        _mapOf(record['backtestEvidence']) ??
+        _mapOf(record['evidence']) ??
+        const <String, dynamic>{};
+    final summary =
+        _mapOf(record['dataAndAssumptionSummary']) ?? const <String, dynamic>{};
+    final validationSummary =
+        _mapOf(record['validationSummary']) ??
+        _mapOf(_mapOf(record['validationReport'])?['validationSummary']) ??
+        _mapOf(evidence['validationSummary']);
+    final strategyId = '${record['strategyId'] ?? fallbackStrategyId}';
+    final runnable = _isRunnableBacktestedStrategyRecord(record);
+    return {
+      'action': 'custom_strategy_read',
+      'strategyId': strategyId,
+      'version': record['version'] ?? 1,
+      'status': record['status'],
+      'savedStatus': record['status'],
+      'runnable': runnable,
+      'strategySpec': {
+        'id': spec['id'] ?? strategyId,
+        'name': spec['name'],
+        'assetClass': spec['assetClass'] ?? spec['market'] ?? 'stock',
+        'symbols': _strategySymbolsOf(spec),
+        'indicators': spec['indicators'] is List
+            ? spec['indicators']
+            : const [],
+        'entry': spec['entry'],
+        'exit': spec['exit'],
+        'positionSizing': spec['positionSizing'],
+        'dataRequirements': spec['dataRequirements'],
+      },
+      'validationSummary': validationSummary,
+      'validationIssueCount': _listLength(record['validationIssues']),
+      'repairStepCount': _listLength(record['repairPlan']),
+      'unsupportedCount': _listLength(record['unsupportedDetails']),
+      'evidenceAction': evidence['action'],
+      'metrics': _mapOf(evidence['metrics']),
+      'dataCoverage':
+          _mapOf(evidence['dataCoverage']) ?? _mapOf(summary['dataCoverage']),
+      'dataEvidence':
+          _mapOf(evidence['dataEvidence']) ?? _mapOf(summary['dataEvidence']),
+      'lifecycle': record['lifecycle'] ?? const <String, dynamic>{},
+      'dataAndAssumptionSummary': summary,
+      'nextActions': runnable
+          ? [
+              {'action': 'custom_strategy_run', 'strategyId': strategyId},
+            ]
+          : [
+              {
+                'action': 'custom_strategy_list',
+                'strategyIds': [strategyId],
+              },
+            ],
+    };
+  }
+
+  List<String> _strategySymbolsOf(Map<String, dynamic> spec) {
+    final raw = spec['symbols'] ?? spec['codes'] ?? spec['universe'];
+    if (raw is List) {
+      return raw
+          .map((value) => '$value'.trim())
+          .where((value) => value.isNotEmpty)
+          .toList(growable: false);
+    }
+    final universe = _mapOf(raw);
+    if (universe != null && universe['symbols'] is List) {
+      return (universe['symbols'] as List)
+          .map((value) => '$value'.trim())
+          .where((value) => value.isNotEmpty)
+          .toList(growable: false);
+    }
+    final single = spec['symbol'] ?? spec['code'] ?? spec['fundCode'];
+    return single == null || '$single'.trim().isEmpty
+        ? const []
+        : ['$single'.trim()];
+  }
+
+  int _listLength(Object? value) => value is List ? value.length : 0;
 
   Map<String, dynamic> _savedStrategyReadback(
     ToolContext context,

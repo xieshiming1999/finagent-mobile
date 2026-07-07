@@ -83,6 +83,7 @@ void main() {
         'custom_strategy_rank',
         'custom_strategy_save',
         'custom_strategy_list',
+        'custom_strategy_read',
         'custom_strategy_compare',
         'custom_strategy_run',
       ]),
@@ -103,6 +104,7 @@ void main() {
         'custom_strategy_rank',
         'custom_strategy_save',
         'custom_strategy_list',
+        'custom_strategy_read',
         'custom_strategy_compare',
         'custom_strategy_run',
       ]),
@@ -202,6 +204,17 @@ void main() {
       ((full['strategies'] as List).first as Map)['itemPath'],
       isA<String>(),
     );
+    final readback = engine.readSaved(context, 'path_free_summary_v1');
+    final serviceRead = {
+      'action': 'custom_strategy_read',
+      'strategyId': readback['strategyId'],
+      'status': readback['status'],
+    };
+    expect(serviceRead, {
+      'action': 'custom_strategy_read',
+      'strategyId': 'path_free_summary_v1',
+      'status': 'validated',
+    });
   });
 
   test('vortex_spread is a validated executable strategy indicator', () {

@@ -61,6 +61,8 @@ class MarketDataBacktestActionService {
         return _backtest.customStrategySave(input, context);
       case 'custom_strategy_list':
         return _backtest.customStrategyList(input, context);
+      case 'custom_strategy_read':
+        return _backtest.customStrategyRead(input, context);
       case 'custom_strategy_compare':
         return _backtest.customStrategyCompare(input, context);
       case 'custom_strategy_run':

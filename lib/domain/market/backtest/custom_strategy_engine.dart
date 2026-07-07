@@ -56,6 +56,7 @@ class CustomStrategyEngine {
         'custom_strategy_rank',
         'custom_strategy_save',
         'custom_strategy_list',
+        'custom_strategy_read',
         'custom_strategy_compare',
         'custom_strategy_run',
       ],
@@ -545,6 +546,23 @@ class CustomStrategyEngine {
             'dataRequirements',
           ],
         },
+        'custom_strategy_read': {
+          'requiredFields': ['strategyId'],
+          'topFields': [
+            'strategyId',
+            'status',
+            'runnable',
+            'strategySpec',
+            'validationSummary',
+            'evidenceAction',
+            'metrics',
+            'dataCoverage',
+            'lifecycle',
+            'nextActions',
+          ],
+          'boundary':
+              'Read returns one bounded saved strategy summary; it does not open files, rerun, fetch provider data, or authorize trades.',
+        },
         'custom_strategy_rank': {
           'coreFields': [
             'ranked',
@@ -832,6 +850,9 @@ class CustomStrategyEngine {
           'requiredFields': ['strategySpec', 'evidence'],
         },
         'custom_strategy_list': {'requiredFields': []},
+        'custom_strategy_read': {
+          'requiredFields': ['strategyId'],
+        },
         'custom_strategy_compare': {
           'requiredFields': ['strategyIds'],
         },
@@ -873,11 +894,18 @@ class CustomStrategyEngine {
         'custom_strategy_save': [
           'strategyId',
           'status',
-          'paths',
           'lifecycle',
           'dataAndAssumptionSummary',
         ],
         'custom_strategy_list': ['count', 'strategies'],
+        'custom_strategy_read': [
+          'strategyId',
+          'status',
+          'runnable',
+          'strategySpec',
+          'lifecycle',
+          'nextActions',
+        ],
         'custom_strategy_compare': [
           'count',
           'strategies',
