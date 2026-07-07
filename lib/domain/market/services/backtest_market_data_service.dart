@@ -543,8 +543,10 @@ class BacktestMarketDataService {
     );
   }
 
-  Future<BacktestServiceResponse> customStrategyHelp() async {
-    return BacktestServiceResponse(content: _customStrategyEngine.help());
+  Future<BacktestServiceResponse> customStrategyHelp(
+    Map<String, dynamic> input,
+  ) async {
+    return BacktestServiceResponse(content: _customStrategyEngine.help(input));
   }
 
   Future<BacktestServiceResponse> customStrategyValidate(

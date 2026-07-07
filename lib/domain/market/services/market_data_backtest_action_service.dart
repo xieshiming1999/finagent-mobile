@@ -37,7 +37,7 @@ class MarketDataBacktestActionService {
           context,
         );
       case 'custom_strategy_help':
-        return _backtest.customStrategyHelp();
+        return _backtest.customStrategyHelp(input);
       case 'custom_strategy_validate':
         return _backtest.customStrategyValidate(input);
       case 'custom_strategy_backtest':
