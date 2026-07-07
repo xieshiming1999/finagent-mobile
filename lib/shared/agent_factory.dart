@@ -214,6 +214,10 @@ AgentRuntime createAgentRuntime({
 
   final researchTool = ResearchTool();
   researchTool.init(basePath, apiConfig: apiConfig);
+  final windApiKey = apiConfig?.get('WIND_API_KEY')?.trim() ?? '';
+  final windMcpTool = windApiKey.isEmpty
+      ? null
+      : WindMcpTool(basePath: basePath, apiConfig: apiConfig);
 
   final baseTools = <Tool>[
     EchoTool(),
@@ -251,7 +255,7 @@ AgentRuntime createAgentRuntime({
     SessionSearchTool(),
     UINotifyTool()..store = notificationStore,
     MarketDataTool(dataManager: dataManager, dataTaskEngine: dataTaskEngine),
-    WindMcpTool(basePath: basePath, apiConfig: apiConfig),
+    if (windMcpTool != null) windMcpTool,
     DataProcessTool(
       dataManager: dataManager,
       resolveService: marketDataResolveService,

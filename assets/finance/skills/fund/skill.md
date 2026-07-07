@@ -135,6 +135,16 @@ returned with daily returns, use the returned summary fields or estimate
 return/drawdown from the visible rows; otherwise state that exact deeper
 statistics were not computed.
 
+For ordinary fund comparison or selection, do not use broad `Research(search)`
+to classify fund type, fill generic fund metadata, or compensate for optional
+context. Fund type, NAV semantics, money-yield semantics, performance,
+holdings, source time, fetched time, and gaps should come from structured
+`MarketData` fund actions and local readbacks. Use `Research` only when the
+user explicitly asks for current news, manager events, product announcements,
+or other external context that is not part of the governed fund data contract.
+If optional external context is unavailable, classify it as unavailable and
+answer from the structured fund evidence instead of retrying search.
+
 ## Dashboard Creation
 
 Use the app-level dashboard tool for generated fund dashboards. Do not read
