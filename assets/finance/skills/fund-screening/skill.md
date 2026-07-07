@@ -83,6 +83,20 @@ call live refresh actions such as `fund_money_yield`, `fund_holding`,
 `fund_nav`, provider diagnostics, manager fetches, or broad provider refreshes.
 If a local readback is missing, state the missing coverage instead of fetching.
 
+For ETF/listed-fund rotation, do not answer from fund-screening concepts alone.
+Make one bounded listed-price evidence read before giving a concrete rotation
+design. Use `MarketData(action:"etf")`, `MarketData(action:"quote")` for a
+small ETF basket, or local `MarketData(query_quote/query_kline)` when rows are
+already available. In the final answer, explicitly separate:
+
+- observed listed market price / quote / K-line evidence;
+- missing or not retrieved NAV / IOPV evidence;
+- missing or not retrieved underlying-index evidence.
+
+Use NAV / IOPV only for premium-discount checks and use underlying-index rows
+only for tracking or trend confirmation. If those rows were not retrieved,
+state the gap rather than presenting the checks as verified.
+
 ## Output format
 
 ```text
