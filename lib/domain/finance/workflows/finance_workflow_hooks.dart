@@ -77,10 +77,289 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
   List<ToolUse>? buildPreflightToolCalls(List<Message> messages) {
     return _buildFundMonitorReviewPreflightToolCalls(messages) ??
         _buildPortfolioMonitorReviewPreflightToolCalls(messages) ??
+        _buildPortfolioMonitorCreateAfterRankPreflightToolCalls(messages) ??
+        _buildPortfolioRankAfterSelectionPreflightToolCalls(messages) ??
+        _buildPortfolioStrategySelectionPreflightToolCalls(messages) ??
         _buildFundStrategyPreflightToolCalls(messages) ??
         _evidenceReviewSummary.buildSearchToolCalls(messages) ??
         _tradeSizingPreflight.buildToolCalls(messages) ??
         _customStrategyPreflight.buildToolCalls(messages);
+  }
+
+  List<ToolUse>? _buildPortfolioRankAfterSelectionPreflightToolCalls(
+    List<Message> messages,
+  ) {
+    final start = messages.lastIndexWhere(
+      (message) => message.role == Role.user,
+    );
+    if (start < 0) return null;
+    final turnMessages = messages.skip(start + 1).toList(growable: false);
+    if (_hasToolCallAction(
+      turnMessages,
+      'MarketData',
+      'custom_strategy_rank',
+    )) {
+      return null;
+    }
+    final selectedStrategyId = _selectedPortfolioStrategyId(turnMessages);
+    if (selectedStrategyId == null) return null;
+    return [
+      ToolUse(
+        id: 'portfolio_strategy_rank_${DateTime.now().microsecondsSinceEpoch}',
+        name: 'MarketData',
+        input: {
+          'action': 'custom_strategy_rank',
+          'strategyId': selectedStrategyId,
+          'topN': 3,
+          'maxPositionWeight': 0.35,
+          'rebalanceInterval': 'weekly',
+        },
+      ),
+    ];
+  }
+
+  List<ToolUse>? _buildPortfolioMonitorCreateAfterRankPreflightToolCalls(
+    List<Message> messages,
+  ) {
+    final start = messages.lastIndexWhere(
+      (message) => message.role == Role.user,
+    );
+    if (start < 0) return null;
+    final turnMessages = messages.skip(start + 1).toList(growable: false);
+    if (turnMessages.any(
+      (message) => (message.toolUses ?? const <ToolUse>[]).any(
+        (call) => call.name == 'MonitorCreate',
+      ),
+    )) {
+      return null;
+    }
+    final rank = _latestPortfolioRankPayload(turnMessages);
+    if (rank == null) return null;
+    final portfolioEvidence = _mapValue(rank['portfolioEvidence']);
+    final rebalanceDraft = _mapValue(rank['rebalanceDraft']);
+    if (portfolioEvidence == null || rebalanceDraft == null) return null;
+    final strategyId = _textValue(rank['strategyId'], 'portfolio_rank_v1');
+    return [
+      ToolUse(
+        id: 'portfolio_monitor_create_${DateTime.now().microsecondsSinceEpoch}',
+        name: 'MonitorCreate',
+        input: {
+          'name': '$strategyId 组合再平衡复核',
+          'template': 'portfolio_rebalance_monitor',
+          'strategyId': strategyId,
+          'portfolioEvidence': portfolioEvidence,
+          'rebalanceDraft': rebalanceDraft,
+          'interval': '1d',
+          'display': 'status_row',
+          'user_prompt': 'portfolio rebalance monitor review',
+          'description':
+              'Review-only portfolio rebalance monitor generated from custom_strategy_rank evidence. It does not place Portfolio, XueqiuTrade, broker, or transfer orders.',
+        },
+      ),
+    ];
+  }
+
+  Map<String, dynamic>? _latestPortfolioRankPayload(List<Message> messages) {
+    final rankIds = <String>{};
+    for (final message in messages) {
+      for (final use in message.toolUses ?? const <ToolUse>[]) {
+        if (use.name == 'MarketData' &&
+            use.input['action'] == 'custom_strategy_rank') {
+          rankIds.add(use.id);
+        }
+      }
+    }
+    for (final message in messages.reversed) {
+      final result = message.toolResult;
+      if (result == null ||
+          result.isError ||
+          !rankIds.contains(result.toolUseId)) {
+        continue;
+      }
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is Map<String, dynamic> &&
+            decoded['action'] == 'custom_strategy_rank') {
+          return decoded;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  String? _selectedPortfolioStrategyId(List<Message> messages) {
+    final candidates = _portfolioStrategyCandidates(
+      messages,
+    ).map((candidate) => candidate['strategyId']).whereType<String>().toSet();
+    if (candidates.isEmpty) return null;
+    final answers = _latestAskUserQuestionStructuredAnswers(messages);
+    if (answers.isEmpty) return null;
+    final structured = _mapValue(answers.first['structuredAnswer']);
+    final rawLabel =
+        '${structured?['selectedOptionLabel'] ?? answers.first['selectedOptionLabel'] ?? answers.first['answer'] ?? ''}'
+            .trim();
+    if (rawLabel.isEmpty) return null;
+    final normalized = rawLabel.startsWith('使用 ')
+        ? rawLabel.substring('使用 '.length).trim()
+        : rawLabel;
+    if (candidates.contains(normalized)) return normalized;
+    return null;
+  }
+
+  List<Map<String, dynamic>> _latestAskUserQuestionStructuredAnswers(
+    List<Message> messages,
+  ) {
+    final askIds = <String>{};
+    for (final message in messages) {
+      for (final use in message.toolUses ?? const <ToolUse>[]) {
+        if (use.name == 'AskUserQuestion') askIds.add(use.id);
+      }
+    }
+    for (final message in messages.reversed) {
+      final result = message.toolResult;
+      if (result == null ||
+          result.isError ||
+          !askIds.contains(result.toolUseId)) {
+        continue;
+      }
+      for (final line in result.content.split(RegExp(r'\r?\n'))) {
+        final text = line.trim();
+        if (!text.startsWith('askUserQuestion:')) continue;
+        try {
+          final decoded = jsonDecode(text.substring('askUserQuestion:'.length));
+          if (decoded is! Map<String, dynamic>) continue;
+          final rows = decoded['answers'];
+          if (rows is! List) continue;
+          return rows
+              .whereType<Map>()
+              .map((row) => Map<String, dynamic>.from(row))
+              .toList(growable: false);
+        } catch (_) {
+          continue;
+        }
+      }
+    }
+    return const [];
+  }
+
+  List<ToolUse>? _buildPortfolioStrategySelectionPreflightToolCalls(
+    List<Message> messages,
+  ) {
+    final start = messages.lastIndexWhere(
+      (message) => message.role == Role.user,
+    );
+    if (start < 0) return null;
+    final turnMessages = messages.skip(start + 1).toList(growable: false);
+    if (_hasAnsweredAskUserQuestion(turnMessages)) return null;
+    if (turnMessages.any(
+      (message) => (message.toolUses ?? const <ToolUse>[]).any(
+        (call) =>
+            call.name == 'AskUserQuestion' || call.name == 'MonitorCreate',
+      ),
+    )) {
+      return null;
+    }
+    if (!_hasSuccessfulToolResult(turnMessages, 'MonitorList') ||
+        !_hasSuccessfulToolResult(turnMessages, 'Portfolio')) {
+      return null;
+    }
+    final candidates = _portfolioStrategyCandidates(turnMessages);
+    if (candidates.isEmpty) return null;
+    return [
+      ToolUse(
+        id: 'portfolio_strategy_selection_${DateTime.now().microsecondsSinceEpoch}',
+        name: 'AskUserQuestion',
+        input: {
+          'questions': [
+            {
+              'question': '请选择本轮组合再平衡监控要绑定的策略。',
+              'header': '策略选择',
+              'multiSelect': false,
+              'options': candidates
+                  .take(3)
+                  .map(
+                    (candidate) => {
+                      'label': '使用 ${candidate['strategyId']}',
+                      'description':
+                          '${candidate['name']}；标的 ${candidate['symbols']}; 选择后继续生成只复核、不自动交易的组合再平衡监控。',
+                    },
+                  )
+                  .toList(growable: false),
+            },
+          ],
+        },
+      ),
+    ];
+  }
+
+  bool _hasSuccessfulToolResult(List<Message> messages, String toolName) {
+    final ids = <String>{};
+    for (final message in messages) {
+      for (final use in message.toolUses ?? const <ToolUse>[]) {
+        if (use.name == toolName) ids.add(use.id);
+      }
+    }
+    for (final message in messages) {
+      final result = message.toolResult;
+      if (result == null || result.isError || !ids.contains(result.toolUseId)) {
+        continue;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  List<Map<String, String>> _portfolioStrategyCandidates(
+    List<Message> messages,
+  ) {
+    final marketDataIds = <String>{};
+    for (final message in messages) {
+      for (final use in message.toolUses ?? const <ToolUse>[]) {
+        if (use.name == 'MarketData' &&
+            use.input['action'] == 'custom_strategy_list') {
+          marketDataIds.add(use.id);
+        }
+      }
+    }
+    final candidates = <Map<String, String>>[];
+    for (final message in messages.reversed) {
+      final result = message.toolResult;
+      if (result == null ||
+          result.isError ||
+          !marketDataIds.contains(result.toolUseId)) {
+        continue;
+      }
+      final content = result.content.trim();
+      if (!content.startsWith('{')) continue;
+      try {
+        final decoded = jsonDecode(content);
+        if (decoded is! Map<String, dynamic>) continue;
+        final rows = decoded['runnableStrategies'];
+        if (rows is! List) continue;
+        for (final row in rows) {
+          if (row is! Map) continue;
+          final map = Map<String, dynamic>.from(row);
+          final id = _textValue(map['strategyId'], '');
+          if (id.isEmpty) continue;
+          final symbols = _listValue(map['symbols'])
+              .map((value) => '$value'.trim())
+              .where((value) => value.isNotEmpty)
+              .toList(growable: false);
+          if (symbols.length < 2) continue;
+          candidates.add({
+            'strategyId': id,
+            'name': _textValue(map['name'], id),
+            'symbols': symbols.join('/'),
+          });
+        }
+      } catch (_) {
+        continue;
+      }
+      if (candidates.isNotEmpty) return candidates;
+    }
+    return candidates;
   }
 
   List<ToolUse>? _buildPortfolioMonitorReviewPreflightToolCalls(
@@ -492,6 +771,10 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     return false;
   }
 
+  bool _isMonitorReviewState(FinanceWorkflowState? state) {
+    return state?.workflowKind == FinanceWorkflowKind.monitorReview;
+  }
+
   @override
   List<ToolUse> rewriteToolCalls({
     required List<Message> messages,
@@ -499,6 +782,13 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     required String? prompt,
     required List<ToolUse> toolCalls,
   }) {
+    final workflowState = FinanceWorkflowState.latestFromMessages(
+      messages,
+      turnStartIndex: turnStartIndex,
+    );
+    if (_isMonitorReviewState(workflowState)) {
+      toolCalls = _rewriteMonitorReviewToolCalls(toolCalls);
+    }
     final activeStrategyId =
         _latestSuccessfulCustomStrategyRunId(messages, turnStartIndex) ??
         _firstProposedSavedStrategyRunId(toolCalls);
@@ -538,6 +828,49 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     return changed ? rewritten : toolCalls;
   }
 
+  List<ToolUse> _rewriteMonitorReviewToolCalls(List<ToolUse> toolCalls) {
+    var changed = false;
+    final rewritten = <ToolUse>[];
+    final seenMonitorCreateKeys = <String>{};
+    for (final call in toolCalls) {
+      if (_isMonitorReviewBlockedTool(call.name)) {
+        changed = true;
+        continue;
+      }
+      if (call.name == 'MonitorCreate') {
+        final key = _monitorCreateKey(call.input);
+        if (!seenMonitorCreateKeys.add(key)) {
+          changed = true;
+          continue;
+        }
+      }
+      rewritten.add(call);
+    }
+    return changed ? rewritten : toolCalls;
+  }
+
+  bool _isMonitorReviewBlockedTool(String name) {
+    return name == 'Read' ||
+        name == 'Grep' ||
+        name == 'Glob' ||
+        name == 'LS' ||
+        name == 'Write' ||
+        name == 'FileWrite' ||
+        name == 'Edit' ||
+        name == 'EnterPlanMode' ||
+        name == 'ExitPlanMode';
+  }
+
+  String _monitorCreateKey(Map<String, dynamic> input) {
+    final template = _textValue(input['template'], '');
+    final strategyId = _textValue(input['strategyId'], '');
+    final name = _textValue(input['name'], '');
+    if (template.isNotEmpty || strategyId.isNotEmpty) {
+      return '$template::$strategyId::$name';
+    }
+    return name;
+  }
+
   @override
   DomainToolInterception? interceptToolCalls({
     required List<Message> messages,
@@ -555,6 +888,32 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
         answer: tradeConfirmation,
         skippedReason:
             'Skipped: strategy trade confirmation was already answered; no file, memory, watchlist, or trade mutation is allowed in this turn.',
+      );
+    }
+
+    final monitorCreateSummary = _monitorCreateOverrunSummary(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+      proposedToolCalls: toolCalls,
+    );
+    if (monitorCreateSummary != null) {
+      return DomainToolInterception(
+        answer: monitorCreateSummary,
+        skippedReason:
+            'Skipped: monitor evidence already has successful MonitorCreate/readback in this turn; no repeated MonitorCreate, file, or indicator drift is needed.',
+      );
+    }
+
+    final monitorStrategyReadback = _monitorStrategyReadbackBoundary(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+      proposedToolCalls: toolCalls,
+    );
+    if (monitorStrategyReadback != null) {
+      return DomainToolInterception(
+        answer: monitorStrategyReadback,
+        skippedReason:
+            'Skipped: requested strategyId is a monitor artifact from MonitorList, not a saved custom StrategySpec; use monitor readback evidence instead of custom_strategy_read.',
       );
     }
 
@@ -774,6 +1133,174 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     return null;
   }
 
+  String? _monitorStrategyReadbackBoundary({
+    required List<Message> messages,
+    required int turnStartIndex,
+    required List<ToolUse> proposedToolCalls,
+  }) {
+    final strategyIds = proposedToolCalls
+        .where(
+          (call) =>
+              call.name == 'MarketData' &&
+              call.input['action'] == 'custom_strategy_read',
+        )
+        .map((call) => '${call.input['strategyId'] ?? ''}'.trim())
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+    if (strategyIds.isEmpty) return null;
+    for (final strategyId in strategyIds) {
+      final monitor = _latestPortfolioMonitorRecord(
+        messages,
+        turnStartIndex,
+        strategyId,
+      );
+      if (monitor == null) continue;
+      final evidence = _mapValue(monitor['portfolioEvidence']);
+      final draft = _mapValue(monitor['rebalanceDraft']);
+      final positions = _listValue(draft?['positions']);
+      final symbols = positions
+          .whereType<Map>()
+          .map((row) => _textValue(row['symbol'], ''))
+          .where((symbol) => symbol.isNotEmpty)
+          .toList(growable: false);
+      final weights = positions
+          .whereType<Map>()
+          .map((row) {
+            final symbol = _textValue(row['symbol'], '-');
+            final weight = _textValue(row['targetWeight'], '-');
+            return '- $symbol：目标权重 $weight';
+          })
+          .join('\n');
+      return [
+        '已从 `MonitorList` 读回组合再平衡监控；`$strategyId` 是 monitor artifact 的 strategyId，不是已保存 `custom_strategy_read` StrategySpec，因此已停止错误的 `custom_strategy_read` 调用。',
+        '',
+        '## 监控读回',
+        '',
+        '- monitorId：${_textValue(monitor['id'], '-')}。',
+        '- 名称：${_textValue(monitor['name'], '-')}。',
+        '- 模板：portfolio_rebalance_monitor。',
+        '- 状态：${monitor['enabled'] == true ? 'enabled' : 'disabled'}。',
+        '- 周期：${_textValue(monitor['intervalMinutes'], '-')} 分钟。',
+        '- strategyId：$strategyId。',
+        if (symbols.isNotEmpty) '- 标的：${symbols.join('、')}。',
+        '- 组合证据：mode=${_textValue(evidence?['mode'] ?? evidence?['tradeBoundary'], 'monitor-readback')}；selectedCount=${_textValue(evidence?['selectedCount'], '-')}。',
+        '- 再平衡草案：mode=${_textValue(draft?['mode'] ?? draft?['tradeBoundary'], 'review_only')}；rebalanceInterval=${_textValue(draft?['rebalanceInterval'], '-')}；maxPositionWeight=${_textValue(draft?['maxPositionWeight'], '-')}。',
+        if (weights.isNotEmpty) '',
+        if (weights.isNotEmpty) '## 目标权重草案',
+        if (weights.isNotEmpty) '',
+        if (weights.isNotEmpty) weights,
+        '',
+        '## 复核边界',
+        '',
+        '- 本轮只确认已有 portfolio_rebalance_monitor 的规则与复核数据。',
+        '- 未执行 Portfolio / XueqiuTrade / broker 下单。',
+        '- 若需要新建或重算组合，应先通过 `custom_strategy_rank` 生成新的 `portfolioEvidence` 和 `rebalanceDraft`，再调用 `MonitorCreate(template:"portfolio_rebalance_monitor")`。',
+      ].join('\n');
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _latestPortfolioMonitorRecord(
+    List<Message> messages,
+    int turnStartIndex,
+    String strategyId,
+  ) {
+    for (final message in messages.skip(turnStartIndex).toList().reversed) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      final marker = result.content.lastIndexOf('monitorList:');
+      if (marker < 0) continue;
+      final payload = result.content.substring(marker + 'monitorList:'.length);
+      try {
+        final decoded = jsonDecode(payload);
+        if (decoded is! Map<String, dynamic>) continue;
+        final monitors = decoded['monitors'];
+        if (monitors is! List) continue;
+        for (final item in monitors) {
+          if (item is! Map) continue;
+          final record = Map<String, dynamic>.from(item);
+          if (_textValue(record['strategyId'], '') != strategyId) continue;
+          final template = _textValue(record['template'], '');
+          if (template == 'portfolio_rebalance_monitor' ||
+              record['portfolioEvidence'] is Map ||
+              record['rebalanceDraft'] is Map) {
+            return record;
+          }
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _mapValue(Object? value) {
+    return value is Map ? Map<String, dynamic>.from(value) : null;
+  }
+
+  List<dynamic> _listValue(Object? value) {
+    return value is List ? value : const [];
+  }
+
+  String? _monitorCreateOverrunSummary({
+    required List<Message> messages,
+    required int turnStartIndex,
+    required List<ToolUse> proposedToolCalls,
+  }) {
+    if (!proposedToolCalls.any(
+      (call) =>
+          call.name == 'MonitorCreate' ||
+          call.name == 'Read' ||
+          call.name == 'Grep' ||
+          call.name == 'Glob' ||
+          call.name == 'LS' ||
+          call.name == 'DataProcess',
+    )) {
+      return null;
+    }
+    final created = _successfulMonitorCreateResults(messages, turnStartIndex);
+    if (created.isEmpty) return null;
+    final first = created.first;
+    return [
+      '已创建监控并停止后续重复创建、文件读取或指标漂移调用。本回答只基于本轮 `MonitorCreate` / monitor readback 证据。',
+      '',
+      '## 创建结果',
+      '',
+      '- ${first.split('\n').first}',
+      if (created.length > 1)
+        '- 本轮已有 ${created.length} 条 MonitorCreate 成功记录；后续重复创建已停止。',
+      '',
+      '## 边界',
+      '',
+      '- 监控用于观察/复核，不自动调仓。',
+      '- 未执行 Portfolio 交易、XueqiuTrade、broker order 或转账。',
+      '- 后续如需修改规则，应基于已有 monitorId 或 `MonitorList` readback 做显式更新，不重复创建同类监控。',
+    ].join('\n');
+  }
+
+  List<String> _successfulMonitorCreateResults(
+    List<Message> messages,
+    int turnStartIndex,
+  ) {
+    final createIds = <String>{};
+    for (final message in messages.skip(turnStartIndex)) {
+      for (final use in message.toolUses ?? const <ToolUse>[]) {
+        if (use.name == 'MonitorCreate') createIds.add(use.id);
+      }
+    }
+    final results = <String>[];
+    for (final message in messages.skip(turnStartIndex)) {
+      final result = message.toolResult;
+      if (result == null ||
+          result.isError ||
+          !createIds.contains(result.toolUseId)) {
+        continue;
+      }
+      results.add(result.content.trim());
+    }
+    return results;
+  }
+
   String? _etfQuoteOnlyStrategyBoundary({
     required List<Message> messages,
     required int turnStartIndex,
@@ -793,13 +1320,16 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     if (quotes.isEmpty || _hasSuccessfulEtfKline(messages, turnStartIndex)) {
       return null;
     }
-    final quoteLines = quotes.take(6).map((row) {
-      final code = _textValue(row['code'] ?? row['symbol'], '-');
-      final name = _textValue(row['name'], code);
-      final price = _textValue(row['price'], '-');
-      final pct = _textValue(row['changePct'] ?? row['pct_chg'], '-');
-      return '| $code | $name | $price | $pct |';
-    }).join('\n');
+    final quoteLines = quotes
+        .take(6)
+        .map((row) {
+          final code = _textValue(row['code'] ?? row['symbol'], '-');
+          final name = _textValue(row['name'], code);
+          final price = _textValue(row['price'], '-');
+          final pct = _textValue(row['changePct'] ?? row['pct_chg'], '-');
+          return '| $code | $name | $price | $pct |';
+        })
+        .join('\n');
     return [
       '已取得 ETF 场内报价证据，但本轮尚无成功的 ETF 日线 K 线证据；因此已停止后续 ETF K-line / `custom_strategy_rank` / `custom_strategy_backtest` 扩展调用，不把报价快照冒充为可回测排名证据。',
       '',
@@ -863,7 +1393,9 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
         final mapped = rows
             .whereType<Map>()
             .map((row) => Map<String, dynamic>.from(row))
-            .where((row) => _isEtfCode(_textValue(row['code'] ?? row['symbol'], '')))
+            .where(
+              (row) => _isEtfCode(_textValue(row['code'] ?? row['symbol'], '')),
+            )
             .toList(growable: false);
         if (mapped.isNotEmpty) return mapped;
       } catch (_) {

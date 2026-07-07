@@ -122,7 +122,7 @@ Choose `display` to match the return shape:
       'interval': {
         'type': 'string',
         'description':
-            'Polling interval: "1m", "5m", "30m", "1h" (default "5m"). Not needed if streamUrl is set.',
+            'Polling interval: "1m", "5m", "30m", "1h", "1d" (default "5m"). Not needed if streamUrl is set.',
       },
       'streamUrl': {
         'type': 'string',
@@ -272,7 +272,7 @@ Choose `display` to match the return shape:
       return ToolResult(
         toolUseId: toolUseId,
         content:
-            'Invalid interval "$intervalStr". Use "1m", "5m", "30m", or "1h".',
+            'Invalid interval "$intervalStr". Use "1m", "5m", "30m", "1h", or "1d".',
         isError: true,
       );
     }
@@ -545,9 +545,13 @@ Choose `display` to match the return shape:
   }
 
   Duration? _parseInterval(String s) {
-    final match = RegExp(r'^(\d+)(m|h)$').firstMatch(s);
+    final match = RegExp(r'^(\d+)(m|h|d)$').firstMatch(s);
     if (match == null) return null;
     final n = int.parse(match.group(1)!);
-    return match.group(2) == 'h' ? Duration(hours: n) : Duration(minutes: n);
+    return switch (match.group(2)) {
+      'd' => Duration(days: n),
+      'h' => Duration(hours: n),
+      _ => Duration(minutes: n),
+    };
   }
 }

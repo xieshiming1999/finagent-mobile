@@ -2,10 +2,10 @@ import 'dart:math';
 
 import '../data_fetcher/models.dart';
 
-/// Advanced indicators ported from backtrader/Qbot/abu.
+/// Advanced technical indicators used by strategy and analysis workflows.
 
 class AdvancedIndicators {
-  // ─── Ichimoku Cloud (backtrader) ───
+  // ─── Ichimoku Cloud ───
 
   static ({
     List<double?> tenkan,
@@ -163,7 +163,7 @@ class AdvancedIndicators {
     return (score: score, slope: slopeList, rsq: rsqList);
   }
 
-  // ─── TSI (True Strength Index, backtrader) ───
+  // ─── TSI (True Strength Index) ───
 
   static List<double?> tsi(
     List<KlineBar> bars, {
@@ -192,7 +192,7 @@ class AdvancedIndicators {
     return result;
   }
 
-  // ─── Vortex Indicator (backtrader) ───
+  // ─── Vortex Indicator ───
 
   static ({List<double?> vip, List<double?> vim}) vortex(
     List<KlineBar> bars, {
@@ -220,7 +220,7 @@ class AdvancedIndicators {
     return (vip: vip, vim: vim);
   }
 
-  // ─── KST (Know Sure Thing, backtrader) ───
+  // ─── KST (Know Sure Thing) ───
 
   static ({List<double?> kst, List<double?> signal}) kst(
     List<KlineBar> bars, {
@@ -264,7 +264,7 @@ class AdvancedIndicators {
     return (kst: kstVals, signal: signalVals);
   }
 
-  // ─── Hurst Exponent (backtrader) ───
+  // ─── Hurst Exponent ───
 
   static double? hurst(List<KlineBar> bars, {int minLag = 2, int maxLag = 20}) {
     if (bars.length < maxLag + 10) return null;

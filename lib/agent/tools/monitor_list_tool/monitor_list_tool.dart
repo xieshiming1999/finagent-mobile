@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../message.dart';
 import '../../monitor.dart';
 import '../../tool.dart';
@@ -39,9 +41,39 @@ class MonitorListTool extends Tool {
     }
 
     final summaries = monitors.map((m) => m.toSummary()).join('\n\n');
+    final structured = {
+      'contract': 'monitor-list-v1',
+      'count': monitors.length,
+      'monitors': monitors.map(_monitorRecord).toList(growable: false),
+    };
     return ToolResult(
       toolUseId: toolUseId,
-      content: '${monitors.length} monitor(s):\n\n$summaries',
+      content:
+          '${monitors.length} monitor(s):\n\n$summaries\n\nmonitorList:${jsonEncode(structured)}',
     );
+  }
+
+  Map<String, dynamic> _monitorRecord(Monitor monitor) {
+    final strategyRules = monitor.strategyRules;
+    final portfolioEvidence = strategyRules?['portfolioEvidence'];
+    final rebalanceDraft = strategyRules?['rebalanceDraft'];
+    return {
+      'id': monitor.id,
+      'name': monitor.name,
+      'enabled': monitor.enabled,
+      'intervalMinutes': monitor.interval.inMinutes,
+      'displayType': monitor.displayType,
+      if (monitor.strategyId != null) 'strategyId': monitor.strategyId,
+      if (monitor.lastRunTime != null)
+        'lastRunTime': monitor.lastRunTime!.toIso8601String(),
+      if (monitor.lastError != null) 'lastError': monitor.lastError,
+      if (monitor.lastResult != null) 'lastResult': monitor.lastResult,
+      if (portfolioEvidence is Map)
+        'portfolioEvidence': Map<String, dynamic>.from(portfolioEvidence),
+      if (rebalanceDraft is Map)
+        'rebalanceDraft': Map<String, dynamic>.from(rebalanceDraft),
+      if (portfolioEvidence is Map || rebalanceDraft is Map)
+        'template': 'portfolio_rebalance_monitor',
+    };
   }
 }

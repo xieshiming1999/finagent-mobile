@@ -45,6 +45,12 @@ void main() {
       expect(result.content, contains('custom_rsi_volume_rebound_v1'));
       expect(result.content, contains('strategyRules'));
       expect(result.content, contains('rsi5'));
+      expect(result.content, contains('monitorList:'));
+      expect(result.content, contains('"contract":"monitor-list-v1"'));
+      expect(
+        result.content,
+        contains('"strategyId":"custom_rsi_volume_rebound_v1"'),
+      );
     },
   );
 
@@ -269,6 +275,7 @@ return {template:'portfolio_rebalance_monitor', signal:'review_rebalance', selec
               'name': 'Portfolio rebalance review',
               'template': 'portfolio_rebalance_monitor',
               'strategyId': 'ranked_portfolio_v1',
+              'interval': '1d',
               'portfolioEvidence': {
                 'mode': 'equal_weight_selected_metrics',
                 'selectedCount': 2,
@@ -293,7 +300,9 @@ return {template:'portfolio_rebalance_monitor', signal:'review_rebalance', selec
 
       expect(result.isError, isFalse);
       expect(result.content, contains('Template: portfolio_rebalance_monitor'));
+      expect(result.content, contains('Interval: 1440m'));
       expect(store.monitors.single.strategyId, 'ranked_portfolio_v1');
+      expect(store.monitors.single.interval, const Duration(days: 1));
       expect(store.monitors.single.script, contains('portfolioEvidence'));
       expect(store.monitors.single.script, contains('rebalanceDraft'));
       expect(

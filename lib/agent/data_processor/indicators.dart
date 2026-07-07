@@ -270,7 +270,7 @@ class Indicators {
     return m;
   }
 
-  /// 100-point technical scoring (daily_stock_analysis inspired).
+  /// 100-point technical scoring.
   /// 趋势30 + 乖离20 + 量能15 + 支撑10 + MACD15 + RSI10
   static Map<String, dynamic> technicalScore(List<KlineBar> bars) {
     if (bars.length < 30) return {'score': 0, 'signal': 'insufficient_data'};
