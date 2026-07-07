@@ -19,98 +19,31 @@ void main() {
     final executable = help['executableV1'] as Map;
     expect(executable['indicatorCount'], greaterThan(20));
     expect(executable['indicatorsPreview'], contains('rsi'));
-    expect(
-      executable['indicatorPreviewCatalog'],
-      contains(isA<Map>().having((row) => row['type'], 'type', 'rsi')),
-    );
-    expect(
-      executable['indicatorPreviewCatalog'],
-      contains(
-        isA<Map>()
-            .having((row) => row['type'], 'type', 'volume_breakout')
-            .having(
-              (row) => row['parameterSchema'],
-              'parameterSchema',
-              isNotEmpty,
-            ),
-      ),
-    );
     expect(executable['catalogRequest'], containsPair('detail', 'catalog'));
+    expect(executable.containsKey('indicatorPreviewCatalog'), isFalse);
     expect(executable.containsKey('indicators'), isFalse);
     expect(executable.containsKey('indicatorCatalog'), isFalse);
     expect(executable.containsKey('indicatorCatalogByCategory'), isFalse);
     expect(executable.containsKey('stockExample'), isFalse);
     expect(executable.containsKey('ruleCompositionExamples'), isFalse);
-    expect(
-      (executable['indicatorPreviewCatalog'] as List).length,
-      lessThanOrEqualTo(8),
-    );
 
     final fundObservation = help['fundObservationV1'] as Map;
     expect(fundObservation['indicatorCount'], greaterThan(5));
     expect(fundObservation['indicatorsPreview'], contains('fund_drawdown'));
     expect(
-      fundObservation['indicatorPreviewCatalog'],
-      contains(
-        isA<Map>()
-            .having((row) => row['type'], 'type', 'fund_drawdown')
-            .having((row) => row['scoreDirection'], 'scoreDirection', -1),
-      ),
-    );
-    expect(
       fundObservation['catalogRequest'],
       containsPair('detail', 'catalog'),
     );
+    expect(fundObservation.containsKey('indicatorPreviewCatalog'), isFalse);
     expect(fundObservation.containsKey('indicators'), isFalse);
     expect(fundObservation.containsKey('indicatorCatalog'), isFalse);
     expect(fundObservation.containsKey('indicatorCatalogByCategory'), isFalse);
     expect(fundObservation.containsKey('ordinaryFundExample'), isFalse);
     expect(fundObservation.containsKey('moneyFundExample'), isFalse);
-    expect(
-      (fundObservation['indicatorPreviewCatalog'] as List).length,
-      lessThanOrEqualTo(8),
-    );
     expect(help.containsKey('proxyContract'), isFalse);
     expect(help.containsKey('unsupportedV1'), isFalse);
-
-    final inputContracts = help['inputContracts'] as Map;
-    expect(
-      inputContracts.keys,
-      containsAll([
-        'custom_strategy_validate',
-        'custom_strategy_backtest',
-        'custom_strategy_observe',
-        'custom_strategy_fund_backtest',
-        'custom_strategy_rank',
-        'custom_strategy_save',
-        'custom_strategy_list',
-        'custom_strategy_read',
-        'custom_strategy_compare',
-        'custom_strategy_run',
-      ]),
-    );
-    expect(
-      (inputContracts['custom_strategy_run'] as Map)['requiredFields'],
-      contains('strategyId'),
-    );
-
-    final outputContracts = help['outputContracts'] as Map;
-    expect(
-      outputContracts.keys,
-      containsAll([
-        'custom_strategy_validate',
-        'custom_strategy_backtest',
-        'custom_strategy_observe',
-        'custom_strategy_fund_backtest',
-        'custom_strategy_rank',
-        'custom_strategy_save',
-        'custom_strategy_list',
-        'custom_strategy_read',
-        'custom_strategy_compare',
-        'custom_strategy_run',
-      ]),
-    );
-    expect(outputContracts['custom_strategy_run'], contains('lifecycleIssue'));
+    expect(help.containsKey('inputContracts'), isFalse);
+    expect(help.containsKey('outputContracts'), isFalse);
   });
 
   test('custom strategy help exposes full catalogs only when requested', () {
@@ -148,6 +81,140 @@ void main() {
     expect(
       fundObservation['indicatorCatalogByCategory'],
       containsPair('fund_return_quality', isNotEmpty),
+    );
+  });
+
+  test(
+    'normalizes structured top-level fund signals into observation rules',
+    () {
+      final validation = CustomStrategyEngine().validate({
+        'name': '基金回撤趋势定投观察策略',
+        'description':
+            'Fund DCA observation with top-level structured signals.',
+        'assetClass': 'fund',
+        'market': 'fund',
+        'dataRequirements': {
+          'dataClass': 'ordinary_fund_nav',
+          'requiredFields': ['date', 'nav'],
+          'minBars': 60,
+        },
+        'signals': [
+          {
+            'type': 'fund_drawdown',
+            'period': 60,
+            'operator': '<',
+            'threshold': -0.1,
+            'name': '中期回撤超10%',
+          },
+          {
+            'type': 'nav_trend',
+            'period': 20,
+            'operator': '>',
+            'threshold': 0,
+            'name': '短期净值趋势向上',
+          },
+        ],
+        'observation': {'name': '定投观察窗口', 'type': 'dca_window'},
+      });
+
+      expect(validation['status'], 'validated');
+      final spec = validation['spec'] as Map;
+      final entry = (spec['entry'] as Map)['all'] as List;
+      expect(
+        entry,
+        contains(
+          isA<Map>()
+              .having((row) => row['left'], 'left', 'fundDrawdown60')
+              .having((row) => row['op'], 'op', '>=')
+              .having((row) => row['right'], 'right', 10),
+        ),
+      );
+      expect(
+        entry,
+        contains(
+          isA<Map>()
+              .having((row) => row['left'], 'left', 'navTrend20')
+              .having((row) => row['op'], 'op', '>')
+              .having((row) => row['right'], 'right', 0),
+        ),
+      );
+      expect(
+        validation['accepted'],
+        containsAll(['entry:fundDrawdown60:>=', 'entry:navTrend20:>']),
+      );
+    },
+  );
+
+  test('normalizes fund output aliases and object-form rule sides', () {
+    final validation = CustomStrategyEngine().validate({
+      'name': 'fund_dca_drawdown_trend',
+      'description':
+          'Fund DCA observation using output aliases and object-form rule sides.',
+      'assetClass': 'fund',
+      'market': 'fund',
+      'dataRequirements': {
+        'fields': ['date', 'nav'],
+        'minimumBars': 120,
+      },
+      'indicators': [
+        {
+          'type': 'nav_trend',
+          'params': {'period': 20},
+          'output': 'nav_trend_20',
+        },
+        {
+          'type': 'fund_drawdown',
+          'params': {'period': 120},
+          'output': 'dd_120',
+        },
+      ],
+      'signals': [
+        {
+          'name': 'deep_drawdown_add',
+          'category': 'dca_observation',
+          'condition': {
+            'left': {'indicator': 'dd_120', 'field': 'value'},
+            'op': '>',
+            'right': {'value': 0.1},
+          },
+        },
+        {
+          'name': 'trend_recovery',
+          'category': 'dca_observation',
+          'condition': {
+            'left': {'indicator': 'nav_trend_20', 'field': 'value'},
+            'op': '>',
+            'right': {'value': 0},
+          },
+        },
+      ],
+    });
+
+    expect(validation['status'], 'validated');
+    final spec = validation['spec'] as Map;
+    final indicatorIds = (spec['indicators'] as List)
+        .whereType<Map>()
+        .map((row) => row['id'])
+        .toList();
+    expect(indicatorIds, containsAll(['dd_120', 'nav_trend_20']));
+    final entry = (spec['entry'] as Map)['all'] as List;
+    expect(
+      entry,
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'dd_120')
+            .having((row) => row['op'], 'op', '>')
+            .having((row) => row['right'], 'right', 10),
+      ),
+    );
+    expect(
+      entry,
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'nav_trend_20')
+            .having((row) => row['op'], 'op', '>')
+            .having((row) => row['right'], 'right', 0),
+      ),
     );
   });
 

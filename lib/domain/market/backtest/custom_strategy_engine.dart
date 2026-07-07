@@ -813,6 +813,7 @@ class CustomStrategyEngine {
             ..remove('indicators')
             ..remove('indicatorCatalog')
             ..remove('indicatorCatalogByCategory')
+            ..remove('indicatorPreviewCatalog')
             ..remove('stockExample')
             ..remove('ruleCompositionExamples');
       final fundObservation =
@@ -820,100 +821,15 @@ class CustomStrategyEngine {
             ..remove('indicators')
             ..remove('indicatorCatalog')
             ..remove('indicatorCatalogByCategory')
+            ..remove('indicatorPreviewCatalog')
             ..remove('ordinaryFundExample')
             ..remove('moneyFundExample');
       payload['executableV1'] = executable;
       payload['fundObservationV1'] = fundObservation;
       payload.remove('unsupportedV1');
       payload.remove('proxyContract');
-      payload['inputContracts'] = {
-        'custom_strategy_validate': {
-          'requiredFields': ['strategySpec'],
-        },
-        'custom_strategy_backtest': {
-          'requiredFields': ['strategySpec'],
-          'boundary': 'stock only',
-        },
-        'custom_strategy_observe': {
-          'requiredFields': ['strategySpec', 'fundRows'],
-          'boundary': 'fund evidence only',
-        },
-        'custom_strategy_fund_backtest': {
-          'requiredFields': ['strategySpec', 'fundRows'],
-          'boundary': 'fund NAV/yield evidence only',
-        },
-        'custom_strategy_rank': {
-          'requiredFields': ['strategySpec', 'symbols'],
-          'boundary': 'portfolio/ranking evidence only',
-        },
-        'custom_strategy_save': {
-          'requiredFields': ['strategySpec', 'evidence'],
-        },
-        'custom_strategy_list': {'requiredFields': []},
-        'custom_strategy_read': {
-          'requiredFields': ['strategyId'],
-        },
-        'custom_strategy_compare': {
-          'requiredFields': ['strategyIds'],
-        },
-        'custom_strategy_run': {
-          'requiredFields': ['strategyId'],
-        },
-      };
-      payload['outputContracts'] = {
-        'custom_strategy_validate': [
-          'status',
-          'validationSummary',
-          'repairPlan',
-          'unsupportedDetails',
-          'dataRequirements',
-        ],
-        'custom_strategy_backtest': [
-          'metrics',
-          'lifecycleAdvice',
-          'dataCoverage',
-          'assumptions',
-        ],
-        'custom_strategy_rank': [
-          'ranked',
-          'portfolioEvidence',
-          'rebalanceDraft',
-          'dataCoverage',
-        ],
-        'custom_strategy_observe': [
-          'observation',
-          'dcaObservation',
-          'monitorDraft',
-          'fundRiskEvidence',
-        ],
-        'custom_strategy_fund_backtest': [
-          'periodEvidence',
-          'fundRiskEvidence',
-          'fundCoverageEvidence',
-        ],
-        'custom_strategy_save': [
-          'strategyId',
-          'status',
-          'lifecycle',
-          'dataAndAssumptionSummary',
-        ],
-        'custom_strategy_list': ['count', 'strategies'],
-        'custom_strategy_read': [
-          'strategyId',
-          'status',
-          'runnable',
-          'strategySpec',
-          'lifecycle',
-          'nextActions',
-        ],
-        'custom_strategy_compare': [
-          'count',
-          'strategies',
-          'bestBy',
-          'comparisonNotes',
-        ],
-        'custom_strategy_run': ['metrics', 'readback_only', 'lifecycleIssue'],
-      };
+      payload.remove('inputContracts');
+      payload.remove('outputContracts');
       payload['text'] =
           'Custom StrategySpec v1 compact help. Use custom_strategy_validate before executable actions. Use detail:"catalog" only when the full stock or fund indicator catalog is needed.';
     } else {

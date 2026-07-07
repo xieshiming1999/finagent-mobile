@@ -163,10 +163,11 @@ Map<String, dynamic>? _normalizeFundObservationSpec(
   final version = _intOf(input['version'], fallback: 1);
   final id = input['id'] ?? 'custom_${_slug(name)}_v$version';
   final indicators = _normalizeFundIndicators(
-    input['indicators'] ?? observation?['indicators'],
+    input['indicators'] ?? observation?['indicators'] ?? input['signals'],
   );
   final indicatorIds = indicators.map((item) => '${item['id']}').toSet();
   final observationRules = [
+    ..._conditionRulesFromObservationList(input['signals']),
     ..._conditionRulesFromObservationList(observation?['entries']),
     ..._conditionRulesFromObservationList(observation?['signals']),
     ..._conditionRulesFromObservationList(observation?['rules']),
@@ -180,7 +181,7 @@ Map<String, dynamic>? _normalizeFundObservationSpec(
       input['exit'] ??
       input['exitRule'] ??
       input['exitConditions'] ??
-      _fundExitSource(observationRules);
+      _fundExitSource(observationRules, indicators);
   final existingRequirements = _mapOf(input['dataRequirements']);
   return {
     ...input,
@@ -286,9 +287,10 @@ Map<String, dynamic>? _fundIndicatorFromSource(Map<String, dynamic> source) {
       : type == 'nav_trend'
       ? 'navTrend$period'
       : '$camel$period';
+  final explicitId = source['id'] ?? source['output'] ?? source['alias'];
   return {
     ...source,
-    'id': '${remapped ? defaultId : source['id'] ?? defaultId}',
+    'id': '${remapped ? defaultId : explicitId ?? defaultId}',
     'type': type,
     'source':
         source['source'] ??
@@ -314,19 +316,29 @@ List<Map<String, dynamic>> _conditionRulesFromObservationList(Object? raw) {
 Map<String, dynamic> _fundEntrySource(List<Map<String, dynamic>> rules) {
   final candidates = rules.where((rule) => !_isFundExitObservation(rule));
   final selected = candidates.isNotEmpty
-      ? [candidates.first]
+      ? candidates.toList()
       : rules.take(1).toList();
   return {'all': _normalizeFundObservationRules(selected)};
 }
 
-Map<String, dynamic> _fundExitSource(List<Map<String, dynamic>> rules) {
+Map<String, dynamic> _fundExitSource(
+  List<Map<String, dynamic>> rules,
+  List<Map<String, dynamic>> indicators,
+) {
   final candidates = rules.where(_isFundExitObservation).toList();
   if (candidates.isNotEmpty) {
     return {'any': _normalizeFundObservationRules(candidates)};
   }
+  Map<String, dynamic>? drawdown;
+  for (final indicator in indicators) {
+    if (indicator['type'] == 'fund_drawdown') {
+      drawdown = indicator;
+      break;
+    }
+  }
   return {
     'any': [
-      {'left': 'fundDrawdown20', 'op': '>=', 'right': 15},
+      {'left': drawdown?['id'] ?? 'fundDrawdown20', 'op': '>=', 'right': 15},
     ],
   };
 }
@@ -352,8 +364,20 @@ List<Map<String, dynamic>> _normalizeFundObservationRules(
 }
 
 Map<String, dynamic> _normalizeFundObservationRule(Map<String, dynamic> rule) {
-  final left = '${rule['left'] ?? ''}'.trim();
-  final right = rule['right'];
+  final left = _fundRuleSide(rule['left'] ?? rule['indicator'] ?? rule['type']);
+  final period =
+      _intOf(
+        rule['period'] ?? _mapOf(rule['params'])?['period'],
+        fallback: 20,
+      ) ??
+      20;
+  final normalizedLeft = _normalizeFundRuleLeft(left, period: period);
+  final rawRight = rule['right'] ?? rule['threshold'] ?? rule['value'];
+  final right = _normalizeFundRuleRight(
+    normalizedLeft,
+    rawRight,
+    rawLeft: left,
+  );
   if (left == 'nav' && '$right'.toLowerCase().startsWith('sma')) {
     return {
       'left': 'navTrend20',
@@ -362,20 +386,66 @@ Map<String, dynamic> _normalizeFundObservationRule(Map<String, dynamic> rule) {
     };
   }
   return {
-    'left': _normalizeFundRuleLeft(left),
-    'op': '${rule['op'] ?? rule['operator'] ?? '>='}'.trim(),
+    'left': normalizedLeft,
+    'op': _normalizeFundRuleOp(
+      normalizedLeft,
+      '${rule['op'] ?? rule['operator'] ?? ''}'.trim(),
+    ),
     'right': right is String && right.toLowerCase().startsWith('sma')
         ? 0
         : right,
   };
 }
 
-String _normalizeFundRuleLeft(String raw) {
+String _normalizeFundRuleOp(String left, String raw) {
+  final op = raw.isEmpty ? '>=' : raw;
+  return left.startsWith('fundDrawdown') && (op == '<' || op == '<=')
+      ? '>='
+      : op;
+}
+
+String _fundRuleSide(Object? raw) {
+  final source = _mapOf(raw);
+  if (source != null) {
+    return '${source['indicator'] ?? source['id'] ?? source['source'] ?? source['field'] ?? ''}'
+        .trim();
+  }
+  return '${raw ?? ''}'.trim();
+}
+
+Object? _normalizeFundRuleRight(
+  String left,
+  Object? raw, {
+  String rawLeft = '',
+}) {
+  final source = _mapOf(raw);
+  final valueSource = source?['value'] ?? source?['threshold'] ?? raw;
+  final isDrawdown =
+      left.startsWith('fundDrawdown') ||
+      RegExp(r'(^|_)dd($|_)|drawdown', caseSensitive: false).hasMatch(rawLeft);
+  if (!isDrawdown) return valueSource;
+  final value = _numOf(valueSource);
+  if (value == null) return raw;
+  final absolute = value.abs();
+  return absolute > 0 && absolute <= 1 ? absolute * 100 : absolute;
+}
+
+String _normalizeFundRuleLeft(String raw, {int period = 20}) {
+  if (RegExp(r'^[a-z][a-z0-9_]*_\d+$', caseSensitive: false).hasMatch(raw)) {
+    return raw;
+  }
   if (RegExp('drawdown', caseSensitive: false).hasMatch(raw)) {
-    return 'fundDrawdown20';
+    return 'fundDrawdown$period';
   }
   if (RegExp('navtrend|trend|sma|ma', caseSensitive: false).hasMatch(raw)) {
-    return 'navTrend20';
+    return 'navTrend$period';
+  }
+  if (fundStrategyIndicators.contains(raw)) {
+    final camel = raw.replaceAllMapped(
+      RegExp(r'_([a-z])'),
+      (match) => (match.group(1) ?? '').toUpperCase(),
+    );
+    return '$camel$period';
   }
   return raw.isEmpty ? 'navTrend20' : raw;
 }
