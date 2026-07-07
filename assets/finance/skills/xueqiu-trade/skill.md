@@ -40,6 +40,16 @@ Before any buy/sell after a confirmation-style workflow, use the read-only
 preview action to validate the portfolio, symbol, quote route, current account
 state, and estimated trade value. This action must not be treated as execution.
 
+If the preview answer must explain strategy evidence, signal status, or price
+assumptions, gather the evidence before `preview_order` in the same turn:
+
+- use `MarketData(action:"query_quote", code:"<code>")` or another governed
+  quote action for source-explicit price evidence;
+- use `MarketData(action:"custom_strategy_read", strategyId:"<id>")`, or a
+  same-turn `custom_strategy_*` result, for saved strategy evidence;
+- if that evidence is unavailable, keep the preview summary honest: report the
+  missing evidence and treat `preview_order` only as order-field validation.
+
 ```text
 XueqiuTrade(action: "preview_order", portfolio: "finasimu",
   side: "buy", symbol: "SH600519", shares: 5, price: 1215)

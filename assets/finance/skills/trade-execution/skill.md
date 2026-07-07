@@ -67,6 +67,18 @@ local paper state and `XueqiuTrade(action:"preview_order")` for Xueqiu MONI
 readback evidence. These preview actions are not execution and must not be
 reported as a completed trade.
 
+Before any preview action that will be summarized with strategy evidence or a
+price assumption, gather current structured evidence in the same turn:
+
+- use `MarketData(action:"query_quote", code:"<symbol>")` or another governed
+  quote path for the price/source-time evidence;
+- when the order is based on a saved strategy, use
+  `MarketData(action:"custom_strategy_read", strategyId:"<id>")` or a recent
+  same-turn `custom_strategy_*` result for the strategy evidence;
+- if strategy evidence is unavailable, say it is unavailable and keep the
+  preview bounded to order-field validation. Do not present remembered strategy
+  prose as current structured evidence.
+
 For final local paper execution after explicit confirmation,
 `Portfolio(action:"trade")` must return `postTradeReadback` with same-runtime
 cash, position, trade count, and last-trade evidence. Treat this as local paper
