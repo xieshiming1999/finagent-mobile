@@ -17,6 +17,7 @@ class StrategyLibraryItem {
   final String dataSummary;
   final String riskRewardSummary;
   final String assumptionSummary;
+  final bool lifecycleRunnable;
 
   const StrategyLibraryItem({
     required this.strategyId,
@@ -31,14 +32,16 @@ class StrategyLibraryItem {
     this.dataSummary = '',
     this.riskRewardSummary = '',
     this.assumptionSummary = '',
+    this.lifecycleRunnable = false,
   });
 
-  bool get runnable => status == 'backtested';
+  bool get runnable => lifecycleRunnable || status == 'backtested';
 
   static StrategyLibraryItem? fromJson(Map<dynamic, dynamic> row) {
     final spec = _firstMap(row['strategySpec'], row['spec']);
     final evidence = _firstMap(row['backtestEvidence'], row['evidence']);
     final summary = _asMap(row['dataAndAssumptionSummary']);
+    final lifecycle = _asMap(row['lifecycle']);
     final strategyId = _string(row['strategyId']).isNotEmpty
         ? _string(row['strategyId'])
         : _string(spec['id']);
@@ -85,6 +88,7 @@ class StrategyLibraryItem {
       dataSummary: _summarizeDataEvidence(evidence, summary),
       riskRewardSummary: _summarizeRiskReward(evidence, summary),
       assumptionSummary: _summarizeAssumptions(spec, summary),
+      lifecycleRunnable: lifecycle['runnable'] == true,
     );
   }
 

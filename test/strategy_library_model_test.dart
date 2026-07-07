@@ -159,6 +159,28 @@ void main() {
     expect(buildStrategyActionPrompt('read', item), contains('是否可重跑'));
   });
 
+  test('uses explicit lifecycle runnable state for strategy actions', () {
+    final rows = parseStrategyLibraryRows([
+      {
+        'strategyId': 'validated_runnable_v1',
+        'status': 'validated',
+        'lifecycle': {'runnable': true, 'status': 'backtested'},
+        'spec': {
+          'name': 'Validated runnable',
+          'assetClass': 'stock',
+          'symbol': '600519',
+        },
+        'evidence': {'action': 'custom_strategy_backtest'},
+      },
+    ]);
+
+    expect(rows.single.runnable, isTrue);
+    expect(
+      buildStrategyActionPrompt('rerun', rows.single),
+      contains('custom_strategy_run'),
+    );
+  });
+
   test(
     'uses stock strategy_signal monitor for backtested stock strategies',
     () {
