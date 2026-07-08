@@ -99,11 +99,30 @@ For general market-overview intent, keep the first answer bounded:
    - `MarketData(action:"query_sector_ranking", limit:10)` before live sector refresh.
    - If sector cache is missing, use `MarketData(action:"sector", boardType:"industry", limit:10)` once.
    - `MarketData(action:"query_flow_rank", limit:10)` before `MarketData(action:"flow_rank", limit:10)`.
-4. Add `MarketData(action:"query_macro_factors", ...)` when macro/rates/
-   country/commodity/index/passive-flow context may explain the move.
+4. Add exactly one first-pass macro readback when macro/rates/country/
+   commodity/index/passive-flow context may explain the move:
+   - broad China/A-share market question:
+     `MarketData(action:"query_macro_factors", target:"A-shares", limit:10)`
+   - explicit commodity/country/rates question: use the user's structured
+     exposure as `target`, `regions`, or `family`.
+   - Do not repeat macro readbacks with several target/family combinations in
+     the first answer. If no rows match, state the macro-evidence gap.
 5. Do not call WindMcp for this workflow unless `WIND_API_KEY` is configured and the user explicitly asks for Wind/professional data. If Wind returns `KEY_MISSING`, stop Wind for this turn.
-6. Stop after the above evidence and produce a final answer. If some evidence is missing or a provider fails, state the gap and source/freshness instead of continuing broad provider retries.
-7. Present the result in chat first. Create a dashboard only when the user asks for a dashboard or when the workflow explicitly needs one.
+6. For broad "why did the market move" or "technical plus macro" prompts, do
+   not add single-symbol technical fallbacks such as
+   `MarketData(action:"query_technical_indicator")`,
+   `DataProcess(action:"indicators")`, `DataProcess(action:"summary")`,
+   `DataProcess(action:"support")`, or `DataProcess(action:"signals")` unless
+   the user explicitly asks for RSI/MACD/K-line/support details. Use index
+   quote/open/high/low/close/change rows as price-action evidence. If index
+   K-line or technical indicators are not already verified, state that gap
+   instead of trying provider-format diagnostics for `000300`, `999999`,
+   `1A0001`, `s_sh000001`, or other alternate index codes.
+7. Stop after the above evidence and produce a final answer. If some evidence
+   is missing or a provider fails, state the gap and source/freshness instead
+   of continuing broad provider retries. Keep the first pass within roughly ten
+   data calls.
+8. Present the result in chat first. Create a dashboard only when the user asks for a dashboard or when the workflow explicitly needs one.
 
 When `DataProcess(action:"market_snapshot")` returns `analysisEvidence`, use
 that `analysis-evidence-v1` object as the market-analysis contract. Report
