@@ -12,6 +12,7 @@ part 'reusable_data_store_core_market.dart';
 part 'reusable_data_store_core_reference.dart';
 part 'reusable_data_store_fund_reference.dart';
 part 'reusable_data_store_finance_news.dart';
+part 'reusable_data_store_macro_factor.dart';
 part 'reusable_data_store_fund_holding.dart';
 part 'reusable_data_store_fund_performance.dart';
 part 'reusable_data_store_index_constituent.dart';

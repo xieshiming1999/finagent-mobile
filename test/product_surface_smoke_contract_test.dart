@@ -84,6 +84,20 @@ const _surfaces = [
       'api_health',
     ],
   ),
+  _SurfaceContract(
+    id: 'factor-radar',
+    files: [
+      'lib/features/finance/build_helpers_factor_radar.dart',
+      'lib/features/finance/build_helpers_toolbar.dart',
+    ],
+    requiredPatterns: [
+      'l10n.factorRadar',
+      'MacroFactorRadarService',
+      'l10n.macroFactorAffected',
+      'macroFactorSendToAgent',
+      'factor_radar',
+    ],
+  ),
 ];
 
 String _read(String path) => File(path).readAsStringSync();

@@ -58,6 +58,7 @@ extension _BuildHelpersToolbar on _FinAgentScreenState {
               if (value == 'history') _showHistoryPanel();
               if (value == 'session') _showSessionPanel();
               if (value == 'api_health') _showApiHealthPanel();
+              if (value == 'factor_radar') _showFactorRadarPanel();
               if (value == 'import_report') _importReport();
               if (value == 'import_dashboard') _importHtml();
             },
@@ -104,6 +105,15 @@ extension _BuildHelpersToolbar on _FinAgentScreenState {
                 child: ListTile(
                   leading: const Icon(Icons.monitor_heart, size: 18),
                   title: Text(l10n.apiHealth),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'factor_radar',
+                child: ListTile(
+                  leading: const Icon(Icons.radar_outlined, size: 18),
+                  title: Text(l10n.factorRadar),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -194,6 +204,7 @@ extension _BuildHelpersToolbar on _FinAgentScreenState {
               if (value == 'history') _showHistoryPanel();
               if (value == 'session') _showSessionPanel();
               if (value == 'api_health') _showApiHealthPanel();
+              if (value == 'factor_radar') _showFactorRadarPanel();
               if (value == 'import_report') _importReport();
               if (value == 'import_dashboard') _importHtml();
             },
@@ -240,6 +251,15 @@ extension _BuildHelpersToolbar on _FinAgentScreenState {
                 child: ListTile(
                   leading: const Icon(Icons.monitor_heart, size: 18),
                   title: Text(l10n.apiHealth),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'factor_radar',
+                child: ListTile(
+                  leading: const Icon(Icons.radar_outlined, size: 18),
+                  title: Text(l10n.factorRadar),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                 ),

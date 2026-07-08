@@ -43,6 +43,7 @@ import '../../agent/tools/webview_tool/webview_tool.dart';
 import '../../agent/tools/utils/summarize_input.dart';
 import '../../domain/market/services/market_data_action_service.dart';
 import '../../domain/market/services/market_data_action_service_factory.dart';
+import '../../domain/market/services/macro_factor_radar_service.dart';
 import '../../domain/market/services/market_data_runtime_probe_service.dart';
 import '../../domain/market/services/market_data_support_service.dart';
 import '../../shared/agent_factory.dart';
@@ -70,6 +71,7 @@ part 'build_helpers_toolbar.dart';
 part 'build_helpers_sessions.dart';
 part 'build_helpers_session_preview.dart';
 part 'build_helpers_api_health.dart';
+part 'build_helpers_factor_radar.dart';
 
 class FinAgentScreen extends StatefulWidget {
   final Agent agent;

@@ -67,6 +67,17 @@ class AppLocalizations {
     'cancel': 'Cancel',
     'compact': 'Compact',
     'apiHealth': 'API Health',
+    'factorRadar': 'Factor Radar',
+    'macroFactorLoading': 'Loading macro factors...',
+    'macroFactorEmpty':
+        'No macro factor rows yet. Refresh to load verified source families.',
+    'macroFactorSources': 'Sources',
+    'macroFactorActive': 'Active',
+    'macroFactorBlocked': 'Blocked',
+    'macroFactorAffected': 'Affected',
+    'macroFactorSendToAgent': 'Analyze',
+    'sourceTimeLabel': 'Source time',
+    'provenanceFetched': 'Fetched',
     'doctorTitle': 'Doctor',
     'doctorOk': 'OK',
     'doctorWarning': 'WARN',
@@ -477,6 +488,16 @@ class AppLocalizations {
     'cancel': '取消',
     'compact': '压缩',
     'apiHealth': '接口健康',
+    'factorRadar': '因子雷达',
+    'macroFactorLoading': '宏观因子加载中...',
+    'macroFactorEmpty': '暂无宏观因子。点击刷新以加载已验证来源。',
+    'macroFactorSources': '来源',
+    'macroFactorActive': '有效',
+    'macroFactorBlocked': '受限',
+    'macroFactorAffected': '影响对象',
+    'macroFactorSendToAgent': '分析',
+    'sourceTimeLabel': '来源时间',
+    'provenanceFetched': '获取时间',
     'doctorTitle': '诊断',
     'doctorOk': '正常',
     'doctorWarning': '警告',
@@ -866,6 +887,16 @@ class AppLocalizations {
   String get cancel => _value('cancel');
   String get compact => _value('compact');
   String get apiHealth => _value('apiHealth');
+  String get factorRadar => _value('factorRadar');
+  String get macroFactorLoading => _value('macroFactorLoading');
+  String get macroFactorEmpty => _value('macroFactorEmpty');
+  String get macroFactorSources => _value('macroFactorSources');
+  String get macroFactorActive => _value('macroFactorActive');
+  String get macroFactorBlocked => _value('macroFactorBlocked');
+  String get macroFactorAffected => _value('macroFactorAffected');
+  String get macroFactorSendToAgent => _value('macroFactorSendToAgent');
+  String get sourceTimeLabel => _value('sourceTimeLabel');
+  String get provenanceFetched => _value('provenanceFetched');
   String get doctorTitle => _value('doctorTitle');
   String get doctorOk => _value('doctorOk');
   String get doctorWarning => _value('doctorWarning');
