@@ -93,6 +93,25 @@ not switch into TradingView or custom HTML merely to satisfy a generic
    large standalone HTML dashboard from a template unless the user explicitly
    asks for a custom page.
 
+For a commodity-exposure stock question such as copper, oil, gold, coal, or
+lithium:
+
+1. Choose or ask for a stock first, then keep stock-specific evidence on that
+   stock: `query_quote`, `query_kline`, and one stock `DataProcess` synthesis if
+   local K-line is available.
+2. Add one macro/factor readback for the commodity or sector exposure:
+   `MarketData(action:"query_macro_factors", target:"Copper", limit:10)` or the
+   equivalent structured target.
+3. Do not call A-share `quote`/`kline`/`DataProcess` actions for global futures,
+   FX, or commodity symbols such as `HG=F`, `DXY=F`, `CL=F`, `GC=F`, or
+   `BTC-USD`. Those are context symbols, not the stock being analyzed.
+4. If a supported global price/history path is unavailable or unnecessary,
+   state the commodity-price evidence gap instead of retrying through A-share
+   provider formats, broad search, or `Script`.
+5. Answer whether macro context or K-line evidence is more important as a
+   conditional judgment. Do not convert commodity macro context into a direct
+   buy/sell instruction.
+
 For a normal mobile stock-analysis dashboard request, keep the route bounded:
 reuse quote/K-line/fundamental/flow evidence, display app-native inline
 surfaces with `UIControl(showQuote|showChartFromStore|showChart|showTable)`
