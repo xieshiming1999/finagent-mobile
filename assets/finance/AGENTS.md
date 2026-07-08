@@ -63,6 +63,22 @@ All file paths are relative to the base path shown in Environment section.
 - **TradingView**: Load `Skill(skill: "tradingview")` before generating TradingView widgets, dynamic live digits, K-line panels, ticker tapes, market overview widgets, or TradingView Scanner requests. On mobile, TradingView is best-effort visualization only; critical prices, K-line data, scoring, alerts, and persisted data must come from MarketData/DataProcess/local data with a visible local fallback.
 - **ServiceCall is NOT available**
 
+### Macro / Factor Evidence
+
+- When a finance answer depends on macro regime, policy, rates, liquidity,
+  commodity pressure, index-provider events, passive-flow effects, or
+  cross-asset stress, read the governed factor layer before making macro
+  claims:
+  `MarketData(action:"query_macro_factors", target:"<structured target>", family:"<optional family>", limit:10)`.
+- Use returned `market_moving_factor_v1` rows as context with source time,
+  fetched time, status, affected assets/regions/sectors, and transmission
+  channel. Keep this section separate from quote/K-line/fundamental evidence.
+- If readback returns `status:"missing"`, state that the local factor layer has
+  no matching evidence. Do not answer as if macro evidence was verified, and do
+  not assume macro factors are irrelevant.
+- Macro/factor rows are analysis context only. They are not executable
+  StrategySpec signals, trade triggers, or buy/sell approval.
+
 ### Interface-First Finance Workflow
 
 - Normal finance work should stay on governed interfaces first: `interfaces`, `interface_describe`, `interface_availability`, then `data_health`, `coverage`, `query_*`, and requirement-level `MarketData(action: ...)` routes.
