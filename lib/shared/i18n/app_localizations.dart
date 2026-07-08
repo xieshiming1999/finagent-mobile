@@ -269,6 +269,7 @@ class AppLocalizations {
     'braveSearchHelp': 'Free up to 1000 calls/month',
     'tavilySearchHelp': 'Free up to 1000 calls/month',
     'fredApiKeyHelp': 'Free registration at fred.stlouisfed.org',
+    'beaApiKeyHelp': 'Optional BEA key for apps.bea.gov macro data',
     'xueqiuSimTradeHelp': 'Activates the XueqiuTrade tool when configured.',
     'xueqiuCookieHelp': 'Copy from browser DevTools',
     'portfolioCodesHelp':
@@ -430,6 +431,7 @@ class AppLocalizations {
     'braveSearchApiKey': 'Brave Search API Key',
     'tavilySearchApiKey': 'Tavily Search API Key',
     'fredApiKey': 'FRED API Key',
+    'beaApiKey': 'BEA API Key',
     'xueqiuCookie': 'Xueqiu Cookie',
     'portfolioCodes': 'Portfolio Codes',
     'mainView': 'Main View',
@@ -673,6 +675,7 @@ class AppLocalizations {
     'braveSearchHelp': '每月免费 1000 次',
     'tavilySearchHelp': '每月免费 1000 次',
     'fredApiKeyHelp': '在 fred.stlouisfed.org 免费注册',
+    'beaApiKeyHelp': '可选，用于 apps.bea.gov 宏观数据',
     'xueqiuSimTradeHelp': '填写后激活 XueqiuTrade 工具',
     'xueqiuCookieHelp': '从浏览器 DevTools 复制',
     'portfolioCodesHelp': '填写组合名称即可，如 finasimu,finhsimu,finamsim',
@@ -828,6 +831,7 @@ class AppLocalizations {
     'braveSearchApiKey': 'Brave Search API Key',
     'tavilySearchApiKey': 'Tavily Search API Key',
     'fredApiKey': 'FRED API Key',
+    'beaApiKey': 'BEA API Key',
     'xueqiuCookie': '雪球 Cookie',
     'portfolioCodes': '组合代码',
     'mainView': '主视图',
@@ -1080,6 +1084,7 @@ class AppLocalizations {
   String get braveSearchHelp => _value('braveSearchHelp');
   String get tavilySearchHelp => _value('tavilySearchHelp');
   String get fredApiKeyHelp => _value('fredApiKeyHelp');
+  String get beaApiKeyHelp => _value('beaApiKeyHelp');
   String get xueqiuSimTradeHelp => _value('xueqiuSimTradeHelp');
   String get xueqiuCookieHelp => _value('xueqiuCookieHelp');
   String get portfolioCodesHelp => _value('portfolioCodesHelp');
@@ -1239,6 +1244,7 @@ class AppLocalizations {
   String get braveSearchApiKey => _value('braveSearchApiKey');
   String get tavilySearchApiKey => _value('tavilySearchApiKey');
   String get fredApiKey => _value('fredApiKey');
+  String get beaApiKey => _value('beaApiKey');
   String get xueqiuCookie => _value('xueqiuCookie');
   String get portfolioCodes => _value('portfolioCodes');
   String get mainView => _value('mainView');
