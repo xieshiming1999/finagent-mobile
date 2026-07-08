@@ -26,6 +26,7 @@ import '../../data_processor/trading_calendar.dart';
 import '../../../domain/market/services/market_data_resolve_service.dart';
 import '../../../domain/market/services/market_data_query_action_service.dart';
 import '../../../domain/market/services/cache_policy.dart';
+import '../../../domain/market/market_index_universe.dart';
 import '../../../domain/market/analysis/analysis_evidence_contract.dart';
 import '../../message.dart';
 import '../../tool.dart';
@@ -522,12 +523,14 @@ UTILITY:
 
   Future<List<KlineBar>> _getBars(
     String symbol,
-    Map<String, dynamic> input,
-  ) async {
+    Map<String, dynamic> input, {
+    ToolContext? context,
+  }) async {
     _validateDateInput(input, 'startDate');
     _validateDateInput(input, 'endDate');
     final r = await _resolveService.resolveKline(
       symbol,
+      context: context,
       period: input['period'] as String? ?? 'daily',
       startDate: input['startDate'] as String? ?? _sixMonthsAgo(),
       endDate: input['endDate'] as String? ?? '',
@@ -1657,7 +1660,7 @@ UTILITY:
         isError: true,
       );
     }
-    final bars = await _getBars(symbol, input);
+    final bars = await _getBars(symbol, input, context: context);
     final signals = SignalGenerator.fromIndicators(symbol, bars);
     final aggregated = SignalGenerator.aggregate(signals);
     return ToolResult(
@@ -1675,6 +1678,9 @@ UTILITY:
     final match = RegExp(r'\d{6}').firstMatch(rawCode);
     if (match == null) return false;
     final code = match.group(0)!;
+    if (!hasFundMarker && coreCnMarketIndexCodeSet.contains(code)) {
+      return false;
+    }
     try {
       final store = ReusableDataStore(context.basePath);
       final isKnownFund = store
