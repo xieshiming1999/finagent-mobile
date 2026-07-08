@@ -49,6 +49,14 @@ missing evidence. Do not encode macro/news/research prose as executable
 StrategySpec rules unless a later StrategySpec contract explicitly supports the
 factor type.
 
+If the current request is only a preparation step such as explaining macro,
+data, liquidity, or validation risks before strategy design, complete that
+preparation answer in the current turn. Do not block the turn with
+`AskUserQuestion` unless the user has asked to immediately compile, backtest,
+save, monitor, or trade a concrete strategy and a required structured input is
+missing. For preparation-only answers, end with non-blocking next-step options
+in prose.
+
 If no concrete fund code can be resolved from the prompt or local fund list,
 ask for a fund code/name. Do not guess a fund code and do not fall back to
 stock technical analysis.
