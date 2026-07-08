@@ -13,6 +13,8 @@ class FinanceFundComparisonSummary {
     Map<String, dynamic>? fundList;
     Map<String, dynamic>? fundNav;
     Map<String, dynamic>? fundYield;
+    Map<String, dynamic>? fundPerformance;
+    Map<String, dynamic>? macroFactors;
 
     for (final message in messages.skip(turnStartIndex).toList().reversed) {
       final result = message.toolResult;
@@ -31,36 +33,59 @@ class FinanceFundComparisonSummary {
         case 'fund_money_yield':
           fundYield ??= decoded;
           break;
+        case 'query_fund_performance':
+        case 'fund_performance':
+          fundPerformance ??= decoded;
+          break;
+        case 'query_macro_factors':
+          macroFactors ??= decoded;
+          break;
       }
     }
 
-    if (fundNav == null || fundYield == null) return null;
+    if (fundNav == null && fundYield == null && fundPerformance == null) {
+      return null;
+    }
     final navCodes = _codesFromPayload(fundNav);
     final yieldCodes = _codesFromPayload(fundYield);
-    if (navCodes.isEmpty || yieldCodes.isEmpty) return null;
+    final performanceCodes = _codesFromPayload(fundPerformance);
+    final comparisonCodes = <String>{
+      ...navCodes,
+      ...yieldCodes,
+      ...performanceCodes,
+    }.toList(growable: false);
+    if (comparisonCodes.length < 2 && macroFactors == null) return null;
 
-    final ordinaryCode = navCodes.first;
-    final moneyCode = yieldCodes.first;
-    final ordinaryIdentity = _identityFor(fundList, ordinaryCode);
-    final moneyIdentity = _identityFor(fundList, moneyCode);
-    final navSummary = _seriesSummaryFor(fundNav, ordinaryCode);
-    final yieldRow = _latestRowFor(fundYield, moneyCode);
+    final rows = <String>[];
+    for (final code in comparisonCodes.take(4)) {
+      final identity = _identityFor(fundList, code);
+      rows.add(
+        '| ${_fundLabel(identity, code)} | ${_typeText(identity, fallback: '类型需继续确认')} | ${_navEvidenceFor(fundNav, code)} | ${_performanceEvidenceFor(fundPerformance, code)} | ${_moneyYieldEvidenceFor(fundYield, code)} |',
+      );
+    }
 
     return [
       '已停止脚本、文件读取或额外 scratch 计算；下面直接使用本轮结构化基金证据作答。',
       '',
-      '## 基金类型与证据口径',
+      '## 基金比较证据口径',
       '',
-      '| 基金 | 类型证据 | 正确观察证据 | 本轮数据 |',
-      '|---|---|---|---|',
-      '| ${_fundLabel(ordinaryIdentity, ordinaryCode)} | ${_typeText(ordinaryIdentity, fallback: '普通基金或非货币基金，需以 fund_list 类型字段继续确认')} | 普通基金使用 NAV、阶段收益、回撤、持仓和业绩指标；不要使用货币基金万份收益口径。 | ${_navLine(navSummary, fundNav)} |',
-      '| ${_fundLabel(moneyIdentity, moneyCode)} | ${_typeText(moneyIdentity, fallback: '货币基金或现金管理类基金，需以 fund_list 类型字段继续确认')} | 货币基金使用万份收益、七日年化、收益稳定性和流动性；不要套用普通 NAV 趋势/回撤策略。 | ${_moneyYieldLine(yieldRow, fundYield)} |',
+      '| 基金 | 类型证据 | NAV/净值证据 | 业绩指标证据 | 货币收益证据 |',
+      '|---|---|---|---|---|',
+      ...rows,
+      '',
+      '## 利率与流动性宏观因素',
+      '',
+      _macroLine(macroFactors),
+      '',
+      '- 债券基金通常对利率方向、久期、信用利差和流动性更敏感；利率上行会压制久期资产，流动性宽松有利于债券估值和信用风险偏好。',
+      '- 股票基金通常对权益风险偏好、行业盈利预期和市场流动性更敏感；流动性收紧会降低估值弹性，流动性宽松可能放大权益反弹。',
+      '- 本轮宏观因子只作为比较背景，不是申购、赎回或调仓指令。',
       '',
       '## 结论边界',
       '',
-      '- 普通基金和货币基金的数据语义不同，不能把货币基金当普通净值基金做 NAV 趋势、K 线形态、PE/PB 或股票技术分析。',
-      '- 本轮已取得普通基金 NAV 证据和货币基金收益证据；不需要 `Script`、文件读取、股票 K 线工具或额外 provider 调用来完成这次比较。',
-      '- 若后续要做策略或监控，普通基金应进入基金 NAV/回撤观察合同；货币基金应进入 money-yield/七日年化收益观察合同。',
+      '- 债券基金、股票基金和货币基金的数据语义不同，不能用股票 K 线、个股资金流或普通 NAV 口径替代所有基金类型。',
+      '- 本轮已取得结构化基金证据和宏观因子读回结果；不需要 `Research`、`Environment`、`Script`、文件读取、股票 K 线工具或额外 provider 调用来完成这次比较。',
+      '- 若后续要做策略或监控，应进入基金 NAV/收益/回撤观察合同；交易或定投动作需要单独确认。',
       '- 本轮失败/跳过：$failureSummary',
     ].join('\n');
   }
@@ -173,6 +198,53 @@ class FinanceFundComparisonSummary {
       return 'money-yield readback count=${payload?['count'] ?? '-'}；source=${payload?['source'] ?? '-'}；sourceTime=${payload?['sourceDataTime'] ?? '-'}；fetchedAt=${payload?['fetchedAt'] ?? '-'}';
     }
     return 'date=${row['date'] ?? payload?['sourceDataTime'] ?? '-'}；万份收益=${row['million_copies_income'] ?? row['millionCopiesIncome'] ?? '-'}；七日年化=${_fmtPct(row['seven_day_annualized_yield'] ?? row['sevenDayAnnualizedYield'])}；source=${row['source'] ?? payload?['source'] ?? '-'}；fetchedAt=${row['fetched_at'] ?? payload?['fetchedAt'] ?? '-'}';
+  }
+
+  String _navEvidenceFor(Map<String, dynamic>? payload, String code) {
+    if (payload == null) return '未取得 NAV 读回。';
+    final summary = _seriesSummaryFor(payload, code);
+    if (summary != null) return _navLine(summary, payload);
+    final rows = _rows(
+      payload['data'],
+    ).where((row) => _cleanCode(row['code'] ?? row['symbol']) == code).length;
+    if (rows > 0) {
+      return 'NAV rows=$rows；source=${payload['source'] ?? '-'}；fetchedAt=${payload['fetchedAt'] ?? '-'}';
+    }
+    return 'NAV count=${payload['count'] ?? 0}；未匹配该基金。';
+  }
+
+  String _performanceEvidenceFor(Map<String, dynamic>? payload, String code) {
+    if (payload == null) return '未取得业绩指标读回。';
+    final rows = _rows(payload['data'])
+        .where((row) => _cleanCode(row['code'] ?? row['symbol']) == code)
+        .toList(growable: false);
+    if (rows.isEmpty) {
+      return 'performance count=${payload['count'] ?? 0}；未匹配该基金。';
+    }
+    final row = rows.first;
+    return 'metricDate=${row['metric_date'] ?? row['date'] ?? '-'}；近1年=${_fmtPct(row['return_1y'])}；YTD=${_fmtPct(row['return_ytd'])}；source=${row['provider'] ?? payload['source'] ?? '-'}。';
+  }
+
+  String _moneyYieldEvidenceFor(Map<String, dynamic>? payload, String code) {
+    if (payload == null) return '非货币基金可为空。';
+    final row = _latestRowFor(payload, code);
+    if (row == null) {
+      return 'money-yield count=${payload['count'] ?? 0}；未匹配该基金。';
+    }
+    return _moneyYieldLine(row, payload);
+  }
+
+  String _macroLine(Map<String, dynamic>? payload) {
+    if (payload == null) {
+      return '- 利率/流动性宏观因子未取得；应把这一点作为宏观证据缺口，而不是假设没有宏观影响。';
+    }
+    final count = payload['count'] ?? 0;
+    final provenance = payload['provenance'];
+    final fetchedAt = provenance is Map ? provenance['fetchedAt'] : null;
+    if (count is num && count > 0) {
+      return '- `query_macro_factors` 返回 $count 行；source=${provenance is Map ? provenance['source'] ?? '-' : '-'}；fetchedAt=${fetchedAt ?? '-'}。这些行只能解释利率/流动性背景，不能直接生成基金买卖信号。';
+    }
+    return '- `query_macro_factors(family:"rates_liquidity")` 返回 `status:${payload['status'] ?? 'missing'}`；${payload['missingReason'] ?? '当前本地没有匹配利率/流动性因子。'}；fetchedAt=${fetchedAt ?? '-'}。这表示宏观证据层缺口，不表示利率和流动性不重要。';
   }
 
   String _fmtPct(Object? value) {
