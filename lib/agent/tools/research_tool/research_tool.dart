@@ -756,7 +756,7 @@ Note: agent can also use WebView to open Google/Bing directly for interactive se
       return ToolResult(
         toolUseId: toolUseId,
         content:
-            'FRED_API_KEY not configured. Please set it in Settings, or use Econdb (https://www.econdb.com/api/) as a free alternative.',
+            'FRED_API_KEY not configured. Please set it in Settings, or use governed macro-factor readback, Fed Treasury, BEA when configured, Frankfurter, or cached rows; do not assume Econdb anonymous access is available.',
       );
     }
     url = injected;
