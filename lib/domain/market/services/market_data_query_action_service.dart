@@ -362,6 +362,8 @@ class MarketDataQueryActionService {
           '_queryAction': action,
           'adjust': 'none',
         }, context);
+      case 'query_macro_factors':
+        return _queryMacroFactors(input, context);
       case 'query_raw_payload':
         return _rawPayload.query(context, input, limit: _inputLimit(input, 20));
       case 'query_api_calls':
@@ -370,6 +372,78 @@ class MarketDataQueryActionService {
       default:
         throw ArgumentError('Unsupported MarketData query action: $action');
     }
+  }
+
+  Map<String, dynamic> _queryMacroFactors(
+    Map<String, dynamic> input,
+    ToolContext context,
+  ) {
+    final store = _storeForContext(context);
+    final rows =
+        store?.queryMarketMovingFactors(
+          family: _clean(input['family']),
+          families: _list(input['families']),
+          status: _clean(input['status']),
+          source: _clean(input['source']),
+          target: _clean(
+            input['target'] ??
+                input['symbol'] ??
+                input['code'] ??
+                input['query'],
+          ),
+          assets: _list(input['assets']),
+          regions: _list(input['regions'] ?? input['market']),
+          sectors: _list(input['sectors'] ?? input['industry']),
+          limit: _inputLimit(input, 20),
+        ) ??
+        const <Map<String, dynamic>>[];
+    return {
+      'action': 'query_macro_factors',
+      'count': rows.length,
+      'status': rows.isEmpty ? 'missing' : 'ok',
+      if (rows.isEmpty)
+        'missingReason':
+            'No market_moving_factor rows matched the requested structured target/family/status filters. Treat this as an explicit macro-evidence gap, not as proof that macro factors are irrelevant.',
+      'provenance': {
+        'interfaceId': 'macro.factor_radar',
+        'providerId': 'local',
+        'provider': 'local',
+        'capabilityId': 'local.query_macro_factors',
+        'providerMode': 'local-evidence',
+        'cacheStatus': 'local-readback',
+        'cacheDecision':
+            'read governed market_moving_factor rows before using macro context in analysis',
+        'canonicalSchema': 'market_moving_factor_v1',
+        'canonicalTable': 'market_moving_factor',
+        'readbackAction': 'query_macro_factors',
+        'source': 'local market_moving_factor',
+        'fetchedAt': DateTime.now().toUtc().toIso8601String(),
+      },
+      'rows': rows,
+    };
+  }
+
+  String? _clean(Object? value) {
+    final text = '${value ?? ''}'.trim();
+    return text.isEmpty ? null : text;
+  }
+
+  List<String>? _list(Object? value) {
+    if (value is Iterable) {
+      final items = value
+          .map((item) => '$item'.trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+      return items.isEmpty ? null : items;
+    }
+    final text = _clean(value);
+    if (text == null) return null;
+    final items = text
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+    return items.isEmpty ? null : items;
   }
 
   Map<String, dynamic> _marketActivitySummary(

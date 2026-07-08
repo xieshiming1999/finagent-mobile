@@ -162,6 +162,7 @@ const _queryActions = {
   'query_sector',
   'query_chip',
   'query_market_screening',
+  'query_macro_factors',
   'query_margin_trading',
   'query_technical_indicator',
   'query_alpha_factors',

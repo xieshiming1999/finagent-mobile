@@ -20,6 +20,7 @@ MarketData(action: "coverage", symbols: ["600519"])
 MarketData(action: "query_api_calls", source: "eastmoney", minutes: 30)
 MarketData(action: "query_quote", symbols: ["600519"])
 MarketData(action: "query_kline", symbols: ["600519"], startDate: "2024-01-01")
+MarketData(action: "query_macro_factors", target: "<identified sector, commodity, country, rate, or theme>", limit: 10)
 ```
 
 Only fetch fresh data when local data is missing or stale:
@@ -75,9 +76,13 @@ not switch into TradingView or custom HTML merely to satisfy a generic
 
 1. `interfaces` / `interface_describe` / `interface_availability`
 2. `coverage` / `query_quote` / `query_kline` to reuse local data first
-3. `quote` / `kline` only when fresh data is needed
-4. TradingView Scanner for live technical overlays
-5. Answer normal analysis requests in Markdown/text, not fenced or inline HTML.
+3. when the stock has clear exposure to rates, liquidity, currency, commodity,
+   policy, country/index, or sector-level macro pressure, call
+   `MarketData(action:"query_macro_factors", ...)` with structured target,
+   assets, regions, sectors, or family filters and cite returned provenance
+4. `quote` / `kline` only when fresh data is needed
+5. TradingView Scanner for live technical overlays
+6. Answer normal analysis requests in Markdown/text, not fenced or inline HTML.
    If the user asks for a rendered card, dashboard, panel, or page in FinAgent,
    prefer a compact app-native UI surface:
    after `MarketData(action:"query_kline", ...)` confirms local K-line
@@ -105,6 +110,10 @@ or `DataProcess(action:"volume")` returns `analysisEvidence`, use that
 `observedFacts`, `interpretations`, `missingEvidence`, `confidence`, and
 `sourceCoverage`. Do not treat `strategyReadiness:"analysis_only"` as a
 validated StrategySpec, backtest, monitor, watchlist rule, or trade plan.
+
+Keep macro/factor evidence in its own section. It can explain possible outside
+pressure or confirmation, but it is not a direct buy/sell signal and should not
+override missing stock-specific evidence.
 
 When a bounded stock-candidate workflow returns
 `analysisEvidence.kind:"candidate_research"` with

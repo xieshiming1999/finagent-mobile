@@ -21,6 +21,7 @@ MarketData(action: "query_fund_list", limit: 50)
 MarketData(action: "query_fund_nav", symbols: ["110011.OF"], limit: 60)
 MarketData(action: "query_fund_money_yield", symbols: ["000009"], limit: 60)
 MarketData(action: "fund_money_yield", symbols: ["000009"])
+MarketData(action: "query_macro_factors", assets: "bond funds", family: "rates_liquidity", limit: 10)
 MarketData(action: "query_api_calls", source: "eastmoney", minutes: 30)
 ```
 
@@ -60,6 +61,12 @@ report observed facts, interpretation, missing evidence, confidence, and source
 coverage. Do not present fund analysis as a validated strategy, monitor rule,
 定投 rule, or trade plan until a StrategySpec/watchlist/monitor contract is
 created separately.
+
+For fund categories exposed to rates, liquidity, currency, country, commodity,
+sector, or index/passive-flow effects, read the governed macro factor layer
+with `MarketData(action:"query_macro_factors", ...)`. Keep that evidence in a
+separate macro-context section with source time and fetched time. It should not
+be presented as a direct subscribe/redeem signal.
 
 When a bounded fund-candidate workflow returns
 `analysisEvidence.kind:"candidate_research"` with

@@ -35,6 +35,20 @@ MarketData(action: "custom_strategy_validate", strategySpec: <fund StrategySpec>
 MarketData(action: "custom_strategy_observe", strategySpec: <fund StrategySpec>, fundRows: <rows from fund readback>)
 ```
 
+For strategy preparation, read macro/factor context when the requested symbol,
+fund, sector, country, rate regime, commodity, or index/passive-flow exposure
+could affect assumptions:
+
+```text
+MarketData(action: "query_macro_factors", target: "<identified exposure>", limit: 10)
+```
+
+Use this only as a macro assumptions section in validation/backtest discussion:
+possible regime pressure, source time, fetched time, affected assets, and
+missing evidence. Do not encode macro/news/research prose as executable
+StrategySpec rules unless a later StrategySpec contract explicitly supports the
+factor type.
+
 If no concrete fund code can be resolved from the prompt or local fund list,
 ask for a fund code/name. Do not guess a fund code and do not fall back to
 stock technical analysis.

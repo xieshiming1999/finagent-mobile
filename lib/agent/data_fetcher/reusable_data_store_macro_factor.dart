@@ -51,8 +51,13 @@ extension ReusableDataStoreMacroFactor on ReusableDataStore {
 
   List<Map<String, dynamic>> queryMarketMovingFactors({
     String? family,
+    List<String>? families,
     String? status,
     String? source,
+    String? target,
+    List<String>? assets,
+    List<String>? regions,
+    List<String>? sectors,
     int limit = 80,
   }) {
     final db = _db;
@@ -62,6 +67,16 @@ extension ReusableDataStoreMacroFactor on ReusableDataStore {
     if (family != null && family.isNotEmpty) {
       where.add('family = ?');
       args.add(family);
+    }
+    final familyFilters = families
+        ?.map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+    if (familyFilters != null && familyFilters.isNotEmpty) {
+      where.add(
+        'family IN (${List.filled(familyFilters.length, '?').join(',')})',
+      );
+      args.addAll(familyFilters);
     }
     if (status != null && status.isNotEmpty) {
       where.add('status = ?');
@@ -79,22 +94,72 @@ extension ReusableDataStoreMacroFactor on ReusableDataStore {
                fetched_at DESC
       LIMIT ?
       ''', args);
-    return rows.map((row) {
-      final mapped = _rowMap(row);
-      for (final key in [
-        'affected_assets',
-        'affected_regions',
-        'affected_sectors',
-        'transmission_channels',
-        'evidence_items',
-        'macro_values',
-        'retrieval_test',
-      ]) {
-        mapped[key] = _decodeJson(mapped.remove('${key}_json'));
-      }
-      mapped['raw_json'] = _decodeJson(mapped['raw_json']);
-      return mapped;
-    }).toList();
+    return rows
+        .map((row) {
+          final mapped = _rowMap(row);
+          for (final key in [
+            'affected_assets',
+            'affected_regions',
+            'affected_sectors',
+            'transmission_channels',
+            'evidence_items',
+            'macro_values',
+            'retrieval_test',
+          ]) {
+            mapped[key] = _decodeJson(mapped.remove('${key}_json'));
+          }
+          mapped['raw_json'] = _decodeJson(mapped['raw_json']);
+          return mapped;
+        })
+        .where((row) {
+          return _matchesRelevance(
+            row,
+            target: target,
+            assets: assets,
+            regions: regions,
+            sectors: sectors,
+          );
+        })
+        .toList();
+  }
+
+  bool _matchesRelevance(
+    Map<String, dynamic> row, {
+    String? target,
+    List<String>? assets,
+    List<String>? regions,
+    List<String>? sectors,
+  }) {
+    final needles = <String>[
+      if (target != null) target,
+      ...?assets,
+      ...?regions,
+      ...?sectors,
+    ].map((item) => item.trim().toLowerCase()).where((item) => item.isNotEmpty);
+    if (needles.isEmpty) return true;
+    final haystack = <String>[
+      '${row['factor_id'] ?? ''}',
+      '${row['family'] ?? ''}',
+      '${row['title'] ?? ''}',
+      '${row['summary'] ?? ''}',
+      '${row['source_name'] ?? ''}',
+      '${row['expected_direction'] ?? ''}',
+      ..._stringList(row['affected_assets']),
+      ..._stringList(row['affected_regions']),
+      ..._stringList(row['affected_sectors']),
+      ..._stringList(row['transmission_channels']),
+    ].map((item) => item.toLowerCase()).toList();
+    return needles.any(
+      (needle) => haystack.any((value) => value.contains(needle)),
+    );
+  }
+
+  List<String> _stringList(Object? value) {
+    if (value is! List) return const [];
+    return value
+        .map((item) => item.toString())
+        .where((item) => item.isNotEmpty)
+        .toList();
   }
 
   String? _jsonOrNull(Object? value) {

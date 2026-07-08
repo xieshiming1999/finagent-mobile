@@ -37,6 +37,23 @@ Use the Yahoo section of the `tradingview-scanner` skill:
 ### TradingView charts
 TradingView widgets, heatmaps, ticker tape, scanners, and mobile fallback rules are maintained in the separate `tradingview` skill. Load `Skill(skill: "tradingview")` before building a market-overview dashboard. Global symbols commonly used here are `SSE:000001`, `SZSE:399001`, `HSI:HSI`, `NASDAQ:IXIC`, and `SP:SPX`.
 
+### Macro/factor context
+
+For market regime, market-cause, cross-asset, commodity, rates, country, or
+index/passive-flow questions, read the governed factor layer before concluding:
+
+```text
+MarketData(action: "query_macro_factors", target: "A-shares", limit: 10)
+MarketData(action: "query_macro_factors", family: "rates_liquidity", limit: 10)
+MarketData(action: "query_macro_factors", regions: "Indonesia", family: "index_classification", limit: 10)
+```
+
+Keep this evidence separate from index, sector, flow, and technical evidence.
+Use the row source time, fetched time, affected assets, status, and
+transmission channel. If the readback returns `status:"missing"`, state that
+the current factor layer has no matching macro evidence instead of assuming no
+macro driver exists.
+
 When generating a China/A-share market overview dashboard, local fallback
 tables, index cards, sector/flow lists, legends, and charts must use the China
 market color convention: red for up/gain and green for down/loss. TradingView
@@ -82,9 +99,11 @@ For general market-overview intent, keep the first answer bounded:
    - `MarketData(action:"query_sector_ranking", limit:10)` before live sector refresh.
    - If sector cache is missing, use `MarketData(action:"sector", boardType:"industry", limit:10)` once.
    - `MarketData(action:"query_flow_rank", limit:10)` before `MarketData(action:"flow_rank", limit:10)`.
-4. Do not call WindMcp for this workflow unless `WIND_API_KEY` is configured and the user explicitly asks for Wind/professional data. If Wind returns `KEY_MISSING`, stop Wind for this turn.
-5. Stop after the above evidence and produce a final answer. If some evidence is missing or a provider fails, state the gap and source/freshness instead of continuing broad provider retries.
-6. Present the result in chat first. Create a dashboard only when the user asks for a dashboard or when the workflow explicitly needs one.
+4. Add `MarketData(action:"query_macro_factors", ...)` when macro/rates/
+   country/commodity/index/passive-flow context may explain the move.
+5. Do not call WindMcp for this workflow unless `WIND_API_KEY` is configured and the user explicitly asks for Wind/professional data. If Wind returns `KEY_MISSING`, stop Wind for this turn.
+6. Stop after the above evidence and produce a final answer. If some evidence is missing or a provider fails, state the gap and source/freshness instead of continuing broad provider retries.
+7. Present the result in chat first. Create a dashboard only when the user asks for a dashboard or when the workflow explicitly needs one.
 
 When `DataProcess(action:"market_snapshot")` returns `analysisEvidence`, use
 that `analysis-evidence-v1` object as the market-analysis contract. Report

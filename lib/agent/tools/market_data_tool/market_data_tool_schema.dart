@@ -81,6 +81,7 @@ Key actions:
 - **fetch_status** — Local durable fetch/data-task queue health. status: pending|running|failed|completed|cancelled|all
 - **coverage** — Local reusable data coverage. Optional symbols: ["600519"]
 - **market_activity_summary** — Bounded local first-pass evidence for broad market activity, hot-rank, flow-rank, limit-pool, unusual-activity, dragon-tiger, and cached quote context. Use before live broad refreshes.
+- **query_macro_factors** — Read governed macro/factor evidence from `market_moving_factor_v1`. Use before market, stock, fund, or strategy-preparation analysis when outside macro forces may matter. Pass structured filters such as target:"Copper", regions:"Indonesia", assets:"bond funds", family:"rates_liquidity", or sectors:"miners". Macro factors are analysis context, not executable trade signals.
 - **query_quote** — Inspect persisted quote snapshots. symbols: ["600519"]
 - **query_index_quote** — Inspect persisted governed index quote snapshots. symbols: ["000001"]
 - **query_etf_quote** — Inspect persisted governed ETF quote snapshots. symbols: ["510300"]
@@ -334,6 +335,7 @@ Market routing: 6-digit codes → A-share (TDX first for quote/kline, EastMoney 
           'query_unusual',
           'query_flow_rank',
           'market_activity_summary',
+          'query_macro_factors',
           'query_sector',
           'query_chip',
           'query_market_screening',
@@ -458,6 +460,36 @@ Market routing: 6-digit codes → A-share (TDX first for quote/kline, EastMoney 
         'type': 'string',
         'description':
             '(query_alpha_factors) Alpha factor name such as momentum_5d or kmid.',
+      },
+      'family': {
+        'type': 'string',
+        'description':
+            '(query_macro_factors) Macro factor family such as macro_calendar, rates_liquidity, cross_asset_stress, policy_regulation, index_classification, commodity_research, or narrative_attention.',
+      },
+      'families': {
+        'type': 'string',
+        'description':
+            '(query_macro_factors) Comma-separated macro factor families.',
+      },
+      'target': {
+        'type': 'string',
+        'description':
+            '(query_macro_factors) Structured target already identified by the agent, such as Copper, Indonesia equities, US Treasury, A-shares, bond funds, or a sector/theme.',
+      },
+      'assets': {
+        'type': 'string',
+        'description':
+            '(query_macro_factors) Comma-separated affected asset filters.',
+      },
+      'regions': {
+        'type': 'string',
+        'description':
+            '(query_macro_factors) Comma-separated affected region filters.',
+      },
+      'sectors': {
+        'type': 'string',
+        'description':
+            '(query_macro_factors) Comma-separated affected sector filters.',
       },
       'since': {
         'type': 'string',
@@ -714,6 +746,7 @@ SYSTEM:
   stock_company_info — Fetch and persist governed stock.company_info rows from native EastMoney company survey routing. symbols:["600519"] required.
   finance_news — Fetch and persist governed finance_news rows through the news.finance_feed interface. query/keyword required; provider/providerMode/cacheMode/allowFallback/source/limit optional.
   query_finance_news — Read persisted finance_news rows from Research(news). keyword/query/source/limit optional. Returns provenance with interfaceId, cacheStatus, sourceDataTime, fetchedAt.
+  query_macro_factors — Read governed macro/factor evidence. target/assets/regions/sectors/family/status/source/limit optional. Returns market_moving_factor_v1 rows with source time, fetched time, affected assets, transmission channels, status, and missingReason when no row matches.
   query_fund_holding — Read persisted fund_holding rows. fundCode/code/symbols optional, stockCode/reportDate/limit optional. Returns provenance with interfaceId, cacheStatus, sourceDataTime, fetchedAt.
   query_index_constituents — Read persisted index_constituent rows. indexCode/code/symbols optional, stockCode/asOfDate/provider/limit optional. Returns provenance with interfaceId, cacheStatus, sourceDataTime, fetchedAt.
   fund_performance — Fetch and persist governed fund_performance_metrics rows from native EastMoney provider routing.

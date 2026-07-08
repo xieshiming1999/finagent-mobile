@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:finagent/agent/data_fetcher/reusable_data_store.dart';
+import 'package:finagent/agent/tool_context.dart';
+import 'package:finagent/domain/market/services/market_data_action_service.dart';
 import 'package:finagent/domain/market/services/macro_factor_radar_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -92,5 +94,39 @@ void main() {
         expect((row['retrieval_test'] as Map)['status'], 'ok');
       },
     );
+
+    test('query_macro_factors reads relevant rows and reports gaps', () async {
+      final dir = Directory.systemTemp.createTempSync('finagent_macro_factor_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+
+      final store = ReusableDataStore(dir.path);
+      MacroFactorRadarService(store: store).read();
+      final service = MarketDataActionService();
+      final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
+
+      final copper =
+          await service.run('query_macro_factors', const [], {
+                'target': 'Copper',
+                'limit': 5,
+              }, context)
+              as Map<String, dynamic>;
+      expect(copper['action'], 'query_macro_factors');
+      expect(copper['status'], 'ok');
+      expect((copper['rows'] as List), isNotEmpty);
+      expect(
+        (copper['provenance'] as Map)['canonicalSchema'],
+        'market_moving_factor_v1',
+      );
+
+      final missing =
+          await service.run('query_macro_factors', const [], {
+                'target': 'Nonexistent factor target',
+                'limit': 5,
+              }, context)
+              as Map<String, dynamic>;
+      expect(missing['status'], 'missing');
+      expect(missing['count'], 0);
+      expect('${missing['missingReason']}', contains('macro-evidence gap'));
+    });
   });
 }
