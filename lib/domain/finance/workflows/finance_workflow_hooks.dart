@@ -1638,6 +1638,62 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     return ids;
   }
 
+  bool _hasPendingWatchlistStateWorkflow(List<Message> turnMessages) {
+    final loadedWatchlistSkill = turnMessages.any((message) {
+      final uses = message.toolUses;
+      if (uses == null) return false;
+      return uses.any(
+        (call) =>
+            call.name == 'Skill' && '${call.input['skill'] ?? ''}' == 'watchlist',
+      );
+    });
+    final inspectedWatchlistHelp = turnMessages.any((message) {
+      final uses = message.toolUses;
+      if (uses == null) return false;
+      return uses.any(
+        (call) => call.name == 'Watchlist' && call.input['action'] == 'help',
+      );
+    });
+    if (!loadedWatchlistSkill && !inspectedWatchlistHelp) return false;
+    final executedIds = _executedToolUseIds(turnMessages);
+    final hasMacroConditionWrite = turnMessages.any((message) {
+      final uses = message.toolUses;
+      if (uses == null) return false;
+      return uses.any((call) {
+        if (call.name != 'Watchlist' || !executedIds.contains(call.id)) {
+          return false;
+        }
+        return call.input['action'] == 'add' &&
+            call.input['type'] == 'macro-condition';
+      });
+    });
+    final hasMacroConditionReadback = turnMessages.any((message) {
+      final uses = message.toolUses;
+      if (uses == null) return false;
+      return uses.any((call) {
+        if (call.name != 'Watchlist' || !executedIds.contains(call.id)) {
+          return false;
+        }
+        return call.input['action'] == 'list' &&
+            (call.input['type'] == 'macro-condition' ||
+                call.input['groupType'] == 'macro-condition');
+      });
+    });
+    if (hasMacroConditionWrite && !hasMacroConditionReadback) return true;
+    final hasWatchlistStateCall = turnMessages.any((message) {
+      final uses = message.toolUses;
+      if (uses == null) return false;
+      return uses.any((call) {
+        if (call.name != 'Watchlist' || !executedIds.contains(call.id)) {
+          return false;
+        }
+        final action = '${call.input['action'] ?? ''}';
+        return action == 'add' || action == 'update' || action == 'list';
+      });
+    });
+    return !hasWatchlistStateCall;
+  }
+
   List<Map<String, dynamic>> _latestEtfQuoteRows(
     List<Message> messages,
     int turnStartIndex,
@@ -2050,7 +2106,8 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       failureSummary: failureSummary,
     );
     if (macroEvidence != null &&
-        !_requiresMacroStockQuoteRecovery(messages.sublist(turnStartIndex))) {
+        !_requiresMacroStockQuoteRecovery(messages.sublist(turnStartIndex)) &&
+        !_hasPendingWatchlistStateWorkflow(messages.sublist(turnStartIndex))) {
       return macroEvidence;
     }
     final macroFallback = _macroWorkflowBudgetFallback(

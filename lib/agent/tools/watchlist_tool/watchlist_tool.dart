@@ -266,6 +266,28 @@ class WatchlistTool extends Tool {
         }),
       );
     }
+    if (itemType == 'macro-condition') {
+      return ToolResult(
+        toolUseId: id,
+        content: const JsonEncoder.withIndent('  ').convert({
+          'action': 'add',
+          'status': 'added',
+          'item': _itemToJson(item),
+          'groupId': groupId,
+          'groupItemCount': groupItems.length,
+          'readbackAction': {
+            'tool': 'Watchlist',
+            'input': {
+              'action': 'list',
+              'type': 'macro-condition',
+              'status': 'watching',
+            },
+          },
+          'boundary':
+              'macro/news context is observation evidence, not an executable buy/sell trigger',
+        }),
+      );
+    }
     return ToolResult(
       toolUseId: id,
       content:
