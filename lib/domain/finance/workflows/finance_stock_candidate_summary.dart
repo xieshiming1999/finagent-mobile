@@ -98,6 +98,10 @@ class FinanceStockCandidateSummary {
     final hasSingleStockAnalysisEvidence =
         distinctCodes.length == 1 &&
         (kline != null || valuation != null || moneyFlow != null);
+    final macroEvidence = _macroEvidenceSummary.collect(
+      messages,
+      turnStartIndex,
+    );
     if (hasSingleStockAnalysisEvidence && displayCandidates.isNotEmpty) {
       return _singleStockAnalysisSummary(
         row: displayCandidates.first,
@@ -105,16 +109,13 @@ class FinanceStockCandidateSummary {
         valuation: valuation,
         kline: kline,
         moneyFlow: moneyFlow,
+        macroEvidence: macroEvidence,
         failureSummary: failureSummary,
       );
     }
 
     final hotCodes = _rankCodes(hotRank);
     final flowCodes = _rankCodes(flowRank);
-    final macroEvidence = _macroEvidenceSummary.collect(
-      messages,
-      turnStartIndex,
-    );
     final lines = <String>[
       '已达到本轮受控数据调用预算，下面直接使用已经取得的证据给出观察候选；未继续调用更多 provider，也未加入观察池或触发交易。',
       '',
@@ -283,6 +284,7 @@ class FinanceStockCandidateSummary {
     required Map<String, dynamic>? valuation,
     required Map<String, dynamic>? kline,
     required Map<String, dynamic>? moneyFlow,
+    required MacroEvidence macroEvidence,
     required String failureSummary,
   }) {
     final code = row['code']?.toString() ?? '-';
@@ -308,6 +310,8 @@ class FinanceStockCandidateSummary {
       '- K线：${_klineBudgetSummary(kline)}',
       '- 估值/基本面：${_valuationBudgetSummary(valuation)}',
       '- 资金流：${_moneyFlowBudgetSummary(moneyFlow)}',
+      if (macroEvidence.hasMacroEvidence || macroEvidence.newsLines.isNotEmpty)
+        ..._singleStockMacroLines(macroEvidence),
       '',
       '## 结论边界',
       '',
@@ -319,6 +323,21 @@ class FinanceStockCandidateSummary {
       'analysisEvidence:${jsonEncode(_singleStockAnalysisEvidence(row: row, quote: quote, valuation: valuation, kline: kline, moneyFlow: moneyFlow, failureSummary: failureSummary))}',
     ];
     return lines.join('\n');
+  }
+
+  List<String> _singleStockMacroLines(MacroEvidence evidence) {
+    return [
+      '',
+      '## 宏观、政策与新闻证据',
+      '',
+      '- 官方事实：${evidence.factorLines.isNotEmpty ? evidence.factorLines.take(3).join('；') : '本轮没有命中可复用官方宏观因子；这表示官方宏观事实证据缺失，不表示宏观因素无关。'}',
+      '- 研究观点：${evidence.contentLines.isNotEmpty ? evidence.contentLines.take(3).join('；') : evidence.sourceLines.isNotEmpty ? evidence.sourceLines.take(3).join('；') : '本轮没有内容级研究观点读回；来源目录不能替代报告正文。'}',
+      '- 新闻线索：${evidence.newsLines.isNotEmpty ? evidence.newsLines.take(3).join('；') : '本轮没有可用新闻读回；新闻缺失不能替代官方或研究证据。'}',
+      '- 可靠性/新鲜度/访问：${evidence.reliabilityLines.isNotEmpty ? evidence.reliabilityLines.take(4).join('；') : '证据等级、新鲜度或访问状态缺失。'}',
+      '- 资产影响：${evidence.assetImpactLines.isNotEmpty ? evidence.assetImpactLines.take(4).join('；') : '尚未把宏观证据稳定链接到该股票、行业或策略口径。'}',
+      '- 置信度影响：${evidence.decisionLines.isNotEmpty ? evidence.decisionLines.take(4).join('；') : '缺少高等级官方事实和内容级研究证据时，单股结论置信度应下调。'}',
+      '- 缺失证据：${evidence.missingLines.isNotEmpty ? evidence.missingLines.take(4).join('；') : '仍需核对官方数据、研究正文、行业/公司基本面与资金面证据。'}',
+    ];
   }
 
   Map<String, dynamic> _singleStockAnalysisEvidence({
