@@ -688,10 +688,10 @@ class FinanceMacroEvidenceSummary {
               : _nextEvidenceAction(access, freshness, missing);
           return [
             title,
-            'confidenceEffect=$confidenceEffect',
-            if (missing.isNotEmpty) 'missing=${_compactMax(missing, 80)}',
-            if (conflict.isNotEmpty) 'conflict=${_compactMax(conflict, 80)}',
-            'next=$next',
+            '置信度影响=$confidenceEffect',
+            if (missing.isNotEmpty) '缺失证据=${_compactMax(missing, 80)}',
+            if (conflict.isNotEmpty) '冲突证据=${_compactMax(conflict, 80)}',
+            '下一步/刷新策略=$next',
           ].join(' / ');
         })
         .where((line) => line.isNotEmpty)

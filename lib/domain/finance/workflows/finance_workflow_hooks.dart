@@ -1422,11 +1422,6 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
           (call.name == 'MarketData' || call.name == 'DataStore') &&
           call.input['action'] == 'macro_research_sources',
     );
-    final hasFinanceNewsReadback = combinedCalls.any(
-      (call) =>
-          (call.name == 'MarketData' || call.name == 'DataStore') &&
-          call.input['action'] == 'query_finance_news',
-    );
     final proposedFinanceNewsRefresh = proposedToolCalls.any(
       (call) =>
           (call.name == 'MarketData' || call.name == 'DataStore') &&
@@ -1445,8 +1440,7 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
         .firstWhere((value) => value.isNotEmpty, orElse: () => 'A-shares');
     final toolName = attributionBaseCalls.first.name;
     final additions = <ToolUse>[];
-    if (!hasAction('query_macro_factors') ||
-        (proposedFinanceNewsRefresh && !priorFinanceNewsRefreshFailed)) {
+    if (!hasAction('query_macro_factors')) {
       additions.add(
         ToolUse(
           id: 'auto_macro_factors_${DateTime.now().microsecondsSinceEpoch}',
@@ -1485,18 +1479,6 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
         ),
       );
     }
-    if (hasMacroSourceCatalog &&
-        hasFinanceNewsReadback &&
-        !hasAction('finance_news') &&
-        !priorFinanceNewsRefreshFailed) {
-      additions.add(
-        ToolUse(
-          id: 'auto_macro_finance_news_refresh_${DateTime.now().microsecondsSinceEpoch}',
-          name: toolName,
-          input: {'action': 'finance_news', 'query': target, 'limit': 20},
-        ),
-      );
-    }
     if (!hasAction('query_finance_news') ||
         proposedFinanceNewsRefresh ||
         priorFinanceNewsRefreshFailed) {
@@ -1515,23 +1497,24 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     final hasAddedNewsRefresh = additions.any(
       (call) => call.input['action'] == 'finance_news',
     );
-    final shouldDropFailedNewsRefreshRetry =
-        priorFinanceNewsRefreshFailed && proposedFinanceNewsRefresh;
+    final sanitizedProposedToolCalls = proposedToolCalls
+        .where(
+          (call) =>
+              !_isKnownInvalidCodeRequiredReadback(call) &&
+              call.input['action'] != 'finance_news',
+        )
+        .toList(growable: false);
     final retainedCalls = shouldSuppressGenericExternal
         ? const <ToolUse>[]
-        : shouldDropFailedNewsRefreshRetry
-        ? proposedToolCalls
-              .where((call) => call.input['action'] != 'finance_news')
-              .toList(growable: false)
         : hasAddedNewsRefresh
-        ? proposedToolCalls
+        ? sanitizedProposedToolCalls
               .where((call) => call.input['action'] != 'query_finance_news')
               .toList(growable: false)
-        : proposedToolCalls;
+        : sanitizedProposedToolCalls;
     final deferredReadbacks = shouldSuppressGenericExternal
         ? const <ToolUse>[]
         : hasAddedNewsRefresh
-        ? proposedToolCalls
+        ? sanitizedProposedToolCalls
               .where((call) => call.input['action'] == 'query_finance_news')
               .toList(growable: false)
         : const <ToolUse>[];
@@ -1550,7 +1533,19 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       final result = message.toolResult;
       if (result != null && result.isError) failedIds.add(result.toolUseId);
     }
-    if (failedIds.isEmpty) return false;
+    var hasError = false;
+    for (final message in turnMessages) {
+      final result = message.toolResult;
+      if (result == null || !result.isError) continue;
+      hasError = true;
+      final content = result.content.toLowerCase();
+      if (content.contains('finance_news failed') ||
+          content.contains('all finance news feed interface providers failed') ||
+          content.contains('source-health:empty-result')) {
+        return true;
+      }
+    }
+    if (!hasError) return false;
     for (final message in turnMessages) {
       for (final call in message.toolUses ?? const <ToolUse>[]) {
         if (failedIds.contains(call.id) &&
@@ -1561,6 +1556,37 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       }
     }
     return false;
+  }
+
+  bool _isKnownInvalidCodeRequiredReadback(ToolUse call) {
+    if (call.name != 'MarketData' && call.name != 'DataStore') return false;
+    final action = _textValue(call.input['action'], '');
+    final symbol = _textValue(
+      call.input['code'] ??
+          call.input['symbol'] ??
+          call.input['indexCode'] ??
+          call.input['fundCode'] ??
+          _firstString(call.input['codes']) ??
+          _firstString(call.input['symbols']),
+      '',
+    );
+    return symbol.isEmpty && _symbolRequiredReadbackActions.contains(action);
+  }
+
+  static const Set<String> _symbolRequiredReadbackActions = {
+    'query_fundamental',
+    'query_index_fundamentals',
+    'query_kline',
+    'query_quote',
+    'query_stock_fundamentals',
+  };
+
+  String? _firstString(Object? value) {
+    if (value is List && value.isNotEmpty) {
+      final first = value.first;
+      if (first is String && first.trim().isNotEmpty) return first.trim();
+    }
+    return null;
   }
 
   List<ToolUse> _cloneInterceptedToolCalls(List<ToolUse> calls) {
