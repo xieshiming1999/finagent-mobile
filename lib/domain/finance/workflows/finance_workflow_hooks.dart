@@ -819,6 +819,15 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     if (_isMonitorReviewState(workflowState)) {
       toolCalls = _rewriteMonitorReviewToolCalls(toolCalls);
     }
+    final macroConditionPreviewReadback =
+        _macroConditionWatchlistPreviewReadbackCalls(
+          messages,
+          turnStartIndex,
+          toolCalls,
+        );
+    if (macroConditionPreviewReadback != null) {
+      return macroConditionPreviewReadback;
+    }
     final macroConditionReadback = _macroConditionWatchlistReadbackCalls(
       messages,
       turnStartIndex,
@@ -1242,6 +1251,31 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     return [_macroConditionWatchlistReadbackCall()];
   }
 
+  List<ToolUse>? _macroConditionWatchlistPreviewReadbackCalls(
+    List<Message> messages,
+    int turnStartIndex,
+    List<ToolUse> proposedToolCalls,
+  ) {
+    final state = FinanceWorkflowState.latestFromMessages(
+      messages,
+      turnStartIndex: turnStartIndex,
+    );
+    if (!_isMacroConditionWatchlistWorkflow(state) ||
+        state?.executionMode != FinanceExecutionMode.previewOnly) {
+      return null;
+    }
+    final hasWatchlistMutation = proposedToolCalls.any((call) {
+      if (call.name != 'Watchlist') return false;
+      final action = '${call.input['action'] ?? ''}';
+      return action != 'list' &&
+          action != 'help' &&
+          action != 'summary' &&
+          action != 'list_groups';
+    });
+    if (!hasWatchlistMutation) return null;
+    return [_macroConditionWatchlistReadbackCall()];
+  }
+
   List<ToolUse>? _buildMacroConditionWatchlistPreflightToolCalls(
     List<Message> messages,
   ) {
@@ -1251,6 +1285,12 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       messages,
       turnStartIndex: start,
     );
+    if (!_isMacroConditionWatchlistWorkflow(state)) return null;
+    final macroEvidenceReadbacks = _requiredMacroEvidenceReadbackCalls(
+      messages.sublist(start),
+      'MarketData',
+    );
+    if (macroEvidenceReadbacks.isNotEmpty) return macroEvidenceReadbacks;
     if (!_hasPendingMacroConditionWatchlistWorkflow(
       messages.sublist(start),
       state,
@@ -1297,6 +1337,41 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     return state?.workflowKind == FinanceWorkflowKind.monitorReview &&
         state?.intentMode == FinanceIntentMode.observe &&
         state?.evidenceRefs.contains('macro-condition-watchlist') == true;
+  }
+
+  List<ToolUse> _requiredMacroEvidenceReadbackCalls(
+    List<Message> turnMessages,
+    String toolName,
+  ) {
+    final actions = _executedToolCalls(turnMessages)
+        .where((call) => call.name == 'MarketData' || call.name == 'DataStore')
+        .map((call) => '${call.input['action'] ?? ''}')
+        .toSet();
+    const target = 'A-shares';
+    return [
+      if (!actions.contains('query_macro_factors'))
+        ToolUse(
+          id: 'auto_macro_condition_factors_${DateTime.now().microsecondsSinceEpoch}',
+          name: toolName,
+          input: {'action': 'query_macro_factors', 'target': target, 'limit': 10},
+        ),
+      if (!actions.contains('query_macro_attribution'))
+        ToolUse(
+          id: 'auto_macro_condition_attribution_${DateTime.now().microsecondsSinceEpoch}',
+          name: toolName,
+          input: {
+            'action': 'query_macro_attribution',
+            'target': target,
+            'limit': 10,
+          },
+        ),
+      if (!actions.contains('query_finance_news'))
+        ToolUse(
+          id: 'auto_macro_condition_news_${DateTime.now().microsecondsSinceEpoch}',
+          name: toolName,
+          input: {'action': 'query_finance_news', 'query': target, 'limit': 10},
+        ),
+    ];
   }
 
   String? _macroExternalFallbackAnswer({
