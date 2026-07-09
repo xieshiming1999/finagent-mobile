@@ -7,6 +7,23 @@ import 'log.dart';
 import 'message.dart';
 import 'tool.dart';
 
+String _normalizeEffortForEndpoint(
+  String effort,
+  String baseUrl,
+  String model,
+) {
+  final endpoint = baseUrl.toLowerCase();
+  final modelName = model.toLowerCase();
+  if (effort == 'medium' &&
+      (endpoint.contains('deepseek.com') ||
+          endpoint.contains('kimi') ||
+          modelName.contains('deepseek') ||
+          modelName.contains('kimi'))) {
+    return 'high';
+  }
+  return effort;
+}
+
 /// LLM client for Anthropic Messages API.
 ///
 /// Supports any endpoint implementing the Anthropic protocol:
@@ -77,6 +94,11 @@ class AnthropicLLMClient extends LLMClient {
   }) async {
     await LLMClient.semaphore.acquire();
     try {
+      final requestEffort = _normalizeEffortForEndpoint(
+        effort,
+        baseUrl,
+        model,
+      );
       // Convert messages to Anthropic format, merging adjacent same-role messages
       final anthropicMessages = <Map<String, dynamic>>[];
       for (final msg in messages) {
@@ -224,7 +246,7 @@ class AnthropicLLMClient extends LLMClient {
       // to contain a 'thinking' content block. Inject a placeholder for any
       // assistant message that doesn't have one (e.g. from session history
       // where reasoning was not persisted).
-      if (effort.isNotEmpty) {
+      if (requestEffort.isNotEmpty) {
         for (var i = 0; i < anthropicMessages.length; i++) {
           final msg = anthropicMessages[i];
           if (msg['role'] != 'assistant') continue;
@@ -276,9 +298,9 @@ class AnthropicLLMClient extends LLMClient {
       if (temperature > 0) {
         body['temperature'] = temperature;
       }
-      if (effort.isNotEmpty) {
+      if (requestEffort.isNotEmpty) {
         body['thinking'] = {'type': 'adaptive'};
-        body['output_config'] = {'effort': effort};
+        body['output_config'] = {'effort': requestEffort};
         // Anthropic requires temperature=1 (or unset) when thinking is enabled
         body.remove('temperature');
       }

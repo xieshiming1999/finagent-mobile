@@ -8,6 +8,23 @@ import 'log.dart';
 import 'message.dart';
 import 'tool.dart';
 
+String _normalizeReasoningEffortForEndpoint(
+  String effort,
+  String baseUrl,
+  String model,
+) {
+  final endpoint = baseUrl.toLowerCase();
+  final modelName = model.toLowerCase();
+  if (effort == 'medium' &&
+      (endpoint.contains('deepseek.com') ||
+          endpoint.contains('kimi') ||
+          modelName.contains('deepseek') ||
+          modelName.contains('kimi'))) {
+    return 'high';
+  }
+  return effort;
+}
+
 /// LLM client for remote OpenAI-compatible APIs.
 ///
 /// Supports any endpoint that implements the OpenAI chat completions protocol with SSE streaming:
@@ -137,8 +154,13 @@ class OpenAILLMClient extends LLMClient {
       if (maxOutputTokens != null) {
         body['max_completion_tokens'] = maxOutputTokens;
       }
-      if (reasoningEffort.isNotEmpty) {
-        body['reasoning_effort'] = reasoningEffort;
+      final requestReasoningEffort = _normalizeReasoningEffortForEndpoint(
+        reasoningEffort,
+        baseUrl,
+        modelOverride ?? model,
+      );
+      if (requestReasoningEffort.isNotEmpty) {
+        body['reasoning_effort'] = requestReasoningEffort;
       }
       if (thinkingType.isNotEmpty) {
         body['thinking'] = {'type': thinkingType};
