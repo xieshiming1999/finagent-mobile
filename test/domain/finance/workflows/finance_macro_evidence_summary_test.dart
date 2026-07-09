@@ -221,6 +221,11 @@ void main() {
             'family': 'rates_liquidity',
             'source': 'pboc',
             'sourceDataTime': '2026-07-01',
+            'affectedAssets': ['equity', 'fund'],
+            'regions': ['China'],
+            'sectors': ['policy-sensitive sectors'],
+            'transmissionChannels': ['liquidity', 'risk_appetite'],
+            'expectedDirection': 'mixed',
           },
         ],
       }),
@@ -238,6 +243,10 @@ void main() {
             ],
             'bodyPreview':
                 'The official report discusses liquidity, credit and policy transmission.',
+            'evidenceTier': 'official_event_document',
+            'accessStatus': 'public',
+            'confidenceEffect': 'raises confidence',
+            'nextEvidenceAction': 'use cache/readback',
           },
         ],
       }),
@@ -276,6 +285,11 @@ void main() {
     expect(interception.answer, contains('宏观证据与来源状态'));
     expect(interception.answer, contains('政策利率和流动性预期'));
     expect(interception.answer, contains('Monetary Policy Report'));
+    expect(interception.answer, contains('可靠性'));
+    expect(interception.answer, contains('资产影响'));
+    expect(interception.answer, contains('置信度/下一步'));
+    expect(interception.answer, contains('tier=official_event_document'));
+    expect(interception.answer, contains('impact=mixed'));
     expect(interception.answer, contains('Research/WebFetch'));
   });
 

@@ -69,6 +69,15 @@ class FinanceMacroEvidenceSummary {
     if (evidence.missingLines.isNotEmpty) {
       lines.add('- 不确定性/数据缺口：${evidence.missingLines.take(4).join('；')}。');
     }
+    if (evidence.reliabilityLines.isNotEmpty) {
+      lines.add('- 可靠性：${evidence.reliabilityLines.take(5).join('；')}。');
+    }
+    if (evidence.assetImpactLines.isNotEmpty) {
+      lines.add('- 资产影响：${evidence.assetImpactLines.take(5).join('；')}。');
+    }
+    if (evidence.decisionLines.isNotEmpty) {
+      lines.add('- 置信度/下一步：${evidence.decisionLines.take(5).join('；')}。');
+    }
     lines.addAll([
       '',
       '## 宏观假设和失效条件',
@@ -91,6 +100,9 @@ class FinanceMacroEvidenceSummary {
     final evidenceLines = <String>[];
     final newsLines = <String>[];
     final missingLines = <String>[];
+    final reliabilityLines = <String>[];
+    final assetImpactLines = <String>[];
+    final decisionLines = <String>[];
     final nonMacroLines = <String>[];
     var sawMacroAction = false;
     var hasNewsRefresh = false;
@@ -128,6 +140,13 @@ class FinanceMacroEvidenceSummary {
         if (action == 'query_finance_news') {
           final line = _financeNewsPayloadLine(decoded);
           if (line.isNotEmpty) newsLines.add(line);
+          reliabilityLines.addAll(
+            _reliabilityRows(decoded, fallbackTier: 'linked_news_evidence'),
+          );
+          assetImpactLines.addAll(_assetImpactRows(decoded));
+          decisionLines.addAll(
+            _decisionRows(decoded, fallbackTier: 'linked_news_evidence'),
+          );
           continue;
         }
         if (!action.contains('macro')) {
@@ -141,6 +160,9 @@ class FinanceMacroEvidenceSummary {
           final reason = _text(decoded['missingReason']);
           if (reason.isNotEmpty) missingLines.add('$action: $reason');
         }
+        reliabilityLines.addAll(_reliabilityRows(decoded));
+        assetImpactLines.addAll(_assetImpactRows(decoded));
+        decisionLines.addAll(_decisionRows(decoded));
         switch (action) {
           case 'query_macro_factors':
             factorLines.addAll(_factorRows(decoded));
@@ -173,6 +195,9 @@ class FinanceMacroEvidenceSummary {
       evidenceLines: _dedupe(evidenceLines),
       newsLines: _dedupe(newsLines),
       missingLines: _dedupe(missingLines),
+      reliabilityLines: _dedupe(reliabilityLines),
+      assetImpactLines: _dedupe(assetImpactLines),
+      decisionLines: _dedupe(decisionLines),
     );
   }
 
@@ -435,6 +460,425 @@ class FinanceMacroEvidenceSummary {
     return lines;
   }
 
+  List<String> _reliabilityRows(
+    Map<String, dynamic> payload, {
+    String fallbackTier = '',
+  }) {
+    return _evidenceCandidateRows(payload)
+        .map((row) {
+          final tier =
+              _text(row['evidenceTier'] ?? row['evidence_tier']).isNotEmpty
+              ? _text(row['evidenceTier'] ?? row['evidence_tier'])
+              : fallbackTier.isNotEmpty
+              ? fallbackTier
+              : _tierForRow(row);
+          final sourceType =
+              _text(row['sourceType'] ?? row['source_type']).isNotEmpty
+              ? _text(row['sourceType'] ?? row['source_type'])
+              : _sourceTypeForTier(tier);
+          final source =
+              _text(
+                row['sourceName'] ??
+                    row['source_name'] ??
+                    row['provider'] ??
+                    row['source'],
+              ).isNotEmpty
+              ? _text(
+                  row['sourceName'] ??
+                      row['source_name'] ??
+                      row['provider'] ??
+                      row['source'],
+                )
+              : 'macro';
+          final sourceTime = _text(
+            row['sourceDataTime'] ??
+                row['source_data_time'] ??
+                row['sourceDate'] ??
+                row['source_date'] ??
+                row['published_at'],
+          );
+          final fetchedAt = _text(row['fetchedAt'] ?? row['fetched_at']);
+          final access = _accessStatus(row);
+          final freshness = _freshnessStatus(sourceTime, fetchedAt, access);
+          final confidence =
+              _text(row['confidence'] ?? row['reliability']).isNotEmpty
+              ? _text(row['confidence'] ?? row['reliability'])
+              : _confidenceForTier(tier, access, freshness);
+          final limitation = _text(
+            row['limitations'] ??
+                row['limitation'] ??
+                row['missingReason'] ??
+                row['failureClass'] ??
+                row['failure_class'],
+          );
+          return [
+            source,
+            'tier=$tier',
+            if (sourceType.isNotEmpty) 'type=$sourceType',
+            'freshness=$freshness',
+            'access=$access',
+            'confidence=$confidence',
+            if (limitation.isNotEmpty) 'limit=${_compactMax(limitation, 80)}',
+          ].join(' / ');
+        })
+        .where((line) => line.isNotEmpty)
+        .toList();
+  }
+
+  List<String> _assetImpactRows(Map<String, dynamic> payload) {
+    return _evidenceCandidateRows(payload)
+        .map((row) {
+          final title = _text(
+            row['title'] ??
+                row['factor_name'] ??
+                row['factorId'] ??
+                row['provider'] ??
+                row['sourceName'],
+          );
+          final family = _text(row['family']);
+          final assets = _listValues(
+            row['affectedAssets'] ??
+                row['affected_assets'] ??
+                row['assetClasses'] ??
+                row['asset_classes'] ??
+                row['assets'],
+          );
+          final regions = _listValues(
+            row['regions'] ??
+                row['marketRegions'] ??
+                row['market_regions'] ??
+                row['region'],
+          );
+          final sectors = _listValues(
+            row['sectors'] ?? row['themes'] ?? row['theme'],
+          );
+          final fundTypes = _listValues(row['fundTypes'] ?? row['fund_types']);
+          final channels = _listValues(
+            row['transmissionChannels'] ??
+                row['transmission_channels'] ??
+                row['strategyImpact'] ??
+                row['strategy_impact'],
+          );
+          final target = [
+            if (assets.isNotEmpty) 'asset=${assets.take(4).join(',')}',
+            if (regions.isNotEmpty) 'region=${regions.take(3).join(',')}',
+            if (sectors.isNotEmpty) 'sector=${sectors.take(4).join(',')}',
+            if (fundTypes.isNotEmpty) 'fund=${fundTypes.take(3).join(',')}',
+            if (channels.isNotEmpty) 'channel=${channels.take(4).join(',')}',
+          ].join(' / ');
+          return [
+            if (title.isNotEmpty)
+              title
+            else if (family.isNotEmpty)
+              family
+            else
+              'macro',
+            'impact=${_impactDirection(row)}',
+            if (target.isNotEmpty) target else 'target=needs-linking',
+          ].join(' / ');
+        })
+        .where((line) => line.isNotEmpty)
+        .toList();
+  }
+
+  List<String> _decisionRows(
+    Map<String, dynamic> payload, {
+    String fallbackTier = '',
+  }) {
+    return _evidenceCandidateRows(payload)
+        .map((row) {
+          final title =
+              _text(
+                row['title'] ??
+                    row['factor_name'] ??
+                    row['factorId'] ??
+                    row['provider'] ??
+                    row['sourceName'],
+              ).isNotEmpty
+              ? _text(
+                  row['title'] ??
+                      row['factor_name'] ??
+                      row['factorId'] ??
+                      row['provider'] ??
+                      row['sourceName'],
+                )
+              : 'macro';
+          final tier =
+              _text(row['evidenceTier'] ?? row['evidence_tier']).isNotEmpty
+              ? _text(row['evidenceTier'] ?? row['evidence_tier'])
+              : fallbackTier.isNotEmpty
+              ? fallbackTier
+              : _tierForRow(row);
+          final access = _accessStatus(row);
+          final sourceTime = _text(
+            row['sourceDataTime'] ??
+                row['source_data_time'] ??
+                row['sourceDate'] ??
+                row['source_date'] ??
+                row['published_at'],
+          );
+          final fetchedAt = _text(row['fetchedAt'] ?? row['fetched_at']);
+          final freshness = _freshnessStatus(sourceTime, fetchedAt, access);
+          final confidenceEffect =
+              _text(
+                row['confidenceEffect'] ?? row['confidence_effect'],
+              ).isNotEmpty
+              ? _text(row['confidenceEffect'] ?? row['confidence_effect'])
+              : _confidenceEffectFor(tier, access, freshness, row);
+          final missing = _text(
+            row['missingEvidence'] ??
+                row['missing_evidence'] ??
+                row['missingReason'] ??
+                row['failureClass'] ??
+                row['failure_class'],
+          );
+          final conflict = _text(
+            row['conflictingEvidence'] ?? row['conflicting_evidence'],
+          );
+          final next =
+              _text(
+                row['nextEvidenceAction'] ??
+                    row['next_evidence_action'] ??
+                    row['nextAction'],
+              ).isNotEmpty
+              ? _text(
+                  row['nextEvidenceAction'] ??
+                      row['next_evidence_action'] ??
+                      row['nextAction'],
+                )
+              : _nextEvidenceAction(access, freshness, missing);
+          return [
+            title,
+            'confidenceEffect=$confidenceEffect',
+            if (missing.isNotEmpty) 'missing=${_compactMax(missing, 80)}',
+            if (conflict.isNotEmpty) 'conflict=${_compactMax(conflict, 80)}',
+            'next=$next',
+          ].join(' / ');
+        })
+        .where((line) => line.isNotEmpty)
+        .toList();
+  }
+
+  List<Map> _evidenceCandidateRows(Map<String, dynamic> payload) {
+    final candidates = <Map>[];
+    final rows = payload['rows'];
+    if (rows is List) candidates.addAll(rows.whereType<Map>());
+    final contentEvidence = payload['contentEvidence'];
+    if (contentEvidence is List)
+      candidates.addAll(contentEvidence.whereType<Map>());
+    final data = payload['data'];
+    if (data is List) {
+      for (final row in data.whereType<Map>()) {
+        candidates.add({
+          ...row,
+          'evidenceTier': 'linked_news_evidence',
+          'sourceType': 'news',
+          'sourceDataTime': row['published_at'] ?? payload['sourceDataTime'],
+          'fetchedAt': payload['fetchedAt'],
+          'sourceName': row['source'] ?? payload['provider'] ?? 'finance_news',
+          'limitations': 'news_clue_not_official_fact',
+        });
+      }
+    }
+    if (candidates.isNotEmpty) return candidates;
+    final action = _text(payload['action']);
+    if (action.isEmpty) return const [];
+    return [
+      {
+        'provider': _text(payload['provider'] ?? payload['source'] ?? action),
+        'sourceDataTime': payload['sourceDataTime'],
+        'fetchedAt': payload['fetchedAt'],
+        'status': payload['status'],
+        'missingReason': payload['missingReason'],
+        'evidenceTier': action == 'query_finance_news'
+            ? 'linked_news_evidence'
+            : '',
+      },
+    ];
+  }
+
+  String _tierForRow(Map row) {
+    final family = _text(row['family']).toLowerCase();
+    final sourceType = _text(
+      row['sourceType'] ?? row['source_type'],
+    ).toLowerCase();
+    final status = _text(
+      row['status'] ?? row['failureClass'] ?? row['failure_class'],
+    ).toLowerCase();
+    if (RegExp(
+      r'(blocked|gated|missing|failed|unsupported|manual|licensed)',
+    ).hasMatch(status)) {
+      return 'blocked/gated/missing';
+    }
+    if (RegExp(
+      r'(official.*series|macro_official_series|numeric)',
+    ).hasMatch(family)) {
+      return 'official_numeric_fact';
+    }
+    if (RegExp(
+          r'(official|policy|regulation|index_event|event|document)',
+        ).hasMatch(family) ||
+        sourceType.contains('official')) {
+      return 'official_event_document';
+    }
+    if (RegExp(r'(research|content|document|asset_manager)').hasMatch(family) ||
+        sourceType.contains('research')) {
+      return 'content-backed_research';
+    }
+    if (family.contains('news') || sourceType.contains('news')) {
+      return 'linked_news_evidence';
+    }
+    if (RegExp(r'(retrieval|provenance|extract)').hasMatch(family) ||
+        sourceType.contains('retrieval')) {
+      return 'retrieval_evidence';
+    }
+    return 'content-backed_research';
+  }
+
+  String _sourceTypeForTier(String tier) {
+    if (tier.contains('official_numeric')) return 'official_data';
+    if (tier.contains('official_event')) return 'official_event';
+    if (tier.contains('research')) return 'research';
+    if (tier.contains('news')) return 'news';
+    if (tier.contains('retrieval')) return 'retrieval-only';
+    if (tier.contains('blocked') || tier.contains('missing')) {
+      return 'blocked_or_missing';
+    }
+    return '';
+  }
+
+  String _accessStatus(Map row) {
+    final value = _text(
+      row['accessStatus'] ??
+          row['access_status'] ??
+          row['accessClass'] ??
+          row['automationPolicy'] ??
+          row['status'] ??
+          row['failureClass'] ??
+          row['failure_class'],
+    ).toLowerCase();
+    if (value.isEmpty) return 'public';
+    if (value.contains('api-key')) return 'api-key-required';
+    if (value.contains('credential') || value.contains('quota')) {
+      return 'credential-gated';
+    }
+    if (value.contains('manual')) return 'manual-browser';
+    if (value.contains('anti-bot')) return 'anti-bot';
+    if (value.contains('security') || value.contains('blocked')) {
+      return 'security-blocked';
+    }
+    if (value.contains('do-not-scrape')) return 'do-not-scrape';
+    if (value.contains('licensed') || value.contains('paywall')) {
+      return 'licensed-needed';
+    }
+    return 'public';
+  }
+
+  String _freshnessStatus(String sourceTime, String fetchedAt, String access) {
+    if (RegExp(
+      r'(blocked|manual|anti-bot|licensed|do-not-scrape|security)',
+    ).hasMatch(access)) {
+      return 'blocked';
+    }
+    final sourceDate = DateTime.tryParse(sourceTime);
+    final fetchedDate = DateTime.tryParse(fetchedAt);
+    if (sourceDate == null && fetchedDate == null) return 'missing';
+    if (sourceDate == null || fetchedDate == null) return 'acceptable';
+    final days = fetchedDate.difference(sourceDate).inHours.abs() / 24;
+    if (days <= 7) return 'fresh';
+    if (days <= 60) return 'acceptable';
+    return 'stale';
+  }
+
+  String _confidenceForTier(String tier, String access, String freshness) {
+    if (tier.contains('blocked') ||
+        access != 'public' ||
+        freshness == 'blocked' ||
+        freshness == 'missing') {
+      return 'low';
+    }
+    if (tier.contains('official') && freshness != 'stale') return 'high';
+    if (tier.contains('research') || tier.contains('news')) return 'medium';
+    return 'low';
+  }
+
+  String _impactDirection(Map row) {
+    final value = _text(
+      row['expectedDirection'] ??
+          row['expected_direction'] ??
+          row['impact'] ??
+          row['direction'],
+    ).toLowerCase();
+    if (RegExp(r'(positive|tailwind|利好|上行)').hasMatch(value)) {
+      return 'positive tailwind';
+    }
+    if (RegExp(r'(negative|headwind|利空|下行)').hasMatch(value)) {
+      return 'negative headwind';
+    }
+    if (RegExp(r'(mixed|分化|双向)').hasMatch(value)) return 'mixed';
+    if (RegExp(r'(watch|monitor|观察)').hasMatch(value)) return 'watch-only';
+    return 'watch-only';
+  }
+
+  String _confidenceEffectFor(
+    String tier,
+    String access,
+    String freshness,
+    Map row,
+  ) {
+    final status = _text(
+      row['status'] ?? row['failureClass'] ?? row['failure_class'],
+    ).toLowerCase();
+    if (status.contains('missing') ||
+        status.contains('failed') ||
+        freshness == 'missing') {
+      return 'insufficient evidence';
+    }
+    if (access != 'public' || freshness == 'blocked' || freshness == 'stale') {
+      return 'lowers confidence';
+    }
+    if (tier.contains('official') && freshness == 'fresh') {
+      return 'raises confidence';
+    }
+    if (tier.contains('news')) return 'neutral';
+    return 'mixed';
+  }
+
+  String _nextEvidenceAction(String access, String freshness, String missing) {
+    if (missing.isNotEmpty) return 'refresh or request higher-tier evidence';
+    if (RegExp(
+      r'(manual|anti-bot|licensed|do-not-scrape|security)',
+    ).hasMatch(access)) {
+      return 'manual-browser evidence or do not retry';
+    }
+    if (access == 'credential-gated' || access == 'api-key-required') {
+      return 'configure credential then serial probe';
+    }
+    if (freshness == 'stale' || freshness == 'missing') {
+      return 'refresh allowed source then readback';
+    }
+    return 'use cache/readback';
+  }
+
+  List<String> _listValues(Object? value) {
+    if (value is List)
+      return value.map(_text).where((v) => v.isNotEmpty).toList();
+    final text = _text(value);
+    if (text.isEmpty) return const [];
+    return text
+        .split(RegExp(r'[;,，、]'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  String _compactMax(String value, int maxLength) {
+    final oneLine = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return oneLine.length > maxLength
+        ? '${oneLine.substring(0, maxLength - 1)}...'
+        : oneLine;
+  }
+
   String _financeNewsResultLine(String content) {
     final lines = content
         .split('\n')
@@ -526,6 +970,9 @@ class MacroEvidence {
     required this.evidenceLines,
     required this.newsLines,
     required this.missingLines,
+    required this.reliabilityLines,
+    required this.assetImpactLines,
+    required this.decisionLines,
   });
 
   final bool hasMacroEvidence;
@@ -538,6 +985,9 @@ class MacroEvidence {
   final List<String> evidenceLines;
   final List<String> newsLines;
   final List<String> missingLines;
+  final List<String> reliabilityLines;
+  final List<String> assetImpactLines;
+  final List<String> decisionLines;
 
   bool get hasActionableMacroEvidence =>
       factorLines.isNotEmpty ||
