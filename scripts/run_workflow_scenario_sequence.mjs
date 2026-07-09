@@ -47,6 +47,7 @@ for (const scenario of selected) {
     const payload = {
       id: `${scenario.id}:${turnId}`,
       prompt: runtimeTurn.prompt,
+      workflowState: runtimeTurn.workflowState,
       cleanSession: false,
       maxToolCalls: runtimeTurn.maxToolCalls,
       maxDataToolCalls: runtimeTurn.maxDataToolCalls,

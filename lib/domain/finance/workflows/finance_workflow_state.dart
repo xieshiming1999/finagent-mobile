@@ -108,22 +108,22 @@ class FinanceWorkflowState {
 
   factory FinanceWorkflowState.fromJson(Map<String, dynamic> json) {
     return FinanceWorkflowState(
-      workflowKind: _enumByName(
+      workflowKind: _enumByNameOrAlias(
         FinanceWorkflowKind.values,
         '${json['workflowKind'] ?? ''}',
         FinanceWorkflowKind.unknown,
       ),
-      assetClass: _enumByName(
+      assetClass: _enumByNameOrAlias(
         FinanceAssetClass.values,
         '${json['assetClass'] ?? ''}',
         FinanceAssetClass.unknown,
       ),
-      intentMode: _enumByName(
+      intentMode: _enumByNameOrAlias(
         FinanceIntentMode.values,
         '${json['intentMode'] ?? ''}',
         FinanceIntentMode.unknown,
       ),
-      executionMode: _enumByName(
+      executionMode: _enumByNameOrAlias(
         FinanceExecutionMode.values,
         '${json['executionMode'] ?? ''}',
         FinanceExecutionMode.unknown,
@@ -136,7 +136,7 @@ class FinanceWorkflowState {
                 : const [])
           '$value',
       ],
-      confirmationState: _enumByName(
+      confirmationState: _enumByNameOrAlias(
         FinanceConfirmationState.values,
         '${json['confirmationState'] ?? ''}',
         FinanceConfirmationState.unknown,
@@ -438,6 +438,12 @@ class FinanceWorkflowState {
     }
     return fallback;
   }
+
+  static T _enumByNameOrAlias<T extends Enum>(
+    List<T> values,
+    String name,
+    T fallback,
+  ) => _enumByName(values, name, fallback);
 
   static String _normalizeEnumName(String value) =>
       value.replaceAll('_', '').replaceAll('-', '').toLowerCase();

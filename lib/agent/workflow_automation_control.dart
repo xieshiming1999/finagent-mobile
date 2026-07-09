@@ -258,6 +258,7 @@ class WorkflowAutomationControl {
         WorkflowAutomationScenario(
           id: '$scenarioId:$turnId',
           prompt: prompt,
+          workflowState: turn['workflowState'],
           maxToolCalls: _optionalPositiveInt(turn['maxToolCalls']),
           maxDataToolCalls: _optionalPositiveInt(turn['maxDataToolCalls']),
           expectTools: _stringList(turn['expectTools']),
@@ -438,14 +439,23 @@ class WorkflowAutomationControl {
         '${scenario.maxToolActionCounts.entries.map((entry) => '${entry.key} <= ${entry.value}').join(', ')}.',
       );
     }
-    if (constraints.isEmpty) return scenario.prompt;
-    return [
-      '<workflow-test-constraints>',
-      ...constraints,
-      '</workflow-test-constraints>',
-      '',
-      scenario.prompt,
-    ].join('\n');
+    final parts = <String>[];
+    if (constraints.isNotEmpty) {
+      parts.addAll([
+        '<workflow-test-constraints>',
+        ...constraints,
+        '</workflow-test-constraints>',
+        '',
+      ]);
+    }
+    parts.add(scenario.prompt);
+    if (scenario.workflowState case final Map workflowState) {
+      parts.add('');
+      parts.add(
+        'data: ${jsonEncode({'workflowState': Map<String, dynamic>.from(workflowState)})}',
+      );
+    }
+    return parts.join('\n');
   }
 
   String _pendingQuestionKey(Map<String, dynamic> state) {
@@ -837,6 +847,7 @@ class WorkflowAutomationScenario {
   const WorkflowAutomationScenario({
     required this.id,
     required this.prompt,
+    this.workflowState,
     this.cleanSession = false,
     this.maxToolCalls,
     this.maxDataToolCalls,
@@ -859,6 +870,7 @@ class WorkflowAutomationScenario {
 
   final String id;
   final String prompt;
+  final Object? workflowState;
   final bool cleanSession;
   final int? maxToolCalls;
   final int? maxDataToolCalls;
@@ -1257,6 +1269,7 @@ class WorkflowAutomationHttpHost {
         WorkflowAutomationScenario(
           id: id,
           prompt: prompt,
+          workflowState: parsed['workflowState'],
           cleanSession: parsed['cleanSession'] == true,
           maxToolCalls: _optionalPositiveInt(parsed['maxToolCalls']),
           maxDataToolCalls: _optionalPositiveInt(parsed['maxDataToolCalls']),

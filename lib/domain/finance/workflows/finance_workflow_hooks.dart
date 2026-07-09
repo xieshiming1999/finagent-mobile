@@ -78,7 +78,8 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
 
   @override
   List<ToolUse>? buildPreflightToolCalls(List<Message> messages) {
-    return _buildMacroStockQuotePreflightToolCalls(messages) ??
+    return _buildMacroConditionWatchlistPreflightToolCalls(messages) ??
+        _buildMacroStockQuotePreflightToolCalls(messages) ??
         _buildFundMonitorReviewPreflightToolCalls(messages) ??
         _buildPortfolioMonitorReviewPreflightToolCalls(messages) ??
         _buildPortfolioMonitorCreateAfterRankPreflightToolCalls(messages) ??
@@ -1241,6 +1242,24 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     return [_macroConditionWatchlistReadbackCall()];
   }
 
+  List<ToolUse>? _buildMacroConditionWatchlistPreflightToolCalls(
+    List<Message> messages,
+  ) {
+    final start = _lastUserIndex(messages);
+    if (start < 0) return null;
+    final state = FinanceWorkflowState.latestFromMessages(
+      messages,
+      turnStartIndex: start,
+    );
+    if (!_hasPendingMacroConditionWatchlistWorkflow(
+      messages.sublist(start),
+      state,
+    )) {
+      return null;
+    }
+    return [_macroConditionWatchlistReadbackCall()];
+  }
+
   ToolUse _macroConditionWatchlistReadbackCall() {
     return ToolUse(
       id: 'auto_macro_condition_watchlist_readback_${DateTime.now().microsecondsSinceEpoch}',
@@ -1251,6 +1270,33 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
         'status': 'watching',
       },
     );
+  }
+
+  bool _hasPendingMacroConditionWatchlistWorkflow(
+    List<Message> turnMessages,
+    FinanceWorkflowState? state,
+  ) {
+    if (!_isMacroConditionWatchlistWorkflow(state)) return false;
+    final executedIds = _executedToolUseIds(turnMessages);
+    final hasMacroConditionReadback = turnMessages.any((message) {
+      final uses = message.toolUses;
+      if (uses == null) return false;
+      return uses.any((call) {
+        if (call.name != 'Watchlist' || !executedIds.contains(call.id)) {
+          return false;
+        }
+        return call.input['action'] == 'list' &&
+            (call.input['type'] == 'macro-condition' ||
+                call.input['groupType'] == 'macro-condition');
+      });
+    });
+    return !hasMacroConditionReadback;
+  }
+
+  bool _isMacroConditionWatchlistWorkflow(FinanceWorkflowState? state) {
+    return state?.workflowKind == FinanceWorkflowKind.monitorReview &&
+        state?.intentMode == FinanceIntentMode.observe &&
+        state?.evidenceRefs.contains('macro-condition-watchlist') == true;
   }
 
   String? _macroExternalFallbackAnswer({
@@ -2154,6 +2200,10 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     required String? prompt,
     required String failureSummary,
   }) {
+    final workflowState = FinanceWorkflowState.latestFromMessages(
+      messages,
+      turnStartIndex: turnStartIndex,
+    );
     final fundWatch = _fundWatchSummary.build(
       messages: messages,
       turnStartIndex: turnStartIndex,
@@ -2179,6 +2229,10 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     );
     if (macroEvidence != null &&
         !_requiresMacroStockQuoteRecovery(messages.sublist(turnStartIndex)) &&
+        !_hasPendingMacroConditionWatchlistWorkflow(
+          messages.sublist(turnStartIndex),
+          workflowState,
+        ) &&
         !_hasPendingWatchlistStateWorkflow(messages.sublist(turnStartIndex))) {
       return macroEvidence;
     }
