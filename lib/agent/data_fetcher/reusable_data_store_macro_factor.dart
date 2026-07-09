@@ -125,6 +125,12 @@ extension ReusableDataStoreMacroFactor on ReusableDataStore {
             mapped['linked_macro_evidence_ids'] ??=
                 raw['linked_macro_evidence_ids'];
           }
+          mapped['access_status'] ??= _macroAccessStatus(mapped);
+          mapped['freshness_status'] ??= _macroFreshnessStatus(mapped);
+          mapped['confidence_effect'] ??= _macroConfidenceEffect(mapped);
+          mapped['missing_evidence'] ??= _macroMissingEvidence(mapped);
+          mapped['next_evidence_action'] ??= _macroNextEvidenceAction(mapped);
+          mapped['asset_impact'] ??= _macroAssetImpact(mapped);
           return mapped;
         })
         .where((row) {
@@ -143,6 +149,146 @@ extension ReusableDataStoreMacroFactor on ReusableDataStore {
     final text = value?.toString().trim();
     if (text == null || text.isEmpty) return null;
     return [text];
+  }
+
+  String _macroAccessStatus(Map<String, dynamic> row) {
+    final retrieval = row['retrieval_test'];
+    final value =
+        [
+              if (retrieval is Map) retrieval['accessStatus'],
+              if (retrieval is Map) retrieval['access_class'],
+              if (retrieval is Map) retrieval['accessClass'],
+              if (retrieval is Map) retrieval['status'],
+              row['failure_class'],
+              row['status'],
+            ]
+            .map((value) => value?.toString().toLowerCase() ?? '')
+            .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+    if (value.isEmpty) return 'public';
+    if (value.contains('api-key')) return 'api-key-required';
+    if (value.contains('credential') || value.contains('quota')) {
+      return 'credential-gated';
+    }
+    if (value.contains('manual')) return 'manual-browser';
+    if (value.contains('anti-bot')) return 'anti-bot';
+    if (value.contains('security') || value.contains('blocked')) {
+      return 'security-blocked';
+    }
+    if (value.contains('do-not-scrape')) return 'do-not-scrape';
+    if (value.contains('licensed') || value.contains('paywall')) {
+      return 'licensed-needed';
+    }
+    if (row['failure_class'] != null) return 'security-blocked';
+    return 'public';
+  }
+
+  String _macroFreshnessStatus(Map<String, dynamic> row) {
+    final access = _macroAccessStatus(row);
+    if (RegExp(
+      r'(blocked|manual|anti-bot|licensed|do-not-scrape|security)',
+    ).hasMatch(access)) {
+      return 'blocked';
+    }
+    final source = DateTime.tryParse(
+      '${row['source_published_at'] ?? row['event_at'] ?? ''}',
+    );
+    final fetched = DateTime.tryParse('${row['fetched_at'] ?? ''}');
+    if (source == null && fetched == null) return 'missing';
+    if (source == null || fetched == null) return 'acceptable';
+    final days = fetched.difference(source).inHours.abs() / 24;
+    if (days <= 7) return 'fresh';
+    if (days <= 60) return 'acceptable';
+    return 'stale';
+  }
+
+  String _macroConfidenceEffect(Map<String, dynamic> row) {
+    final retrieval = row['retrieval_test'];
+    final explicit = retrieval is Map
+        ? (retrieval['confidenceEffect'] ?? retrieval['confidence_effect'])
+                  ?.toString()
+                  .trim() ??
+              ''
+        : '';
+    if (explicit.isNotEmpty) return explicit;
+    final freshness = _macroFreshnessStatus(row);
+    final access = _macroAccessStatus(row);
+    if (row['failure_class'] != null || freshness == 'missing') {
+      return 'insufficient evidence';
+    }
+    if (access != 'public' || freshness == 'blocked' || freshness == 'stale') {
+      return 'lowers confidence';
+    }
+    if ('${row['evidence_tier'] ?? ''}'.contains('official') &&
+        freshness == 'fresh') {
+      return 'raises confidence';
+    }
+    if ('${row['evidence_tier'] ?? ''}'.contains('news')) return 'neutral';
+    return 'mixed';
+  }
+
+  String _macroMissingEvidence(Map<String, dynamic> row) {
+    final retrieval = row['retrieval_test'];
+    final explicit = retrieval is Map
+        ? (retrieval['missingEvidence'] ?? retrieval['missing_evidence'])
+                  ?.toString()
+                  .trim() ??
+              ''
+        : '';
+    if (explicit.isNotEmpty) return explicit;
+    final failure = row['failure_class']?.toString().trim() ?? '';
+    if (failure.isNotEmpty) return failure;
+    final limitations = _macroStringList(row['limitations']).join('; ');
+    return limitations.isEmpty ? '-' : limitations;
+  }
+
+  String _macroNextEvidenceAction(Map<String, dynamic> row) {
+    final retrieval = row['retrieval_test'];
+    final explicit = retrieval is Map
+        ? (retrieval['nextAction'] ?? retrieval['next_action'])
+                  ?.toString()
+                  .trim() ??
+              ''
+        : '';
+    if (explicit.isNotEmpty) return explicit;
+    final access = _macroAccessStatus(row);
+    final freshness = _macroFreshnessStatus(row);
+    if (row['failure_class'] != null) {
+      return 'do not retry automatically; inspect source boundary';
+    }
+    if (RegExp(
+      r'(manual|anti-bot|licensed|do-not-scrape|security)',
+    ).hasMatch(access)) {
+      return 'manual-browser evidence or do not retry';
+    }
+    if (access == 'credential-gated' || access == 'api-key-required') {
+      return 'configure credential then serial probe';
+    }
+    if (freshness == 'stale' || freshness == 'missing') {
+      return 'refresh allowed source then readback';
+    }
+    return 'use cache/readback';
+  }
+
+  String _macroAssetImpact(Map<String, dynamic> row) {
+    final direction = row['expected_direction']?.toString().toLowerCase() ?? '';
+    if (RegExp(r'(positive|tailwind|利好|上行)').hasMatch(direction)) {
+      return 'positive tailwind';
+    }
+    if (RegExp(r'(negative|headwind|利空|下行)').hasMatch(direction)) {
+      return 'negative headwind';
+    }
+    if (RegExp(r'(mixed|分化|双向)').hasMatch(direction)) return 'mixed';
+    if (RegExp(r'(watch|monitor|观察|context)').hasMatch(direction)) {
+      return 'watch-only';
+    }
+    return _macroStringList(row['affected_assets']).isNotEmpty
+        ? 'watch-only'
+        : 'no direct relevance';
+  }
+
+  List<String> _macroStringList(Object? value) {
+    if (value is List) return value.map((item) => '$item').toList();
+    return const [];
   }
 
   bool _matchesRelevance(

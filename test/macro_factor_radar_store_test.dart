@@ -32,6 +32,11 @@ void main() {
       expect(msci['status'], 'watch');
       expect(msci['affected_assets'], contains('Indonesia equities'));
       expect(msci['transmission_channels'], contains('passive benchmark flow'));
+      expect(msci['access_status'], 'public');
+      expect(msci['freshness_status'], 'acceptable');
+      expect(msci['confidence_effect'], 'mixed');
+      expect(msci['next_evidence_action'], 'use cache/readback');
+      expect(msci['asset_impact'], 'mixed');
       expect(msci['retrieval_test'], isA<Map>());
       expect(
         (msci['retrieval_test'] as Map)['candidate_schema'],
@@ -120,7 +125,9 @@ void main() {
         expect(newsEvidence['evidenceTier'], 'linked_news_evidence');
         expect(
           newsEvidence['limitations'],
-          contains('Finance news is a current-event clue, not an official macro fact.'),
+          contains(
+            'Finance news is a current-event clue, not an official macro fact.',
+          ),
         );
         final worldBank = result.rows.firstWhere(
           (item) => '${item['factor_id']}'.startsWith(

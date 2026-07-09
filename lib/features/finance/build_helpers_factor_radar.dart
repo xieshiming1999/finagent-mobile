@@ -960,6 +960,8 @@ String _sourceType(Map<String, dynamic> row) {
 }
 
 String _accessStatus(Map<String, dynamic> row) {
+  final explicit = row['access_status']?.toString().trim() ?? '';
+  if (explicit.isNotEmpty) return explicit;
   final retrieval = row['retrieval_test'];
   final value =
       [
@@ -990,6 +992,8 @@ String _accessStatus(Map<String, dynamic> row) {
 }
 
 String _freshnessStatus(Map<String, dynamic> row) {
+  final explicit = row['freshness_status']?.toString().trim() ?? '';
+  if (explicit.isNotEmpty) return explicit;
   final access = _accessStatus(row);
   if (RegExp(
     r'(blocked|manual|anti-bot|licensed|do-not-scrape|security)',
@@ -1026,6 +1030,8 @@ String _confidenceLevel(Map<String, dynamic> row) {
 }
 
 String _impactDirection(Map<String, dynamic> row) {
+  final explicit = row['asset_impact']?.toString().trim() ?? '';
+  if (explicit.isNotEmpty) return explicit;
   final value = row['expected_direction']?.toString().toLowerCase() ?? '';
   if (RegExp(r'(positive|tailwind|利好|上行)').hasMatch(value)) {
     return 'positive tailwind';
@@ -1041,6 +1047,8 @@ String _impactDirection(Map<String, dynamic> row) {
 }
 
 String _confidenceEffect(Map<String, dynamic> row) {
+  final explicitField = row['confidence_effect']?.toString().trim() ?? '';
+  if (explicitField.isNotEmpty) return explicitField;
   final retrieval = row['retrieval_test'];
   final explicit = retrieval is Map
       ? retrieval['confidenceEffect']?.toString().trim() ?? ''
@@ -1062,6 +1070,8 @@ String _confidenceEffect(Map<String, dynamic> row) {
 }
 
 String _missingEvidence(Map<String, dynamic> row) {
+  final explicitField = row['missing_evidence']?.toString().trim() ?? '';
+  if (explicitField.isNotEmpty) return explicitField;
   final retrieval = row['retrieval_test'];
   final value = retrieval is Map
       ? retrieval['missingEvidence']?.toString().trim() ?? ''
@@ -1074,6 +1084,8 @@ String _missingEvidence(Map<String, dynamic> row) {
 }
 
 String _nextEvidenceAction(Map<String, dynamic> row) {
+  final explicitField = row['next_evidence_action']?.toString().trim() ?? '';
+  if (explicitField.isNotEmpty) return explicitField;
   final retrieval = row['retrieval_test'];
   final explicit = retrieval is Map
       ? (retrieval['nextAction'] ?? retrieval['next_action'])
