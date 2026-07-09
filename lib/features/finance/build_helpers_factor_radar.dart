@@ -18,6 +18,9 @@ extension _BuildHelpersFactorRadar on _FinAgentScreenState {
               'Fetched at: ${row['fetched_at'] ?? '-'}',
               'Affected: ${affected.isEmpty ? '-' : affected}',
               'Status: ${row['status'] ?? '-'} / ${row['failure_class'] ?? 'ok'}',
+              'Reliability: ${_reliabilityLine(row)}',
+              'Asset impact: ${_assetImpactLine(row)}',
+              'Decision support: ${_decisionSupportLine(row)}',
               if ((row['summary']?.toString() ?? '').isNotEmpty)
                 'Summary: ${row['summary']}',
             ].join('\n');
@@ -681,6 +684,17 @@ class _FactorRowCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _DetailBox(
+            title: l10n.macroResearchReliability,
+            lines: [
+              'tier: ${_evidenceTier(row)}',
+              'source type: ${_sourceType(row)}',
+              'freshness: ${_freshnessStatus(row)}',
+              'access: ${_accessStatus(row)}',
+              'confidence: ${_confidenceLevel(row)}',
+            ],
+          ),
+          const SizedBox(height: 8),
+          _DetailBox(
             title: l10n.macroFactorAffected,
             lines: [
               _stringList(row['affected_assets']).join(', '),
@@ -690,11 +704,29 @@ class _FactorRowCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _DetailBox(
+            title: l10n.macroResearchAssetImpact,
+            lines: [
+              'impact: ${_impactDirection(row)}',
+              'strategy/fund channel: ${_joinedOr(row['transmission_channels'], 'needs-linking')}',
+              'linked evidence: ${_joinedOr(row['linked_macro_evidence_ids'], '-')}',
+            ],
+          ),
+          const SizedBox(height: 8),
+          _DetailBox(
             title: l10n.macroResearchChannels,
             lines: [
               _stringList(row['transmission_channels']).join(', '),
               ..._stringList(row['limitations']),
               _linkedEvidenceLine(row),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _DetailBox(
+            title: l10n.macroResearchDecisionSupport,
+            lines: [
+              'confidence effect: ${_confidenceEffect(row)}',
+              'missing evidence: ${_missingEvidence(row)}',
+              'next action: ${_nextEvidenceAction(row)}',
             ],
           ),
           const SizedBox(height: 8),
@@ -871,8 +903,9 @@ String _evidenceTier(Map<String, dynamic> row) {
   final explicit = row['evidence_tier']?.toString().trim() ?? '';
   if (explicit.isNotEmpty) return explicit;
   final sourceType = row['source_type']?.toString().toLowerCase() ?? '';
-  if (RegExp(r'official_api|official_series|official_document')
-      .hasMatch(sourceType)) {
+  if (RegExp(
+    r'official_api|official_series|official_document',
+  ).hasMatch(sourceType)) {
     return 'official_numeric_or_document';
   }
   if (RegExp(r'research|content').hasMatch(sourceType)) {
@@ -884,6 +917,188 @@ String _evidenceTier(Map<String, dynamic> row) {
   }
   if (row['failure_class'] != null) return 'missing_or_blocked';
   return 'governed_macro_evidence';
+}
+
+String _reliabilityLine(Map<String, dynamic> row) {
+  return [
+    'tier=${_evidenceTier(row)}',
+    'sourceType=${_sourceType(row)}',
+    'freshness=${_freshnessStatus(row)}',
+    'access=${_accessStatus(row)}',
+    'confidence=${_confidenceLevel(row)}',
+  ].join(' / ');
+}
+
+String _assetImpactLine(Map<String, dynamic> row) {
+  return [
+    'impact=${_impactDirection(row)}',
+    'assets=${_joinedOr(row['affected_assets'], '-')}',
+    'regions=${_joinedOr(row['affected_regions'], '-')}',
+    'sectors=${_joinedOr(row['affected_sectors'], '-')}',
+    'channels=${_joinedOr(row['transmission_channels'], '-')}',
+  ].join(' / ');
+}
+
+String _decisionSupportLine(Map<String, dynamic> row) {
+  return [
+    'confidenceEffect=${_confidenceEffect(row)}',
+    'missing=${_missingEvidence(row)}',
+    'next=${_nextEvidenceAction(row)}',
+  ].join(' / ');
+}
+
+String _sourceType(Map<String, dynamic> row) {
+  final value = row['source_type']?.toString().trim() ?? '';
+  if (value.isNotEmpty) return value;
+  final tier = _evidenceTier(row);
+  if (tier.contains('official_numeric')) return 'official_data';
+  if (tier.contains('official')) return 'official_event';
+  if (tier.contains('research')) return 'research';
+  if (tier.contains('news')) return 'news';
+  if (tier.contains('retrieval')) return 'retrieval-only';
+  return 'macro';
+}
+
+String _accessStatus(Map<String, dynamic> row) {
+  final retrieval = row['retrieval_test'];
+  final value =
+      [
+            if (retrieval is Map) retrieval['accessStatus'],
+            if (retrieval is Map) retrieval['access_class'],
+            if (retrieval is Map) retrieval['status'],
+            row['failure_class'],
+            row['status'],
+          ]
+          .map((value) => value?.toString().toLowerCase() ?? '')
+          .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+  if (value.isEmpty) return 'public';
+  if (value.contains('api-key')) return 'api-key-required';
+  if (value.contains('credential') || value.contains('quota')) {
+    return 'credential-gated';
+  }
+  if (value.contains('manual')) return 'manual-browser';
+  if (value.contains('anti-bot')) return 'anti-bot';
+  if (value.contains('security') || value.contains('blocked')) {
+    return 'security-blocked';
+  }
+  if (value.contains('do-not-scrape')) return 'do-not-scrape';
+  if (value.contains('licensed') || value.contains('paywall')) {
+    return 'licensed-needed';
+  }
+  if (row['failure_class'] != null) return 'security-blocked';
+  return 'public';
+}
+
+String _freshnessStatus(Map<String, dynamic> row) {
+  final access = _accessStatus(row);
+  if (RegExp(
+    r'(blocked|manual|anti-bot|licensed|do-not-scrape|security)',
+  ).hasMatch(access)) {
+    return 'blocked';
+  }
+  final source = DateTime.tryParse(
+    '${row['source_published_at'] ?? row['event_at'] ?? ''}',
+  );
+  final fetched = DateTime.tryParse('${row['fetched_at'] ?? ''}');
+  if (source == null && fetched == null) return 'missing';
+  if (source == null || fetched == null) return 'acceptable';
+  final days = fetched.difference(source).inHours.abs() / 24;
+  if (days <= 7) return 'fresh';
+  if (days <= 60) return 'acceptable';
+  return 'stale';
+}
+
+String _confidenceLevel(Map<String, dynamic> row) {
+  final explicit = row['confidence']?.toString().trim() ?? '';
+  if (explicit.isNotEmpty) return explicit;
+  final tier = _evidenceTier(row);
+  final access = _accessStatus(row);
+  final freshness = _freshnessStatus(row);
+  if (tier.contains('missing') ||
+      access != 'public' ||
+      freshness == 'blocked' ||
+      freshness == 'missing') {
+    return 'low';
+  }
+  if (tier.contains('official') && freshness != 'stale') return 'high';
+  if (tier.contains('research') || tier.contains('news')) return 'medium';
+  return 'low';
+}
+
+String _impactDirection(Map<String, dynamic> row) {
+  final value = row['expected_direction']?.toString().toLowerCase() ?? '';
+  if (RegExp(r'(positive|tailwind|利好|上行)').hasMatch(value)) {
+    return 'positive tailwind';
+  }
+  if (RegExp(r'(negative|headwind|利空|下行)').hasMatch(value)) {
+    return 'negative headwind';
+  }
+  if (RegExp(r'(mixed|分化|双向)').hasMatch(value)) return 'mixed';
+  if (RegExp(r'(watch|monitor|观察)').hasMatch(value)) return 'watch-only';
+  return _stringList(row['affected_assets']).isNotEmpty
+      ? 'watch-only'
+      : 'no direct relevance';
+}
+
+String _confidenceEffect(Map<String, dynamic> row) {
+  final retrieval = row['retrieval_test'];
+  final explicit = retrieval is Map
+      ? retrieval['confidenceEffect']?.toString().trim() ?? ''
+      : '';
+  if (explicit.isNotEmpty) return explicit;
+  final freshness = _freshnessStatus(row);
+  final access = _accessStatus(row);
+  if (row['failure_class'] != null || freshness == 'missing') {
+    return 'insufficient evidence';
+  }
+  if (access != 'public' || freshness == 'blocked' || freshness == 'stale') {
+    return 'lowers confidence';
+  }
+  if (_evidenceTier(row).contains('official') && freshness == 'fresh') {
+    return 'raises confidence';
+  }
+  if (_evidenceTier(row).contains('news')) return 'neutral';
+  return 'mixed';
+}
+
+String _missingEvidence(Map<String, dynamic> row) {
+  final retrieval = row['retrieval_test'];
+  final value = retrieval is Map
+      ? retrieval['missingEvidence']?.toString().trim() ?? ''
+      : '';
+  if (value.isNotEmpty) return value;
+  final failure = row['failure_class']?.toString().trim() ?? '';
+  if (failure.isNotEmpty) return failure;
+  final limitations = _stringList(row['limitations']).join('; ');
+  return limitations.isEmpty ? '-' : limitations;
+}
+
+String _nextEvidenceAction(Map<String, dynamic> row) {
+  final retrieval = row['retrieval_test'];
+  final explicit = retrieval is Map
+      ? (retrieval['nextAction'] ?? retrieval['next_action'])
+                ?.toString()
+                .trim() ??
+            ''
+      : '';
+  if (explicit.isNotEmpty) return explicit;
+  final access = _accessStatus(row);
+  final freshness = _freshnessStatus(row);
+  if (row['failure_class'] != null) {
+    return 'do not retry automatically; inspect source boundary';
+  }
+  if (RegExp(
+    r'(manual|anti-bot|licensed|do-not-scrape|security)',
+  ).hasMatch(access)) {
+    return 'manual-browser evidence or do not retry';
+  }
+  if (access == 'credential-gated' || access == 'api-key-required') {
+    return 'configure credential then serial probe';
+  }
+  if (freshness == 'stale' || freshness == 'missing') {
+    return 'refresh allowed source then readback';
+  }
+  return 'use cache/readback';
 }
 
 String _linkedEvidenceLine(Map<String, dynamic> row) {
@@ -905,4 +1120,9 @@ List<String> _uniqueOptions(Iterable<String?> values) {
 List<String> _stringList(Object? value) {
   if (value is List) return value.map((item) => item.toString()).toList();
   return const [];
+}
+
+String _joinedOr(Object? value, String fallback) {
+  final joined = _stringList(value).join(', ');
+  return joined.isEmpty ? fallback : joined;
 }

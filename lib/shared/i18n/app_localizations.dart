@@ -85,6 +85,9 @@ class AppLocalizations {
     'macroResearchEvidence': 'Evidence',
     'macroResearchSourceCoverage': 'Source coverage',
     'macroResearchProvenance': 'Provenance',
+    'macroResearchReliability': 'Reliability',
+    'macroResearchAssetImpact': 'Asset impact',
+    'macroResearchDecisionSupport': 'Decision support',
     'macroResearchChannels': 'Channels',
     'macroResearchGenerated': 'Generated',
     'macroResearchFilterSource': 'Source',
@@ -533,6 +536,9 @@ class AppLocalizations {
     'macroResearchEvidence': '证据',
     'macroResearchSourceCoverage': '来源覆盖',
     'macroResearchProvenance': '溯源',
+    'macroResearchReliability': '可靠性',
+    'macroResearchAssetImpact': '资产影响',
+    'macroResearchDecisionSupport': '决策支持',
     'macroResearchChannels': '传导路径',
     'macroResearchGenerated': '生成时间',
     'macroResearchFilterSource': '来源',
@@ -959,6 +965,10 @@ class AppLocalizations {
   String get macroResearchSourceCoverage =>
       _value('macroResearchSourceCoverage');
   String get macroResearchProvenance => _value('macroResearchProvenance');
+  String get macroResearchReliability => _value('macroResearchReliability');
+  String get macroResearchAssetImpact => _value('macroResearchAssetImpact');
+  String get macroResearchDecisionSupport =>
+      _value('macroResearchDecisionSupport');
   String get macroResearchChannels => _value('macroResearchChannels');
   String get macroResearchGenerated => _value('macroResearchGenerated');
   String get macroResearchFilterSource => _value('macroResearchFilterSource');

@@ -57,6 +57,15 @@ void main() {
     }
     expect(find.text('US 10Y Treasury yield'), findsOneWidget);
     expect(find.text('Evidence'), findsOneWidget);
+    for (var i = 0; i < 8 && find.text('Reliability').evaluate().isEmpty; i++) {
+      await tester.drag(find.byType(ListView), const Offset(0, -180));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('Reliability'), findsOneWidget);
+    expect(find.text('Asset impact'), findsOneWidget);
+    expect(find.text('Decision support'), findsOneWidget);
+    expect(find.textContaining('freshness:'), findsWidgets);
+    expect(find.textContaining('confidence effect:'), findsWidgets);
   });
 }
 
