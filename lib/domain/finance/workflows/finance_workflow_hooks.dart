@@ -818,6 +818,14 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     if (_isMonitorReviewState(workflowState)) {
       toolCalls = _rewriteMonitorReviewToolCalls(toolCalls);
     }
+    final macroConditionReadback = _macroConditionWatchlistReadbackCalls(
+      messages,
+      turnStartIndex,
+      toolCalls,
+    );
+    if (macroConditionReadback != null) {
+      return macroConditionReadback;
+    }
     toolCalls =
         _completeMacroEvidenceToolCalls(
           messages: messages,
@@ -1179,6 +1187,70 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     }
 
     return null;
+  }
+
+  List<ToolUse>? _macroConditionWatchlistReadbackCalls(
+    List<Message> messages,
+    int turnStartIndex,
+    List<ToolUse> proposedToolCalls,
+  ) {
+    final turnMessages = messages.sublist(turnStartIndex);
+    final proposedMacroWrites = proposedToolCalls
+        .where(
+          (call) =>
+              call.name == 'Watchlist' &&
+              call.input['action'] == 'add' &&
+              call.input['type'] == 'macro-condition',
+        )
+        .toList(growable: false);
+    final proposedMacroReadback = proposedToolCalls.any(
+      (call) =>
+          call.name == 'Watchlist' &&
+          call.input['action'] == 'list' &&
+          (call.input['type'] == 'macro-condition' ||
+              call.input['groupType'] == 'macro-condition'),
+    );
+    if (proposedMacroWrites.isNotEmpty && !proposedMacroReadback) {
+      return [
+        ...proposedMacroWrites,
+        _macroConditionWatchlistReadbackCall(),
+      ];
+    }
+    final executedIds = _executedToolUseIds(turnMessages);
+    final hasMacroConditionWrite = turnMessages.any((message) {
+      final uses = message.toolUses;
+      if (uses == null) return false;
+      return uses.any((call) {
+        if (call.name != 'Watchlist' || !executedIds.contains(call.id)) {
+          return false;
+        }
+        return call.input['action'] == 'add' &&
+            call.input['type'] == 'macro-condition';
+      });
+    });
+    if (!hasMacroConditionWrite) return null;
+    final priorCalls = turnMessages.expand((message) => message.toolUses ?? []);
+    final hasMacroConditionReadback = [...priorCalls, ...proposedToolCalls].any(
+      (call) =>
+          call.name == 'Watchlist' &&
+          call.input['action'] == 'list' &&
+          (call.input['type'] == 'macro-condition' ||
+              call.input['groupType'] == 'macro-condition'),
+    );
+    if (hasMacroConditionReadback) return null;
+    return [_macroConditionWatchlistReadbackCall()];
+  }
+
+  ToolUse _macroConditionWatchlistReadbackCall() {
+    return ToolUse(
+      id: 'auto_macro_condition_watchlist_readback_${DateTime.now().microsecondsSinceEpoch}',
+      name: 'Watchlist',
+      input: {
+        'action': 'list',
+        'type': 'macro-condition',
+        'status': 'watching',
+      },
+    );
   }
 
   String? _macroExternalFallbackAnswer({
