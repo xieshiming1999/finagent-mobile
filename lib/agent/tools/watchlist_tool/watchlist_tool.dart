@@ -22,7 +22,7 @@ class WatchlistTool extends Tool {
 - create_group — 创建列表. name, type(stock/fund/etf)
 - list_groups  — 列出所有列表
 - delete_group — 删除列表
-- add    — 加入观察. groupId, symbol, name, type, tags, entryCondition, strategyId, strategyRules, portfolioEvidence, rebalanceDraft, targetEntryPrice, stopLoss, targetPrice, suggestedWeight, score, rating, source
+- add    — 加入观察. groupId, symbol, name, type(stock/fund/etf/index/macro-condition), tags, entryCondition, strategyId, strategyRules, portfolioEvidence, rebalanceDraft, targetEntryPrice, stopLoss, targetPrice, suggestedWeight, score, rating, source
 - remove — 移除. itemId
 - update — 更新属性. itemId + 要更新的字段
 - list   — 查询. groupId, symbol, status(watching/entered/exited), type, tag, strategyId
@@ -52,7 +52,10 @@ class WatchlistTool extends Tool {
         ],
       },
       'name': {'type': 'string'},
-      'type': {'type': 'string', 'description': 'stock/fund/etf/index'},
+      'type': {
+        'type': 'string',
+        'description': 'stock/fund/etf/index/macro-condition',
+      },
       'groupId': {'type': 'string'},
       'symbol': {'type': 'string'},
       'tags': {
@@ -188,7 +191,10 @@ class WatchlistTool extends Tool {
   }
 
   ToolResult _add(String id, Map<String, dynamic> input) {
-    final symbol = input['symbol'] as String?;
+    final itemType = _normalizeWatchItemType(input['type']);
+    final symbol = itemType == 'macro-condition'
+        ? _macroConditionSymbol(input)
+        : input['symbol'] as String?;
     if (symbol == null || symbol.isEmpty) {
       return ToolResult(
         toolUseId: id,
@@ -196,7 +202,6 @@ class WatchlistTool extends Tool {
         isError: true,
       );
     }
-    final itemType = input['type'] as String? ?? 'stock';
     final groupId =
         input['groupId'] as String? ??
         store.groupForType(itemType)?.id ??
@@ -215,10 +220,22 @@ class WatchlistTool extends Tool {
         isError: true,
       );
     }
+    if (itemType == 'macro-condition' &&
+        inferredName.isEmpty &&
+        (input['entryCondition'] as String?)?.trim().isNotEmpty != true) {
+      return ToolResult(
+        toolUseId: id,
+        content:
+            'name or entryCondition required for macro-condition watchlist items; macro conditions are observation context, not tradable instruments',
+        isError: true,
+      );
+    }
     final item = WatchlistItem(
       groupId: groupId,
       symbol: symbol,
-      name: inferredName,
+      name: inferredName.isNotEmpty
+          ? inferredName
+          : input['entryCondition'] as String? ?? 'Macro condition',
       type: itemType,
       source: input['source'] as String? ?? 'agent',
       tags: tags,
@@ -503,6 +520,28 @@ num? _numValue(Object? value) {
   if (value is num) return value;
   if (value is String) return num.tryParse(value.trim());
   return null;
+}
+
+String _normalizeWatchItemType(Object? value) {
+  final type = '${value ?? 'stock'}'.trim().toLowerCase();
+  if (type == 'macro_condition' || type == 'macro' || type == 'macro-risk') {
+    return 'macro-condition';
+  }
+  return type.isEmpty ? 'stock' : type;
+}
+
+String _macroConditionSymbol(Map<String, dynamic> input) {
+  final explicit = '${input['symbol'] ?? input['conditionId'] ?? ''}'.trim();
+  if (explicit.isNotEmpty) return explicit;
+  final basis =
+      '${input['name'] ?? input['entryCondition'] ?? input['source'] ?? 'macro-condition'}'
+          .trim();
+  final slug = basis
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9\u4e00-\u9fa5]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+$'), '');
+  final bounded = slug.length > 48 ? slug.substring(0, 48) : slug;
+  return 'macro:${bounded.isEmpty ? 'condition' : bounded}';
 }
 
 Map<String, dynamic>? _normalizeStrategyRules(Map<String, dynamic> input) {

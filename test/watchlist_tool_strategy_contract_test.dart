@@ -130,4 +130,59 @@ void main() {
       expect((jsonDecode(mismatch.content) as Map<String, dynamic>)['count'], 0);
     },
   );
+
+  test(
+    'Watchlist supports macro-condition rows without fund or ETF placeholders',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('finagent-watchlist-macro-');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final store = WatchlistStore()..load(dir.path);
+      final tool = WatchlistTool(store: store);
+      final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
+
+      final add = await tool.call('add-macro', {
+        'action': 'add',
+        'type': 'macro-condition',
+        'name': '利率上行风险观察',
+        'entryCondition': '10Y收益率继续上行且信用利差扩大',
+        'source': 'macro-reliability',
+        'tags': ['macro', 'risk'],
+        'strategyRules': {
+          'evidenceTier': 'official numeric fact + research view',
+          'invalidation': '利率回落且信用利差收窄',
+        },
+      }, context);
+      expect(add.isError, isFalse);
+
+      final list = await tool.call('list-macro', {
+        'action': 'list',
+        'type': 'macro-condition',
+        'status': 'watching',
+      }, context);
+      final payload = jsonDecode(list.content) as Map<String, dynamic>;
+      final item = (payload['items'] as List).single as Map<String, dynamic>;
+      expect(item['type'], 'macro-condition');
+      expect(item['name'], '利率上行风险观察');
+      expect(item['entryCondition'], '10Y收益率继续上行且信用利差扩大');
+      expect('${item['symbol']}', startsWith('macro:'));
+    },
+  );
+
+  test('Watchlist rejects fund placeholders without identity name', () async {
+    final dir = await Directory.systemTemp.createTemp('finagent-watchlist-fund-validation-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final store = WatchlistStore()..load(dir.path);
+    final tool = WatchlistTool(store: store);
+    final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
+
+    final add = await tool.call('add-invalid-fund', {
+      'action': 'add',
+      'symbol': '110022',
+      'type': 'fund',
+      'tag': 'macro',
+    }, context);
+
+    expect(add.isError, isTrue);
+    expect(add.content, contains('name required for fund/etf watchlist items'));
+  });
 }

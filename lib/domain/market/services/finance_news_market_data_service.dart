@@ -168,6 +168,11 @@ class FinanceNewsMarketDataService {
       'canonicalTable': 'finance_news',
       if (sourceDataTime != null) 'sourceDataTime': sourceDataTime,
       if (fetchedAt != null) 'fetchedAt': fetchedAt,
+      'sourceHealth': _sourceHealth(
+        cacheStatus: result.provenance.cacheStatus,
+        provider: result.provenance.provider,
+        rows: result.data,
+      ),
       'count': result.data.length,
       'source': result.source,
       'data': result.data,
@@ -268,6 +273,26 @@ class FinanceNewsMarketDataService {
       if (latest != null) return latest;
     }
     return null;
+  }
+
+  Map<String, dynamic> _sourceHealth({
+    required String cacheStatus,
+    required String provider,
+    required List<Map<String, dynamic>> rows,
+  }) {
+    final lastSuccessfulFetch = _latestValue(rows, const [
+      'fetched_at',
+      'fetchedAt',
+    ]);
+    final isCache = cacheStatus == 'cache-hit';
+    return {
+      'status': isCache ? 'cached' : 'live',
+      'provider': provider,
+      if (lastSuccessfulFetch != null) 'lastSuccessfulFetch': lastSuccessfulFetch,
+      'nextRetryPolicy': isCache
+          ? 'use-cache-first; refresh only when the user asks for live news or cache freshness is insufficient'
+          : 'live rows were queryable; normal cache-first reuse is allowed',
+    };
   }
 
   DataApiProviderConstraint _constraintFromInput(Map<String, dynamic> input) {
