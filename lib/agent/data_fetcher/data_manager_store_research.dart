@@ -480,12 +480,14 @@ extension DataManagerResearchStoreAccess on DataManager {
     String? market,
     String? industry,
     String? stockType,
+    String? keyword,
     int limit = 50,
   }) {
     return _store?.queryStockList(
           market: market,
           industry: industry,
           stockType: stockType,
+          keyword: keyword,
           limit: limit,
         ) ??
         const [];

@@ -10,6 +10,7 @@ import 'finance_fund_comparison_summary.dart';
 import 'finance_fund_monitor_summary.dart';
 import 'finance_fund_strategy_evidence_summary.dart';
 import 'finance_fund_watch_summary.dart';
+import 'finance_macro_evidence_summary.dart';
 import 'finance_market_overview_summary.dart';
 import 'finance_portfolio_monitor_summary.dart';
 import 'finance_stock_candidate_summary.dart';
@@ -44,6 +45,8 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
   final FinanceFundStrategyEvidenceSummary _fundStrategyEvidenceSummary =
       FinanceFundStrategyEvidenceSummary();
   final FinanceFundWatchSummary _fundWatchSummary = FinanceFundWatchSummary();
+  final FinanceMacroEvidenceSummary _macroEvidenceSummary =
+      FinanceMacroEvidenceSummary();
   final FinanceMarketOverviewSummary _marketOverviewSummary =
       FinanceMarketOverviewSummary();
   final FinancePortfolioMonitorSummary _portfolioMonitorSummary =
@@ -75,7 +78,8 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
 
   @override
   List<ToolUse>? buildPreflightToolCalls(List<Message> messages) {
-    return _buildFundMonitorReviewPreflightToolCalls(messages) ??
+    return _buildMacroStockQuotePreflightToolCalls(messages) ??
+        _buildFundMonitorReviewPreflightToolCalls(messages) ??
         _buildPortfolioMonitorReviewPreflightToolCalls(messages) ??
         _buildPortfolioMonitorCreateAfterRankPreflightToolCalls(messages) ??
         _buildPortfolioRankAfterSelectionPreflightToolCalls(messages) ??
@@ -84,6 +88,31 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
         _evidenceReviewSummary.buildSearchToolCalls(messages) ??
         _tradeSizingPreflight.buildToolCalls(messages) ??
         _customStrategyPreflight.buildToolCalls(messages);
+  }
+
+  List<ToolUse>? _buildMacroStockQuotePreflightToolCalls(
+    List<Message> messages,
+  ) {
+    final start = _lastUserIndex(messages);
+    if (start < 0) return null;
+    final turnMessages = messages.sublist(start);
+    final searchTerm = _latestMacroStockSubject(turnMessages);
+    if (searchTerm == null ||
+        _hasMacroStockQuoteEvidence(turnMessages, searchTerm) ||
+        _hasStockIdentitySearch(turnMessages, searchTerm)) {
+      return null;
+    }
+    return [
+      ToolUse(
+        id: 'auto_macro_stock_identity_${DateTime.now().microsecondsSinceEpoch}',
+        name: 'MarketData',
+        input: {
+          'action': 'query_stock_list',
+          'keyword': searchTerm,
+          'limit': 5,
+        },
+      ),
+    ];
   }
 
   List<ToolUse>? _buildPortfolioRankAfterSelectionPreflightToolCalls(
@@ -789,6 +818,12 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     if (_isMonitorReviewState(workflowState)) {
       toolCalls = _rewriteMonitorReviewToolCalls(toolCalls);
     }
+    toolCalls =
+        _completeMacroEvidenceToolCalls(
+          messages: messages,
+          proposedToolCalls: toolCalls,
+        ) ??
+        toolCalls;
     final activeStrategyId =
         _latestSuccessfulCustomStrategyRunId(messages, turnStartIndex) ??
         _firstProposedSavedStrategyRunId(toolCalls);
@@ -878,6 +913,19 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     required String? prompt,
     required List<ToolUse> toolCalls,
   }) {
+    final macroExternalFallback = _macroExternalFallbackAnswer(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+      proposedToolCalls: toolCalls,
+    );
+    if (macroExternalFallback != null) {
+      return DomainToolInterception(
+        answer: macroExternalFallback,
+        skippedReason:
+            'Skipped: governed macro evidence exists; first-pass macro workflow must answer before generic search or web fetch fallback.',
+      );
+    }
+
     final tradeConfirmation = _tradeConfirmationSummary.build(
       messages: messages,
       turnStartIndex: turnStartIndex,
@@ -1133,6 +1181,206 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     return null;
   }
 
+  String? _macroExternalFallbackAnswer({
+    required List<Message> messages,
+    required int turnStartIndex,
+    required List<ToolUse> proposedToolCalls,
+  }) {
+    final wantsGenericExternalFallback = proposedToolCalls.any(
+      (call) => call.name == 'Research' || call.name == 'WebFetch',
+    );
+    if (!wantsGenericExternalFallback) return null;
+    return _macroEvidenceSummary.build(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+      failureSummary:
+          '模型尝试追加通用 Research/WebFetch，但本轮已经有受治理宏观 evidence/readback；first-pass attribution 必须先基于这些证据完成。',
+      suffix:
+          '如果用户明确要求更新来源或验证网页可达性，再进入 macro_research_sources / macro_research_extract / source validation workflow。',
+    );
+  }
+
+  List<ToolUse>? _completeMacroEvidenceToolCalls({
+    required List<Message> messages,
+    required List<ToolUse> proposedToolCalls,
+  }) {
+    final macroCalls = proposedToolCalls
+        .where(
+          (call) =>
+              (call.name == 'MarketData' || call.name == 'DataStore') &&
+              _textValue(call.input['action'], '').contains('macro'),
+        )
+        .toList(growable: false);
+    final priorCalls = _executedToolCalls(messages)
+        .where((call) => call.name == 'MarketData' || call.name == 'DataStore')
+        .toList(growable: false);
+    final priorMacroCalls = priorCalls
+        .where((call) => _textValue(call.input['action'], '').contains('macro'))
+        .toList(growable: false);
+    if (macroCalls.isEmpty && priorMacroCalls.isEmpty) return null;
+    final combinedCalls = [...priorCalls, ...proposedToolCalls];
+    bool hasAction(String action) => combinedCalls.any(
+      (call) =>
+          (call.name == 'MarketData' || call.name == 'DataStore') &&
+          call.input['action'] == action,
+    );
+    final hasMacroSourceCatalog = combinedCalls.any(
+      (call) =>
+          (call.name == 'MarketData' || call.name == 'DataStore') &&
+          call.input['action'] == 'macro_research_sources',
+    );
+    final hasFinanceNewsReadback = combinedCalls.any(
+      (call) =>
+          (call.name == 'MarketData' || call.name == 'DataStore') &&
+          call.input['action'] == 'query_finance_news',
+    );
+    final proposedFinanceNewsRefresh = proposedToolCalls.any(
+      (call) =>
+          (call.name == 'MarketData' || call.name == 'DataStore') &&
+          call.input['action'] == 'finance_news',
+    );
+    final priorFinanceNewsRefreshFailed = _hasFailedFinanceNewsRefresh(
+      messages,
+    );
+    final attributionBaseCalls = macroCalls.isNotEmpty
+        ? macroCalls
+        : priorMacroCalls;
+    final target = attributionBaseCalls
+        .map(
+          (call) => _textValue(call.input['target'] ?? call.input['query'], ''),
+        )
+        .firstWhere((value) => value.isNotEmpty, orElse: () => 'A-shares');
+    final toolName = attributionBaseCalls.first.name;
+    final additions = <ToolUse>[];
+    if (!hasAction('query_macro_factors') ||
+        (proposedFinanceNewsRefresh && !priorFinanceNewsRefreshFailed)) {
+      additions.add(
+        ToolUse(
+          id: 'auto_macro_factors_${DateTime.now().microsecondsSinceEpoch}',
+          name: toolName,
+          input: {
+            'action': 'query_macro_factors',
+            'target': target,
+            'limit': 10,
+          },
+        ),
+      );
+    }
+    if (!hasAction('query_macro_attribution')) {
+      additions.add(
+        ToolUse(
+          id: 'auto_macro_attribution_${DateTime.now().microsecondsSinceEpoch}',
+          name: toolName,
+          input: {
+            'action': 'query_macro_attribution',
+            'target': target,
+            'limit': 10,
+          },
+        ),
+      );
+    }
+    if (hasMacroSourceCatalog && !hasAction('query_macro_research_evidence')) {
+      additions.add(
+        ToolUse(
+          id: 'auto_macro_research_evidence_${DateTime.now().microsecondsSinceEpoch}',
+          name: toolName,
+          input: {
+            'action': 'query_macro_research_evidence',
+            'target': target,
+            'limit': 10,
+          },
+        ),
+      );
+    }
+    if (hasMacroSourceCatalog &&
+        hasFinanceNewsReadback &&
+        !hasAction('finance_news') &&
+        !priorFinanceNewsRefreshFailed) {
+      additions.add(
+        ToolUse(
+          id: 'auto_macro_finance_news_refresh_${DateTime.now().microsecondsSinceEpoch}',
+          name: toolName,
+          input: {'action': 'finance_news', 'query': target, 'limit': 20},
+        ),
+      );
+    }
+    if (!hasAction('query_finance_news') ||
+        proposedFinanceNewsRefresh ||
+        priorFinanceNewsRefreshFailed) {
+      additions.add(
+        ToolUse(
+          id: 'auto_macro_finance_news_${DateTime.now().microsecondsSinceEpoch}',
+          name: toolName,
+          input: {'action': 'query_finance_news', 'query': target, 'limit': 10},
+        ),
+      );
+    }
+    if (additions.isEmpty) return null;
+    final shouldSuppressGenericExternal = proposedToolCalls.any(
+      (call) => call.name == 'Research' || call.name == 'WebFetch',
+    );
+    final hasAddedNewsRefresh = additions.any(
+      (call) => call.input['action'] == 'finance_news',
+    );
+    final shouldDropFailedNewsRefreshRetry =
+        priorFinanceNewsRefreshFailed && proposedFinanceNewsRefresh;
+    final retainedCalls = shouldSuppressGenericExternal
+        ? const <ToolUse>[]
+        : shouldDropFailedNewsRefreshRetry
+        ? proposedToolCalls
+              .where((call) => call.input['action'] != 'finance_news')
+              .toList(growable: false)
+        : hasAddedNewsRefresh
+        ? proposedToolCalls
+              .where((call) => call.input['action'] != 'query_finance_news')
+              .toList(growable: false)
+        : proposedToolCalls;
+    final deferredReadbacks = shouldSuppressGenericExternal
+        ? const <ToolUse>[]
+        : hasAddedNewsRefresh
+        ? proposedToolCalls
+              .where((call) => call.input['action'] == 'query_finance_news')
+              .toList(growable: false)
+        : const <ToolUse>[];
+    return [
+      ..._cloneInterceptedToolCalls(retainedCalls),
+      ...additions,
+      ..._cloneInterceptedToolCalls(deferredReadbacks),
+    ];
+  }
+
+  bool _hasFailedFinanceNewsRefresh(List<Message> messages) {
+    final start = _lastUserIndex(messages);
+    final turnMessages = start >= 0 ? messages.sublist(start) : messages;
+    final failedIds = <String>{};
+    for (final message in turnMessages) {
+      final result = message.toolResult;
+      if (result != null && result.isError) failedIds.add(result.toolUseId);
+    }
+    if (failedIds.isEmpty) return false;
+    for (final message in turnMessages) {
+      for (final call in message.toolUses ?? const <ToolUse>[]) {
+        if (failedIds.contains(call.id) &&
+            (call.name == 'MarketData' || call.name == 'DataStore') &&
+            call.input['action'] == 'finance_news') {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  List<ToolUse> _cloneInterceptedToolCalls(List<ToolUse> calls) {
+    return [
+      for (var index = 0; index < calls.length; index++)
+        ToolUse(
+          id: 'auto_retained_${DateTime.now().microsecondsSinceEpoch}_${index}_${calls[index].id}',
+          name: calls[index].name,
+          input: Map<String, dynamic>.from(calls[index].input),
+        ),
+    ];
+  }
+
   String? _monitorStrategyReadbackBoundary({
     required List<Message> messages,
     required int turnStartIndex,
@@ -1371,6 +1619,25 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     );
   }
 
+  List<ToolUse> _executedToolCalls(List<Message> messages) {
+    final executedIds = _executedToolUseIds(messages);
+    return messages
+        .expand((message) => message.toolUses ?? const <ToolUse>[])
+        .where((call) => executedIds.contains(call.id))
+        .toList(growable: false);
+  }
+
+  Set<String> _executedToolUseIds(List<Message> messages) {
+    final ids = <String>{};
+    for (final message in messages) {
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      if (result.content.trimLeft().startsWith('Skipped:')) continue;
+      ids.add(result.toolUseId);
+    }
+    return ids;
+  }
+
   List<Map<String, dynamic>> _latestEtfQuoteRows(
     List<Message> messages,
     int turnStartIndex,
@@ -1436,6 +1703,156 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
   String _textValue(Object? value, String fallback) {
     final text = '${value ?? ''}'.trim();
     return text.isEmpty ? fallback : text;
+  }
+
+  int _lastUserIndex(List<Message> messages) {
+    for (var index = messages.length - 1; index >= 0; index--) {
+      if (messages[index].role == Role.user) return index;
+    }
+    return -1;
+  }
+
+  bool _requiresMacroStockQuoteRecovery(List<Message> messages) {
+    final searchTerm = _latestMacroStockSubject(messages);
+    return searchTerm != null &&
+        !_hasMacroStockQuoteEvidence(messages, searchTerm) &&
+        !_hasStockIdentitySearch(messages, searchTerm);
+  }
+
+  String? _latestMacroStockSubject(List<Message> messages) {
+    final state = FinanceWorkflowState.latestFromMessages(messages);
+    if (state?.workflowKind == FinanceWorkflowKind.macroFactorLookup &&
+        state?.assetClass == FinanceAssetClass.stock) {
+      final subject = _normalizeStockSubject(state?.subject);
+      if (subject != null) return subject;
+      for (final candidate in state?.subjects ?? const <String>[]) {
+        final normalized = _normalizeStockSubject(candidate);
+        if (normalized != null) return normalized;
+      }
+    }
+    for (var index = messages.length - 1; index >= 0; index--) {
+      final uses = messages[index].toolUses ?? const <ToolUse>[];
+      for (var useIndex = uses.length - 1; useIndex >= 0; useIndex--) {
+        final call = uses[useIndex];
+        final action = _textValue(call.input['action'], '');
+        if ((call.name == 'MarketData' || call.name == 'DataStore') &&
+            action.contains('macro')) {
+          for (final key in const [
+            'code',
+            'symbol',
+            'stockCode',
+            'stockName',
+            'subject',
+          ]) {
+            final subject = _normalizeStockSubject(call.input[key]);
+            if (subject != null) return subject;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  String? _normalizeStockSubject(Object? value) {
+    final subject = '${value ?? ''}'.trim();
+    if (subject.isEmpty) return null;
+    final qualifiedCode = RegExp(
+      r'^(\d{6})\.(?:SH|SZ)$',
+      caseSensitive: false,
+    ).firstMatch(subject);
+    return qualifiedCode?.group(1) ?? subject;
+  }
+
+  bool _hasMacroStockQuoteEvidence(List<Message> messages, String searchTerm) {
+    final identity = _latestStockIdentityFromToolResults(messages, searchTerm);
+    final successfulIds = messages
+        .map((message) => message.toolResult)
+        .where((result) => result != null && !result.isError)
+        .map((result) => result!.toolUseId)
+        .toSet();
+    for (final message in messages) {
+      for (final call in message.toolUses ?? const <ToolUse>[]) {
+        if (!successfulIds.contains(call.id)) continue;
+        final action = call.input['action'];
+        if ((call.name != 'DataStore' && call.name != 'MarketData') ||
+            (action != 'query_quote' && action != 'quote')) {
+          continue;
+        }
+        final code = _textValue(
+          call.input['code'] ?? call.input['symbol'],
+          '',
+        );
+        if (code.isNotEmpty && code == (identity?['code'] ?? searchTerm)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  bool _hasStockIdentitySearch(List<Message> messages, String searchTerm) {
+    for (final message in messages) {
+      for (final call in message.toolUses ?? const <ToolUse>[]) {
+        if ((call.name == 'DataStore' || call.name == 'MarketData') &&
+            call.input['action'] == 'query_stock_list' &&
+            '${call.input['query'] ?? call.input['keyword'] ?? ''}' ==
+                searchTerm) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  Map<String, String>? _latestStockIdentityFromToolResults(
+    List<Message> messages,
+    String searchTerm,
+  ) {
+    final callsById = <String, ToolUse>{};
+    for (final message in messages) {
+      for (final call in message.toolUses ?? const <ToolUse>[]) {
+        callsById[call.id] = call;
+      }
+    }
+    for (var index = messages.length - 1; index >= 0; index--) {
+      final result = messages[index].toolResult;
+      if (result == null || result.isError) continue;
+      final call = callsById[result.toolUseId];
+      if (call == null ||
+          call.input['action'] != 'query_stock_list' ||
+          '${call.input['keyword'] ?? call.input['query'] ?? ''}' !=
+              searchTerm) {
+        continue;
+      }
+      final decoded = _decodeMap(result.content);
+      if (decoded?['action'] != 'query_stock_list') continue;
+      final data = decoded?['data'];
+      if (data is List) {
+        for (final row in data.whereType<Map>()) {
+          final code = _textValue(row['code'] ?? row['symbol'], '');
+          final name = _textValue(row['name'], '');
+          if (code.isNotEmpty && name.isNotEmpty) {
+            return {'code': code, 'name': name};
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  String? _toolResultAction(String content) {
+    return _decodeMap(content)?['action']?.toString();
+  }
+
+  Map<String, dynamic>? _decodeMap(String content) {
+    final text = content.trim();
+    if (!text.startsWith('{')) return null;
+    try {
+      final decoded = jsonDecode(text);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   bool _isFundStockDataDrift(ToolUse call) {
@@ -1627,6 +2044,20 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       failureSummary: failureSummary,
     );
     if (stockCandidates != null) return stockCandidates;
+    final macroEvidence = _macroEvidenceSummary.build(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+      failureSummary: failureSummary,
+    );
+    if (macroEvidence != null &&
+        !_requiresMacroStockQuoteRecovery(messages.sublist(turnStartIndex))) {
+      return macroEvidence;
+    }
+    final macroFallback = _macroWorkflowBudgetFallback(
+      messages.sublist(turnStartIndex),
+      failureSummary,
+    );
+    if (macroFallback != null) return macroFallback;
     final marketOverview = _marketOverviewSummary.build(
       messages: messages,
       turnStartIndex: turnStartIndex,
@@ -1676,6 +2107,54 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
         'No further provider/file/script calls were executed. Use the tool evidence above, or ask a narrower follow-up.';
   }
 
+  String? _macroWorkflowBudgetFallback(
+    List<Message> turnMessages,
+    String failureSummary,
+  ) {
+    final actions = <String>{};
+    for (final message in turnMessages) {
+      for (final call in message.toolUses ?? const <ToolUse>[]) {
+        if (call.name != 'MarketData' && call.name != 'DataStore') continue;
+        final action = _textValue(call.input['action'], '');
+        if (action.contains('macro') ||
+            action == 'finance_news' ||
+            action == 'query_finance_news') {
+          actions.add(action);
+        }
+      }
+      final result = message.toolResult;
+      if (result == null || result.isError) continue;
+      final action = _toolResultAction(result.content) ?? '';
+      if (action.contains('macro') ||
+          action == 'finance_news' ||
+          action == 'query_finance_news') {
+        actions.add(action);
+      }
+    }
+    if (actions.isEmpty) return null;
+    final attemptedRefresh =
+        actions.contains('finance_news') ||
+        actions.contains('macro_research_provenance') ||
+        actions.contains('macro_research_extract');
+    final attemptedReadback =
+        actions.any((action) => action.startsWith('query_')) ||
+        actions.contains('macro_research_sources');
+    return [
+      '已达到本轮受控数据调用预算，下面直接给出宏观来源/新闻工作流状态；未继续调用更多 provider、文件、脚本或交易工具。',
+      '',
+      '## 宏观来源与新闻证据状态',
+      '',
+      '- 刷新：${attemptedRefresh ? '已通过受治理 MarketData 路径尝试刷新新闻或宏观研究来源。' : '本轮没有完成新的 provider 刷新，只能使用本地读回。'}',
+      '- 读回：${attemptedReadback ? '已请求本地宏观因子、宏观研究证据或财经新闻读回。' : '未取得可摘要的本地读回结果。'}',
+      '- 来源：以工具结果中的 interface/provider/canonical schema 为准；新闻只作为线索，不能替代官方事实或内容级研究证据。',
+      '- 获取时间：以 `query_finance_news`、`query_macro_*` 或 `macro_research_*` 工具结果中的 `fetchedAt` / source time 字段为准；若结果缺失，应视为证据缺口。',
+      '',
+      '## 本轮限制',
+      '',
+      '- $failureSummary',
+    ].join('\n');
+  }
+
   @override
   Future<String?> buildRecovery({
     required String? prompt,
@@ -1683,6 +2162,12 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     required Tool? Function(String name) toolByName,
     required DomainRecoveryToolCall callTool,
   }) async {
+    final macroStockQuote = await _buildMacroStockQuoteRecovery(
+      messages: messages,
+      toolByName: toolByName,
+      callTool: callTool,
+    );
+    if (macroStockQuote != null) return macroStockQuote;
     final stockWatch = await _stockWatchRecovery.build(
       messages: messages,
       toolByName: toolByName,
@@ -1694,6 +2179,44 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       messages: messages,
       toolByName: toolByName,
       callTool: callTool,
+    );
+  }
+
+  Future<String?> _buildMacroStockQuoteRecovery({
+    required List<Message> messages,
+    required Tool? Function(String name) toolByName,
+    required DomainRecoveryToolCall callTool,
+  }) async {
+    final turnStartIndex = _lastUserIndex(messages);
+    if (turnStartIndex < 0) return null;
+    final turnMessages = messages.sublist(turnStartIndex);
+    final searchTerm = _latestMacroStockSubject(turnMessages);
+    if (searchTerm == null ||
+        _hasMacroStockQuoteEvidence(turnMessages, searchTerm)) {
+      return null;
+    }
+    final identity = _latestStockIdentityFromToolResults(
+      turnMessages,
+      searchTerm,
+    );
+    final directCode = RegExp(r'^\d{6}$').hasMatch(searchTerm)
+        ? searchTerm
+        : null;
+    final code = identity?['code'] ?? directCode;
+    if (code == null) return null;
+    final tool = toolByName('MarketData') ?? toolByName('DataStore');
+    if (tool == null) return null;
+    await callTool(
+      tool,
+      'auto_macro_stock_quote_${DateTime.now().microsecondsSinceEpoch}',
+      {'action': 'query_quote', 'code': code, 'limit': 1},
+    );
+    return buildBudgetStopText(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+      prompt: null,
+      failureSummary:
+          '本轮已使用结构化宏观 readback、新闻线索和个股行情证据；如需刷新来源，应进入显式 macro source update / extraction workflow。',
     );
   }
 }

@@ -82,6 +82,12 @@ Key actions:
 - **coverage** — Local reusable data coverage. Optional symbols: ["600519"]
 - **market_activity_summary** — Bounded local first-pass evidence for broad market activity, hot-rank, flow-rank, limit-pool, unusual-activity, dragon-tiger, and cached quote context. Use before live broad refreshes.
 - **query_macro_factors** — Read governed macro/factor evidence from `market_moving_factor_v1`. Use before market, stock, fund, or strategy-preparation analysis when outside macro forces may matter. Pass structured filters such as target:"Copper", regions:"Indonesia", assets:"bond funds", family:"rates_liquidity", or sectors:"miners". Macro factors are analysis context, not executable trade signals.
+- **query_macro_attribution** — Read governed macro evidence as root-cause attribution candidates. Pass structured target/assets/regions/sectors/family filters after factor/evidence readback. Returns category, evidence, confidence, missing evidence, invalidation condition, and next update action. Use for analysis or strategy context, not direct trading signals.
+- **macro_numeric_series_catalog** — Discover governed official numeric macro series before refresh/readback. Use provider/seriesId/family/status filters to inspect supported, credential-gated, or security-controlled BEA/FRED/BLS/EIA/OECD/IMF/World Bank/NBS/Wind-style series.
+- **query_macro_numeric_series** — Read official numeric macro facts separately from research narratives. Use after macro refresh/provenance when the answer needs BEA/FRED/BLS/EIA/OECD/IMF/World Bank/Wind-style values with seriesId, value, unit, sourceDataTime, fetchedAt, provider, and status.
+- **macro_research_sources** — Read the source-specific macro research catalog before retrieving research/event pages. Use provider/category/access/priority filters to inspect access behavior and categories. It reports retrievalMethods, automationPolicy, accessClass, testedStatus, limitations, and nextAction; it does not scrape pages.
+- **macro_research_provenance/query_macro_research_evidence** — Normalize macro research source catalog rows into governed `market_moving_factor_v1` evidence and read them back. Stable public/API/index/commodity metadata becomes reusable evidence; anti-bot/manual/licensed/do-not-scrape sources become retrieval evidence only.
+- **macro_research_extraction_status/macro_research_extract/query_macro_research_content** — Inspect allowed macro research content extraction, extract article/PDF/API text for allowed public sources, hash/store bounded content artifacts, extract key claims, and read content-backed provenance before saying a report "says" something. For a first answer, use at most one blocked official-source attempt plus one missing-content extraction, then call query_macro_research_content and answer from contentEvidence instead of crawling multiple providers, searching for one more date, or inspecting local macro content artifact files.
 - **query_quote** — Inspect persisted quote snapshots. symbols: ["600519"]
 - **query_index_quote** — Inspect persisted governed index quote snapshots. symbols: ["000001"]
 - **query_etf_quote** — Inspect persisted governed ETF quote snapshots. symbols: ["510300"]
@@ -336,6 +342,15 @@ Market routing: 6-digit codes → A-share (TDX first for quote/kline, EastMoney 
           'query_flow_rank',
           'market_activity_summary',
           'query_macro_factors',
+          'query_macro_attribution',
+          'query_macro_numeric_series',
+          'macro_numeric_series_catalog',
+          'macro_research_sources',
+          'macro_research_provenance',
+          'macro_research_extract',
+          'macro_research_extraction_status',
+          'query_macro_research_content',
+          'query_macro_research_evidence',
           'query_sector',
           'query_chip',
           'query_market_screening',
@@ -747,13 +762,22 @@ SYSTEM:
   finance_news — Fetch and persist governed finance_news rows through the news.finance_feed interface. query/keyword required; provider/providerMode/cacheMode/allowFallback/source/limit optional.
   query_finance_news — Read persisted finance_news rows from Research(news). keyword/query/source/limit optional. Returns provenance with interfaceId, cacheStatus, sourceDataTime, fetchedAt.
   query_macro_factors — Read governed macro/factor evidence. target/assets/regions/sectors/family/status/source/limit optional. Returns market_moving_factor_v1 rows with source time, fetched time, affected assets, transmission channels, status, and missingReason when no row matches.
+  query_macro_attribution — Read governed macro evidence as structured root-cause candidates. target/assets/regions/sectors/family/status/source/limit optional. Returns macro_attribution_v1 rows with category, evidence, confidence, missingEvidence, invalidationCondition, nextUpdateAction, and updateDecision. Use after macro factor/evidence readback for analysis and strategy context; do not treat it as a standalone buy/sell rule.
+  macro_numeric_series_catalog — Discover governed official numeric macro series before refresh/readback. provider/source/seriesId/target/family/status/limit optional. Returns seriesId, metricName, sourceName, credentialKey, status, sourceUrl, nextAction, and provenance. Use it before live refresh or when query_macro_numeric_series is missing so the agent can explain supported, credential-gated, security-controlled, or cache-only series.
+  query_macro_numeric_series — Read official numeric macro facts separately from research narratives. source/provider/target/seriesId/metric/assets/regions/sectors/status/limit optional. Returns seriesId, metricName, value, unit, frequency, sourceDataTime, releaseDate, fetchedAt, provider, status, and provenance. Use only when the user asks for a number or the answer requires a current official value; first-pass watch-factor answers should state missing numeric evidence instead of looping through candidate series.
+  macro_research_sources — Read the source-specific macro research catalog. provider/category/access/priority/limit optional. Returns retrievalMethods, accessClass, automationPolicy, source categories, tested status, limitations, and nextAction before any WebView/Research fetch. Prefer category/family filters over provider-by-provider loops: use category "commodity_research" plus family "commodity_research" for copper/commodity first-pass work, and category "index" plus family "index_classification" for index/passive-flow first-pass work. If evidence/content readback returns rows for the requested family, answer from those rows and list missing numeric evidence as a gap instead of triggering numeric-series or adjacent-target loops.
+  macro_research_provenance — Normalize source catalog rows into governed market_moving_factor_v1 evidence. provider/category/limit/persist optional. Persists stable reusable metadata and records blocked/manual/licensed sources as retrieval evidence only.
+  macro_research_extraction_status — Inspect which macro research providers support content extraction, PDF text extraction, key-claim extraction, hash/readback, and which remain retrieval-evidence-only.
+  macro_research_extract — Extract content from allowed macro research sources. provider/source/url/content/contentType/limit/persist optional. Fetches or consumes supplied article/PDF/API text, extracts title/date/body/key claims, writes bounded content artifacts when possible, hashes content, and persists market_moving_factor_v1 rows. Blocked/manual/licensed/do-not-scrape sources become retrieval evidence only. For first-pass macro answers, use at most one blocked official-source attempt plus one content extraction after choosing the best provider from sources/evidence, then query_macro_research_content.
+  query_macro_research_content — Read extracted content-backed macro research rows with contentHash, contentEvidence, bodyPreview, keyClaims, source URL, source date, and retrieved time. Use contentEvidence for normal answers. artifactPath is diagnostic/source-maintenance only; do not inspect local macro content files during first-pass macro analysis.
+  query_macro_research_evidence — Read macro_research_document, macro_index_event, macro_official_series, macro_commodity_event, and macro_source_retrieval_evidence rows with provenance. Once source/evidence/content readback identifies the provider and source, answer from those rows; do not use broad Research(search) for first-pass confirmation.
   query_fund_holding — Read persisted fund_holding rows. fundCode/code/symbols optional, stockCode/reportDate/limit optional. Returns provenance with interfaceId, cacheStatus, sourceDataTime, fetchedAt.
   query_index_constituents — Read persisted index_constituent rows. indexCode/code/symbols optional, stockCode/asOfDate/provider/limit optional. Returns provenance with interfaceId, cacheStatus, sourceDataTime, fetchedAt.
   fund_performance — Fetch and persist governed fund_performance_metrics rows from native EastMoney provider routing.
   query_fund_performance — Read persisted fund_performance_metrics rows. symbols/code/fundCode optional, provider/metricDate/date/limit optional. Returns provenance with interfaceId, cacheStatus, sourceDataTime, fetchedAt.
   stock_shareholders — Fetch and persist governed stock_shareholder rows from native EastMoney shareholder routing. symbols:["600519"], reportDate/date optional.
   query_trade_calendar — Read persisted Tushare trade calendar rows. market/startDate/endDate optional
-  query_stock_list — Read persisted stock_list rows. market/industry/stockType(type)/limit optional
+  query_stock_list — Read persisted stock_list rows. market/industry/stockType(type)/keyword(query)/limit optional. Use keyword for stock identity readback such as {"action":"query_stock_list","keyword":"贵州茅台","limit":5} before query_quote when the user names a company but not a code.
   query_board_members — Read persisted governed market.board_members rows. boardCode/boardName/code/industry/limit optional
   query_sector_constituents — Read persisted governed market.sector_constituents rows. sectorCode/sectorName/code/industry/limit optional
   query_industry_map — Compatibility readback over persisted market.sector_constituents rows. code/industry/limit optional

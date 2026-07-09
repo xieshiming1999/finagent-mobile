@@ -21,6 +21,7 @@ MarketData(action: "query_api_calls", source: "eastmoney", minutes: 30)
 MarketData(action: "query_quote", symbols: ["600519"])
 MarketData(action: "query_kline", symbols: ["600519"], startDate: "2024-01-01")
 MarketData(action: "query_macro_factors", target: "<identified sector, commodity, country, rate, or theme>", limit: 10)
+MarketData(action: "query_macro_attribution", target: "<identified sector, commodity, country, rate, or theme>", limit: 10)
 ```
 
 Only fetch fresh data when local data is missing or stale:
@@ -79,7 +80,11 @@ not switch into TradingView or custom HTML merely to satisfy a generic
 3. when the stock has clear exposure to rates, liquidity, currency, commodity,
    policy, country/index, or sector-level macro pressure, call
    `MarketData(action:"query_macro_factors", ...)` with structured target,
-   assets, regions, sectors, or family filters and cite returned provenance
+   assets, regions, sectors, or family filters and cite returned provenance.
+   For root-cause, attribution, or judgment-risk analysis, follow with
+   `MarketData(action:"query_macro_attribution", ...)` using the same filters
+   and use its confidence, missing evidence, contradictions, and invalidation
+   conditions as the macro attribution contract
 4. `quote` / `kline` only when fresh data is needed
 5. TradingView Scanner for live technical overlays
 6. Answer normal analysis requests in Markdown/text, not fenced or inline HTML.
@@ -101,7 +106,9 @@ lithium:
    local K-line is available.
 2. Add one macro/factor readback for the commodity or sector exposure:
    `MarketData(action:"query_macro_factors", target:"Copper", limit:10)` or the
-   equivalent structured target.
+   equivalent structured target. If the user asks what drives the stock or how
+   macro changes affect the judgment, also read
+   `MarketData(action:"query_macro_attribution", ...)` for that exposure.
 3. Do not call A-share `quote`/`kline`/`DataProcess` actions for global futures,
    FX, or commodity symbols such as `HG=F`, `DXY=F`, `CL=F`, `GC=F`, or
    `BTC-USD`. Those are context symbols, not the stock being analyzed.

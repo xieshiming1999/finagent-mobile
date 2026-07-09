@@ -343,7 +343,10 @@ class _FinAgentScreenState extends State<FinAgentScreen> {
     _startWorkflowAutomationHttpHost(control);
   }
 
-  Future<List<AgentEvent>> _runWorkflowAutomationPrompt(String prompt) async {
+  Future<List<AgentEvent>> _runWorkflowAutomationPrompt(
+    String prompt, {
+    Set<String> disabledTools = const {},
+  }) async {
     final events = <AgentEvent>[];
     if (!mounted) return events;
     setState(() {
@@ -366,7 +369,10 @@ class _FinAgentScreenState extends State<FinAgentScreen> {
       });
     });
     try {
-      await for (final event in widget.agent.run(prompt)) {
+      await for (final event in widget.agent.run(
+        prompt,
+        disabledTools: disabledTools,
+      )) {
         events.add(event);
         if (!mounted) continue;
         setState(() => _handleEvent(event));

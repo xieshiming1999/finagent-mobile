@@ -91,6 +91,7 @@ class Agent {
 
   void _setIdle() {
     _isRunning = false;
+    _disabledToolsForRun = const {};
     _pump();
   }
 
@@ -145,6 +146,7 @@ class Agent {
   final DomainWorkflowHooks _domainWorkflowHooks;
   StreamController<AgentEvent>? _currentController;
   String? _currentPrompt;
+  Set<String> _disabledToolsForRun = const {};
 
   // Compact state
   int _autoCompactFailures = 0;
@@ -259,7 +261,14 @@ class Agent {
   }
 
   /// Build the current system prompt.
-  String get systemPrompt => _promptBuilder.build(tools: _tools);
+  String get systemPrompt => _promptBuilder.build(tools: _activeTools);
+
+  List<Tool> get _activeTools {
+    if (_disabledToolsForRun.isEmpty) return _tools;
+    return _tools
+        .where((tool) => !_disabledToolsForRun.contains(tool.name))
+        .toList(growable: false);
+  }
 
   /// Expose LLMClient baseUrl for sub-agent creation.
   String get clientBaseUrl => client.baseUrl;
@@ -295,6 +304,7 @@ class Agent {
     List<Uint8List>? images,
     Uint8List? audioBytes,
     String? audioFormat,
+    Set<String> disabledTools = const {},
   }) {
     final controller = StreamController<AgentEvent>();
     _cancelled = false;
@@ -314,6 +324,7 @@ class Agent {
     _domainTurnPolicy.reset();
     _currentController = controller;
     _currentPrompt = userMessage;
+    _disabledToolsForRun = disabledTools;
 
     _turnMessageStartIndex = messages.length; // for history dual-write
 
@@ -836,7 +847,7 @@ class Agent {
 
     final stream = client.sendMessage(
       messages: messages,
-      tools: _tools,
+      tools: _activeTools,
       systemPrompt: systemPrompt,
       maxOutputTokens: maxOutputTokens,
     );
@@ -1781,6 +1792,7 @@ class Agent {
     StreamController<AgentEvent> controller,
   ) async {
     int i = 0;
+    final activeTools = _activeTools;
     while (i < toolCalls.length && !_cancelled) {
       // Classify: find a batch of consecutive same-name, parallelizable calls
       final batchStart = i;
@@ -1788,7 +1800,7 @@ class Agent {
       while (i < toolCalls.length) {
         final tu = toolCalls[i];
         if (tu.name != batchToolName) break;
-        final tool = _tools.where((t) => t.name == tu.name).firstOrNull;
+        final tool = activeTools.where((t) => t.name == tu.name).firstOrNull;
         if (tool == null || !tool.canRunInParallel(tu.input)) break;
         final needsConfirm =
             toolContext.needsPermission(tu.name) &&
@@ -1821,7 +1833,7 @@ class Agent {
           // Execute in parallel
           final stopwatch = Stopwatch()..start();
           final futures = batch.map((tu) {
-            final tool = _tools.firstWhere((t) => t.name == tu.name);
+            final tool = activeTools.firstWhere((t) => t.name == tu.name);
             return _executeSafeToolCall(tool, tu);
           }).toList();
           final results = await Future.wait(futures);
@@ -1903,7 +1915,8 @@ class Agent {
     );
 
     final stopwatch = Stopwatch()..start();
-    final tool = _tools.where((t) => t.name == toolUse.name).firstOrNull;
+    final activeTools = _activeTools;
+    final tool = activeTools.where((t) => t.name == toolUse.name).firstOrNull;
     ToolResult result;
     var shouldContinueBatch = true;
 
@@ -1917,7 +1930,7 @@ class Agent {
         );
         result = await _executeTool(repaired, toolUse);
       } else {
-        final available = _tools.map((t) => t.name).join(', ');
+        final available = activeTools.map((t) => t.name).join(', ');
         log('Agent', 'Unknown tool: ${toolUse.name}');
         result = ToolResult(
           toolUseId: toolUse.id,
@@ -2085,12 +2098,13 @@ class Agent {
   /// Try to repair a misnamed tool call via case-insensitive or fuzzy matching.
   Tool? _repairToolLookup(String name) {
     final lower = name.toLowerCase();
+    final activeTools = _activeTools;
     // Case-insensitive exact match
-    for (final t in _tools) {
+    for (final t in activeTools) {
       if (t.name.toLowerCase() == lower) return t;
     }
     // Substring match (tool name contains query or query contains tool name)
-    for (final t in _tools) {
+    for (final t in activeTools) {
       final tLower = t.name.toLowerCase();
       if (tLower.contains(lower) || lower.contains(tLower)) return t;
     }

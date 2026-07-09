@@ -42,6 +42,7 @@ extension ReusableDataStoreTushareQueryReference on ReusableDataStore {
     String? market,
     String? industry,
     String? stockType,
+    String? keyword,
     int limit = 50,
   }) {
     final db = _db;
@@ -59,6 +60,11 @@ extension ReusableDataStoreTushareQueryReference on ReusableDataStore {
     if (stockType != null && stockType.isNotEmpty) {
       where.add('stock_type = ?');
       args.add(stockType);
+    }
+    if (keyword != null && keyword.trim().isNotEmpty) {
+      final value = '%${keyword.trim()}%';
+      where.add('(code LIKE ? OR name LIKE ?)');
+      args.addAll([value, value]);
     }
     args.add(limit);
     final rows = db.select(

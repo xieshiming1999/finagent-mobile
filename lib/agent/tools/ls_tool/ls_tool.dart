@@ -7,6 +7,10 @@ import '../../tool_context.dart';
 import '../utils/file_utils.dart';
 import 'prompt.dart' as tool_prompt;
 
+bool _isMacroResearchContentPath(String filePath) {
+  return filePath.replaceAll('\\', '/').contains('/data/macro_research_content');
+}
+
 /// Lists files and directories in a tree structure.
 ///
 /// Claude Code v1.0.3 removed standalone LS (done via Bash).
@@ -73,6 +77,16 @@ class LSTool extends Tool {
   ) async {
     final dirPath = input['path'] as String;
     final resolved = normalizePath(dirPath, context.basePath);
+    if (_isMacroResearchContentPath(resolved)) {
+      return ToolResult(
+        toolUseId: toolUseId,
+        content:
+            'Macro research content artifact directories are diagnostic/source-maintenance storage. '
+            'For normal macro analysis, use MarketData(action: "query_macro_research_content") '
+            'and answer from contentEvidence instead of listing local artifact files.',
+        isError: true,
+      );
+    }
 
     try {
       final lines = <String>[];

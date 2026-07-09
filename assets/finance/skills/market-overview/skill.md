@@ -46,6 +46,7 @@ index/passive-flow questions, read the governed factor layer before concluding:
 MarketData(action: "query_macro_factors", target: "A-shares", limit: 10)
 MarketData(action: "query_macro_factors", family: "rates_liquidity", limit: 10)
 MarketData(action: "query_macro_factors", regions: "Indonesia", family: "index_classification", limit: 10)
+MarketData(action: "query_macro_attribution", target: "A-shares", limit: 10)
 ```
 
 Keep this evidence separate from index, sector, flow, and technical evidence.
@@ -53,6 +54,17 @@ Use the row source time, fetched time, affected assets, status, and
 transmission channel. If the readback returns `status:"missing"`, state that
 the current factor layer has no matching macro evidence instead of assuming no
 macro driver exists.
+For root-cause, market-cause, attribution, or "why did it move" analysis, read
+`query_macro_attribution` after the factor readback with the same structured
+filters. Use its category, evidence, confidence, missing evidence,
+contradictions, invalidation condition, and next update action. Do not make a
+macro root-cause claim from factor rows alone when the attribution readback is
+available; if attribution rows are missing, state that as an evidence gap.
+In a first-pass market overview, do not continue into
+`macro_research_extract`, broad `Research`, `WebFetch`, or provider-page
+browsing just because macro evidence is missing. Report the update action from
+`query_macro_attribution` and ask for or wait for an explicit refresh/source
+validation workflow before spending extraction/browser calls.
 
 When generating a China/A-share market overview dashboard, local fallback
 tables, index cards, sector/flow lists, legends, and charts must use the China
@@ -107,8 +119,16 @@ For general market-overview intent, keep the first answer bounded:
      exposure as `target`, `regions`, or `family`.
    - Do not repeat macro readbacks with several target/family combinations in
      the first answer. If no rows match, state the macro-evidence gap.
-5. Do not call WindMcp for this workflow unless `WIND_API_KEY` is configured and the user explicitly asks for Wind/professional data. If Wind returns `KEY_MISSING`, stop Wind for this turn.
-6. For broad "why did the market move" or "technical plus macro" prompts, do
+5. For root-cause or attribution analysis, follow the factor readback with
+   `MarketData(action:"query_macro_attribution", ...)` using the same
+   structured filters. Use it as the attribution contract rather than turning
+   factor rows directly into causal claims.
+6. Do not call `macro_research_extract`, broad `Research`, `WebFetch`, or
+   provider-page browsing in the first market overview pass unless the user
+   explicitly asks to refresh or validate macro sources. Use the attribution
+   readback's missing/update fields as the data-quality section.
+7. Do not call WindMcp for this workflow unless `WIND_API_KEY` is configured and the user explicitly asks for Wind/professional data. If Wind returns `KEY_MISSING`, stop Wind for this turn.
+8. For broad "why did the market move" or "technical plus macro" prompts, do
    not add single-symbol technical fallbacks such as
    `MarketData(action:"query_technical_indicator")`,
    `DataProcess(action:"indicators")`, `DataProcess(action:"summary")`,
@@ -118,11 +138,11 @@ For general market-overview intent, keep the first answer bounded:
    K-line or technical indicators are not already verified, state that gap
    instead of trying provider-format diagnostics for `000300`, `999999`,
    `1A0001`, `s_sh000001`, or other alternate index codes.
-7. Stop after the above evidence and produce a final answer. If some evidence
+9. Stop after the above evidence and produce a final answer. If some evidence
    is missing or a provider fails, state the gap and source/freshness instead
    of continuing broad provider retries. Keep the first pass within roughly ten
    data calls.
-8. Present the result in chat first. Create a dashboard only when the user asks for a dashboard or when the workflow explicitly needs one.
+10. Present the result in chat first. Create a dashboard only when the user asks for a dashboard or when the workflow explicitly needs one.
 
 When `DataProcess(action:"market_snapshot")` returns `analysisEvidence`, use
 that `analysis-evidence-v1` object as the market-analysis contract. Report

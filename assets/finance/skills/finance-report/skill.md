@@ -52,6 +52,12 @@ Produce a single-screen financial report in one self-contained HTML file.
   source published time, fetched time, affected assets/regions/sectors,
   transmission channels, status, and confidence. Keep this section separate
   from technical, fundamental, strategy, or trade-action evidence.
+- For root-cause, strategy-risk, or attribution reports, also pass the
+  structured rows returned by `MarketData(action:"query_macro_attribution", ...)`
+  as `macroAttribution` or summarize them in the analysis-evidence section.
+  Preserve confidence, missing evidence, contradictions, invalidation
+  conditions, and next update action; do not flatten them into a single causal
+  claim.
 
 ## Workflow
 

@@ -109,6 +109,22 @@ extension ReusableDataStoreMacroFactor on ReusableDataStore {
             mapped[key] = _decodeJson(mapped.remove('${key}_json'));
           }
           mapped['raw_json'] = _decodeJson(mapped['raw_json']);
+          final macroValues = mapped['macro_values'];
+          final raw = mapped['raw_json'];
+          if (macroValues is Map) {
+            mapped['evidence_tier'] ??= macroValues['evidenceTier'];
+            mapped['limitations'] ??=
+                macroValues['limitations'] ??
+                _limitationList(macroValues['limitation']);
+            mapped['linked_macro_evidence_ids'] ??=
+                macroValues['linkedMacroEvidenceIds'];
+          }
+          if (raw is Map) {
+            mapped['evidence_tier'] ??= raw['evidence_tier'];
+            mapped['limitations'] ??= raw['limitations'];
+            mapped['linked_macro_evidence_ids'] ??=
+                raw['linked_macro_evidence_ids'];
+          }
           return mapped;
         })
         .where((row) {
@@ -121,6 +137,12 @@ extension ReusableDataStoreMacroFactor on ReusableDataStore {
           );
         })
         .toList();
+  }
+
+  List<String>? _limitationList(Object? value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty) return null;
+    return [text];
   }
 
   bool _matchesRelevance(

@@ -8,6 +8,9 @@ import '../market_index_universe.dart';
 import 'eastmoney_advanced_service.dart';
 import 'eastmoney_market_data_service.dart';
 import 'market_data_read_service.dart';
+import 'macro_research_extraction.dart';
+import 'macro_numeric_series_catalog.dart';
+import 'macro_research_source_catalog.dart';
 import 'raw_payload_query_service.dart';
 import 'tdx_market_data_query_service.dart';
 import 'tushare_market_data_service.dart';
@@ -217,6 +220,7 @@ class MarketDataQueryActionService {
           market: input['market'] as String?,
           industry: input['industry'] as String?,
           stockType: input['stockType'] as String? ?? input['type'] as String?,
+          keyword: input['keyword'] as String? ?? input['query'] as String?,
           limit: _inputLimit(input, 50),
         );
       case 'query_board_members':
@@ -364,6 +368,22 @@ class MarketDataQueryActionService {
         }, context);
       case 'query_macro_factors':
         return _queryMacroFactors(input, context);
+      case 'query_macro_attribution':
+        return queryMacroAttribution(_storeForContext(context), input);
+      case 'query_macro_numeric_series':
+        return _queryMacroNumericSeries(input, context);
+      case 'macro_numeric_series_catalog':
+        return macroNumericSeriesCatalog(input);
+      case 'macro_research_sources':
+        return macroResearchSources(input);
+      case 'macro_research_provenance':
+        return macroResearchProvenance(_storeForContext(context), input);
+      case 'macro_research_extraction_status':
+        return macroResearchExtractionStatus(input);
+      case 'query_macro_research_content':
+        return queryMacroResearchContent(_storeForContext(context), input);
+      case 'query_macro_research_evidence':
+        return queryMacroResearchEvidence(_storeForContext(context), input);
       case 'query_raw_payload':
         return _rawPayload.query(context, input, limit: _inputLimit(input, 20));
       case 'query_api_calls':
@@ -379,10 +399,11 @@ class MarketDataQueryActionService {
     ToolContext context,
   ) {
     final store = _storeForContext(context);
+    final families = macroFactorFamilies(input);
     final rows =
         store?.queryMarketMovingFactors(
-          family: _clean(input['family']),
-          families: _list(input['families']),
+          family: families == null ? _clean(input['family']) : null,
+          families: families,
           status: _clean(input['status']),
           source: _clean(input['source']),
           target: _clean(
@@ -421,6 +442,177 @@ class MarketDataQueryActionService {
       },
       'rows': rows,
     };
+  }
+
+  Map<String, dynamic> _queryMacroNumericSeries(
+    Map<String, dynamic> input,
+    ToolContext context,
+  ) {
+    final store = _storeForContext(context);
+    final rows =
+        store
+            ?.queryMarketMovingFactors(
+              families: const [
+                'macro_calendar',
+                'macro_series',
+                'rates_liquidity',
+                'macro_official_series',
+              ],
+              status: _clean(input['status']),
+              source: _numericSourceFilter(input),
+              target: _clean(
+                input['target'] ??
+                    input['seriesId'] ??
+                    input['metric'] ??
+                    input['query'],
+              ),
+              assets: _list(input['assets']),
+              regions: _list(input['regions'] ?? input['market']),
+              sectors: _list(input['sectors'] ?? input['industry']),
+              limit: _inputLimit(input, 40),
+            )
+            .where(_isNumericMacroRow)
+            .map(_numericSeriesRow)
+            .toList() ??
+        const <Map<String, dynamic>>[];
+    return {
+      'action': 'query_macro_numeric_series',
+      'count': rows.length,
+      'status': rows.isEmpty ? 'missing' : 'ok',
+      if (rows.isEmpty)
+        'missingReason':
+            'No official numeric macro series rows matched the requested filters. Run the macro factor refresh for configured providers or inspect macro_research_sources for credential/access limits.',
+      'provenance': {
+        'interfaceId': 'macro.official_series',
+        'providerId': 'local',
+        'provider': 'local',
+        'capabilityId': 'local.query_macro_numeric_series',
+        'providerMode': 'official-series-readback',
+        'cacheStatus': 'local-readback',
+        'cacheDecision':
+            'read official numeric macro series separately from research narratives and policy/index events',
+        'canonicalSchema': 'market_moving_factor_v1',
+        'canonicalTable': 'market_moving_factor',
+        'readbackAction': 'query_macro_numeric_series',
+        'source': 'local official macro series rows',
+        'fetchedAt': DateTime.now().toUtc().toIso8601String(),
+      },
+      'series': rows,
+    };
+  }
+
+  String? _numericSourceFilter(Map<String, dynamic> input) {
+    final raw = _clean(input['source'] ?? input['provider']);
+    if (raw == null) return null;
+    const known = {
+      'fred': 'FRED',
+      'bls': 'BLS',
+      'bea': 'BEA',
+      'eia': 'EIA',
+      'wind': 'Wind',
+      'imf': 'IMF',
+      'world_bank': 'World Bank',
+      'worldbank': 'World Bank',
+      'oecd': 'OECD',
+      'nbs': 'NBS China',
+      'nbs_china': 'NBS China',
+      'stats_china': 'NBS China',
+    };
+    return known[raw.toLowerCase()] ?? raw;
+  }
+
+  bool _isNumericMacroRow(Map<String, dynamic> row) {
+    final values = row['macro_values'];
+    final retrieval = row['retrieval_test'];
+    final sourceType = '${row['source_type'] ?? ''}';
+    final family = '${row['family'] ?? ''}';
+    final provider =
+        '${retrieval is Map ? retrieval['provider'] : row['source_name'] ?? ''}'
+            .toLowerCase();
+    final hasValue =
+        values is Map &&
+        (values.containsKey('actual') || values.containsKey('text'));
+    final knownProvider = [
+      'fred',
+      'bls',
+      'bea',
+      'eia',
+      'oecd',
+      'imf',
+      'world bank',
+      'wind',
+      'nbs china',
+    ].any(provider.contains);
+    return sourceType == 'official_api' ||
+        family == 'macro_official_series' ||
+        family == 'macro_series' ||
+        (knownProvider && hasValue);
+  }
+
+  Map<String, dynamic> _numericSeriesRow(Map<String, dynamic> row) {
+    final values = row['macro_values'] is Map
+        ? Map<String, dynamic>.from(row['macro_values'] as Map)
+        : <String, dynamic>{};
+    final retrieval = row['retrieval_test'] is Map
+        ? Map<String, dynamic>.from(row['retrieval_test'] as Map)
+        : <String, dynamic>{};
+    final raw = row['raw_json'] is Map
+        ? Map<String, dynamic>.from(row['raw_json'] as Map)
+        : <String, dynamic>{};
+    return {
+      'seriesId': _seriesIdForRow(row, values, retrieval, raw),
+      'metricName':
+          row['title'] ?? raw['metric_name'] ?? raw['LineDescription'],
+      'provider': retrieval['provider'] ?? row['source_name'],
+      'sourceName': row['source_name'],
+      'value': values['actual'] ?? values['text'],
+      'unit': values['unit'] ?? raw['CL_UNIT'] ?? raw['unit'],
+      'frequency': raw['Frequency'] ?? raw['frequency'],
+      'sourceDataTime':
+          values['period'] ?? row['source_published_at'] ?? row['event_at'],
+      'releaseDate': row['source_published_at'] ?? row['event_at'],
+      'fetchedAt': row['fetched_at'] ?? values['retrievedAt'],
+      'status': row['status'],
+      'failureClass': row['failure_class'],
+      'sourceUrl': row['source_url'],
+      'family': row['family'],
+      'provenance': {
+        'interfaceId': 'macro.official_series',
+        'provider': retrieval['provider'] ?? row['source_name'],
+        'capabilityId': retrieval['capability_id'],
+        'canonicalSchema': 'market_moving_factor_v1',
+        'canonicalTable': 'market_moving_factor',
+        'sourceType': row['source_type'],
+        'retrievalStatus': retrieval['status'],
+      },
+    };
+  }
+
+  String _seriesIdForRow(
+    Map<String, dynamic> row,
+    Map<String, dynamic> values,
+    Map<String, dynamic> retrieval,
+    Map<String, dynamic> raw,
+  ) {
+    final capability = '${retrieval['capability_id'] ?? ''}';
+    if (capability.contains('fred')) return 'DGS10';
+    if (capability.contains('bls')) return 'CUUR0000SA0';
+    if (capability.contains('bea')) return 'NIPA:T10101';
+    if (capability.contains('world_bank')) return 'NY.GDP.MKTP.CD';
+    if (capability.contains('imf')) return 'NGDP_RPCH';
+    if (capability.contains('oecd')) {
+      return 'DF_QNA_EXPENDITURE_GROWTH_OECD:B1GQ:OECD:GCM';
+    }
+    if (capability.contains('eia')) return 'WCESTUS1';
+    final sourceName = '${row['source_name'] ?? ''}'.toLowerCase();
+    final factorId = '${row['factor_id'] ?? ''}'.toLowerCase();
+    if (capability.contains('nbs china') ||
+        capability.contains('nbs_china') ||
+        sourceName.contains('nbs china') ||
+        factorId.contains('nbs_china')) {
+      return 'NBS_EASYQUERY_PENDING';
+    }
+    return '${raw['series_key'] ?? raw['metric_code'] ?? values['seriesId'] ?? row['factor_id'] ?? 'macro.series'}';
   }
 
   String? _clean(Object? value) {

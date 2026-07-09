@@ -271,6 +271,16 @@ Key actions:
     final symbol = input['symbol'] as String?;
 
     try {
+      if (symbol != null &&
+          _isStockTechnicalAction(action) &&
+          coreCnMarketIndexCodeSet.contains(_cleanSixDigitCode(symbol))) {
+        return ToolResult(
+          toolUseId: toolUseId,
+          content:
+              'DataProcess(action:"$action") is stock/K-line analysis and does not provide governed index technical indicators for core market index code ${_cleanSixDigitCode(symbol)}. Use MarketData(action:"query_index_quote", symbols:["000001","399001","399006"]) or MarketData(action:"quote", symbols:["000001","399001","399006"]) for index evidence, and state index technical-indicator coverage as missing unless a governed index K-line/indicator contract is available.',
+          isError: true,
+        );
+      }
       return switch (action) {
         'help' => _help(toolUseId),
         'calendar' => _calendar(toolUseId),
@@ -442,6 +452,34 @@ Key actions:
       );
     }
     return fn();
+  }
+
+  bool _isStockTechnicalAction(String action) {
+    return const {
+      'indicators',
+      'advanced',
+      'ichimoku',
+      'pivot',
+      'rsrs',
+      'hurst',
+      'golden',
+      'trend',
+      'pattern',
+      'pattern_summary',
+      'support',
+      'support_summary',
+      'volume',
+      'stats',
+      'summary',
+      'factors',
+      'signals',
+      'score_technical',
+    }.contains(action);
+  }
+
+  String _cleanSixDigitCode(String value) {
+    final match = RegExp(r'\d{6}').firstMatch(value.trim().toUpperCase());
+    return match?.group(0) ?? value.trim().toUpperCase();
   }
 
   ToolResult _help(String toolUseId) {

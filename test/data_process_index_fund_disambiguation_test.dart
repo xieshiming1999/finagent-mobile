@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test(
-    'DataProcess does not classify core market index codes as funds',
+    'DataProcess rejects stock-only actions for core market index codes',
     () async {
       final dir = await Directory.systemTemp.createTemp(
         'finagent-index-fund-disambiguation-',
@@ -45,8 +45,11 @@ void main() {
         'symbol': '000300',
       }, ToolContext(basePath: dir.path, serviceBaseUrl: ''));
 
-      expect(result.content, isNot(contains('known fund code in fund_list')));
-      expect(result.content, contains('"bars": 25'));
+      expect(result.isError, isTrue);
+      expect(
+        result.content,
+        contains('does not provide governed index technical indicators'),
+      );
     },
   );
 }

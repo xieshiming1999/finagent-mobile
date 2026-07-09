@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../../agent/message.dart';
 import '../../market/analysis/analysis_evidence_contract.dart';
+import 'finance_macro_evidence_summary.dart';
 
 /// Finance-owned stock candidate budget summary.
 ///
@@ -9,6 +10,9 @@ import '../../market/analysis/analysis_evidence_contract.dart';
 /// to answer from already-collected stock evidence instead of issuing more
 /// provider or file-inspection calls.
 class FinanceStockCandidateSummary {
+  final FinanceMacroEvidenceSummary _macroEvidenceSummary =
+      FinanceMacroEvidenceSummary();
+
   String? build({
     required List<Message> messages,
     required int turnStartIndex,
@@ -107,12 +111,19 @@ class FinanceStockCandidateSummary {
 
     final hotCodes = _rankCodes(hotRank);
     final flowCodes = _rankCodes(flowRank);
+    final macroEvidence = _macroEvidenceSummary.collect(
+      messages,
+      turnStartIndex,
+    );
     final lines = <String>[
       '已达到本轮受控数据调用预算，下面直接使用已经取得的证据给出观察候选；未继续调用更多 provider，也未加入观察池或触发交易。',
       '',
-      '## 观察候选',
-      '',
     ];
+    if (macroEvidence.hasMacroEvidence) {
+      lines.addAll(_macroEvidenceSummary.buildSection(macroEvidence));
+      lines.add('');
+    }
+    lines.addAll(['## 观察候选', '']);
     if (displayCandidates.isEmpty) {
       lines.add('本轮候选合同已执行，但没有返回可用候选行；因此不能给出具体股票名单。');
       lines.add('');
@@ -172,6 +183,8 @@ class FinanceStockCandidateSummary {
       '## 结论边界',
       '',
       '- 本回答是观察候选，不是买入建议。',
+      if (macroEvidence.hasMacroEvidence)
+        '- 宏观证据只作为观察条件和失效条件；不能直接变成买入、卖出或仓位信号。',
       '- 已使用 governed MarketData readback/cache-first 证据；预算拦截后的额外请求没有发出 provider 调用。',
       '- 本轮失败/跳过：$failureSummary',
       '- 若要进入下一步，应选择一个候选，再设计入场、止损、止盈和观察条件，并由用户确认是否写入观察池。',

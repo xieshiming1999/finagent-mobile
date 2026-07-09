@@ -7,7 +7,7 @@ import 'finance_workflow_state.dart';
 /// This keeps finance tool names and finance workflow-state checks out of the
 /// generic loop while preserving the current bounded-workflow behavior.
 class FinanceDataBudgetPolicy extends DomainDataBudgetPolicy {
-  static const _maxDataToolCallsPerTurn = 16;
+  static const _maxDataToolCallsPerTurn = 20;
   static const _maxBroadMarketDataToolCallsPerTurn = 8;
 
   @override

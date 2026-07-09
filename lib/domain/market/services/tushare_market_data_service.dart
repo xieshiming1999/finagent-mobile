@@ -669,6 +669,7 @@ class TushareMarketDataService {
     String? market,
     String? industry,
     String? stockType,
+    String? keyword,
     int limit = 50,
   }) {
     final rows = _repository.queryStockList(
@@ -676,6 +677,7 @@ class TushareMarketDataService {
       market: market,
       industry: industry,
       stockType: stockType,
+      keyword: keyword,
       limit: limit,
     );
     return {

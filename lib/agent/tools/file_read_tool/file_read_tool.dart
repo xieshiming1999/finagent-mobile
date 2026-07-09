@@ -8,6 +8,10 @@ import '../../tool_context.dart';
 import '../utils/file_utils.dart';
 import 'prompt.dart' as tool_prompt;
 
+bool _isMacroResearchContentPath(String filePath) {
+  return filePath.replaceAll('\\', '/').contains('/data/macro_research_content/');
+}
+
 /// Reads a file from the filesystem with line numbers.
 ///
 /// Reference: claude-code-best/src/tools/FileReadTool/FileReadTool.ts
@@ -91,6 +95,17 @@ class FileReadTool extends Tool {
     final offset = (input['offset'] as num?)?.toInt() ?? 1;
     final limit = (input['limit'] as num?)?.toInt();
     final resolved = normalizePath(filePath, context.basePath);
+    if (_isMacroResearchContentPath(resolved)) {
+      return ToolResult(
+        toolUseId: toolUseId,
+        content:
+            'Macro research content artifacts are diagnostic/source-maintenance files. '
+            'For normal macro analysis, use MarketData(action: "query_macro_research_content") '
+            'and answer from contentEvidence, keyClaims, sourceDataTime, fetchedAt, and contentHash '
+            'instead of reading local artifact files.',
+        isError: true,
+      );
+    }
 
     // Image files: return as image content block for LLM vision
     final lower = resolved.toLowerCase();

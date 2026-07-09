@@ -6,6 +6,7 @@ enum FinanceWorkflowKind {
   marketAnalysis,
   stockResearch,
   fundResearch,
+  macroFactorLookup,
   strategyDesign,
   strategyReview,
   tradePrep,

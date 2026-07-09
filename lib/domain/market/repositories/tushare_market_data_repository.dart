@@ -207,18 +207,21 @@ class TushareMarketDataRepository {
     String? market,
     String? industry,
     String? stockType,
+    String? keyword,
     int limit = 50,
   }) {
     return _storeForContext(context)?.queryStockList(
           market: market,
           industry: industry,
           stockType: stockType,
+          keyword: keyword,
           limit: limit,
         ) ??
         _dataManager.queryStockList(
           market: market,
           industry: industry,
           stockType: stockType,
+          keyword: keyword,
           limit: limit,
         );
   }

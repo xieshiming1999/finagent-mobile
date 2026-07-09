@@ -67,15 +67,42 @@ class AppLocalizations {
     'cancel': 'Cancel',
     'compact': 'Compact',
     'apiHealth': 'API Health',
-    'factorRadar': 'Factor Radar',
+    'factorRadar': 'Macro Research',
     'macroFactorLoading': 'Loading macro factors...',
     'macroFactorEmpty':
-        'No macro factor rows yet. Refresh to load verified source families.',
+        'No macro research evidence yet. Refresh to load verified source families.',
     'macroFactorSources': 'Sources',
+    'macroNumericSeries': 'Official numeric series',
+    'macroNumericSeriesHint':
+        'Official numeric series are governed facts. Check catalog status before refresh/readback and keep them separate from research narrative.',
+    'macroCredentialKey': 'Credential',
+    'macroNoCredentialRequired': 'No credential required',
     'macroFactorActive': 'Active',
     'macroFactorBlocked': 'Blocked',
     'macroFactorAffected': 'Affected',
     'macroFactorSendToAgent': 'Analyze',
+    'macroResearchOverview': 'Overview',
+    'macroResearchEvidence': 'Evidence',
+    'macroResearchSourceCoverage': 'Source coverage',
+    'macroResearchProvenance': 'Provenance',
+    'macroResearchChannels': 'Channels',
+    'macroResearchGenerated': 'Generated',
+    'macroResearchFilterSource': 'Source',
+    'macroResearchFilterFamily': 'Family',
+    'macroResearchFilterStatus': 'Status',
+    'macroResearchFilterAsset': 'Asset',
+    'macroResearchFilterRegion': 'Region',
+    'macroResearchFilterRetrieval': 'Retrieval',
+    'macroResearchFilterAll': 'All',
+    'macroResearchSearch': 'Search',
+    'macroResearchSearchPlaceholder': 'Source, subject, region, asset...',
+    'macroResearchFilterHint':
+        'Filters use governed provenance fields. Blocked, manual, licensed, and browser-assisted rows remain visible as source limitations.',
+    'macroResearchSourceStateHint':
+        'Source states describe current access behavior: governed readback, browser/manual handoff, credential gate, licensed delivery, or explicit limitation.',
+    'macroResearchRetrievalMode': 'Retrieval',
+    'macroResearchNoFilteredEvidence':
+        'No macro research evidence matches the current filters.',
     'sourceTimeLabel': 'Source time',
     'provenanceFetched': 'Fetched',
     'doctorTitle': 'Doctor',
@@ -490,14 +517,38 @@ class AppLocalizations {
     'cancel': '取消',
     'compact': '压缩',
     'apiHealth': '接口健康',
-    'factorRadar': '因子雷达',
+    'factorRadar': '宏观研究',
     'macroFactorLoading': '宏观因子加载中...',
-    'macroFactorEmpty': '暂无宏观因子。点击刷新以加载已验证来源。',
+    'macroFactorEmpty': '暂无宏观研究证据。点击刷新以加载已验证来源。',
     'macroFactorSources': '来源',
+    'macroNumericSeries': '官方数值序列',
+    'macroNumericSeriesHint': '官方数值序列是受治理事实。刷新或读回前先看 catalog 状态，并与研究叙事分开使用。',
+    'macroCredentialKey': '凭证',
+    'macroNoCredentialRequired': '无需凭证',
     'macroFactorActive': '有效',
     'macroFactorBlocked': '受限',
     'macroFactorAffected': '影响对象',
     'macroFactorSendToAgent': '分析',
+    'macroResearchOverview': '概览',
+    'macroResearchEvidence': '证据',
+    'macroResearchSourceCoverage': '来源覆盖',
+    'macroResearchProvenance': '溯源',
+    'macroResearchChannels': '传导路径',
+    'macroResearchGenerated': '生成时间',
+    'macroResearchFilterSource': '来源',
+    'macroResearchFilterFamily': '类别',
+    'macroResearchFilterStatus': '状态',
+    'macroResearchFilterAsset': '资产',
+    'macroResearchFilterRegion': '地区',
+    'macroResearchFilterRetrieval': '获取方式',
+    'macroResearchFilterAll': '全部',
+    'macroResearchSearch': '搜索',
+    'macroResearchSearchPlaceholder': '来源、主题、地区、资产...',
+    'macroResearchFilterHint': '筛选条件来自受治理的溯源字段。受阻、手动、授权和浏览器辅助来源仍会显示为来源限制。',
+    'macroResearchSourceStateHint':
+        '来源状态说明当前访问方式：受治理读回、浏览器/手动交接、凭证门控、授权交付或明确限制。',
+    'macroResearchRetrievalMode': '获取方式',
+    'macroResearchNoFilteredEvidence': '当前筛选条件下没有匹配的宏观研究证据。',
     'sourceTimeLabel': '来源时间',
     'provenanceFetched': '获取时间',
     'doctorTitle': '诊断',
@@ -895,10 +946,38 @@ class AppLocalizations {
   String get macroFactorLoading => _value('macroFactorLoading');
   String get macroFactorEmpty => _value('macroFactorEmpty');
   String get macroFactorSources => _value('macroFactorSources');
+  String get macroNumericSeries => _value('macroNumericSeries');
+  String get macroNumericSeriesHint => _value('macroNumericSeriesHint');
+  String get macroCredentialKey => _value('macroCredentialKey');
+  String get macroNoCredentialRequired => _value('macroNoCredentialRequired');
   String get macroFactorActive => _value('macroFactorActive');
   String get macroFactorBlocked => _value('macroFactorBlocked');
   String get macroFactorAffected => _value('macroFactorAffected');
   String get macroFactorSendToAgent => _value('macroFactorSendToAgent');
+  String get macroResearchOverview => _value('macroResearchOverview');
+  String get macroResearchEvidence => _value('macroResearchEvidence');
+  String get macroResearchSourceCoverage =>
+      _value('macroResearchSourceCoverage');
+  String get macroResearchProvenance => _value('macroResearchProvenance');
+  String get macroResearchChannels => _value('macroResearchChannels');
+  String get macroResearchGenerated => _value('macroResearchGenerated');
+  String get macroResearchFilterSource => _value('macroResearchFilterSource');
+  String get macroResearchFilterFamily => _value('macroResearchFilterFamily');
+  String get macroResearchFilterStatus => _value('macroResearchFilterStatus');
+  String get macroResearchFilterAsset => _value('macroResearchFilterAsset');
+  String get macroResearchFilterRegion => _value('macroResearchFilterRegion');
+  String get macroResearchFilterRetrieval =>
+      _value('macroResearchFilterRetrieval');
+  String get macroResearchFilterAll => _value('macroResearchFilterAll');
+  String get macroResearchSearch => _value('macroResearchSearch');
+  String get macroResearchSearchPlaceholder =>
+      _value('macroResearchSearchPlaceholder');
+  String get macroResearchFilterHint => _value('macroResearchFilterHint');
+  String get macroResearchSourceStateHint =>
+      _value('macroResearchSourceStateHint');
+  String get macroResearchRetrievalMode => _value('macroResearchRetrievalMode');
+  String get macroResearchNoFilteredEvidence =>
+      _value('macroResearchNoFilteredEvidence');
   String get sourceTimeLabel => _value('sourceTimeLabel');
   String get provenanceFetched => _value('provenanceFetched');
   String get doctorTitle => _value('doctorTitle');

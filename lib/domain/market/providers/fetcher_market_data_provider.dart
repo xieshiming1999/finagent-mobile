@@ -293,6 +293,46 @@ class FetcherMarketDataProvider implements MarketDataProvider {
     String adjust = 'qfq',
     DataApiProviderConstraint constraint = const DataApiProviderConstraint(),
   }) async {
+    try {
+      return await _fetchKlineFromSourcesWithAdjust(
+        symbol,
+        period: period,
+        startDate: startDate,
+        endDate: endDate,
+        adjust: adjust,
+        constraint: constraint,
+      );
+    } on DataFetchError catch (error) {
+      if (adjust == 'none' || constraint.providerMode == DataApiProviderMode.strict) {
+        rethrow;
+      }
+      try {
+        final fallback = await _fetchKlineFromSourcesWithAdjust(
+          symbol,
+          period: period,
+          startDate: startDate,
+          endDate: endDate,
+          adjust: 'none',
+          constraint: constraint,
+        );
+        return (
+          bars: fallback.bars,
+          source: '${fallback.source}:unadjusted_fallback',
+        );
+      } on DataFetchError {
+        throw error;
+      }
+    }
+  }
+
+  Future<({List<KlineBar> bars, String source})> _fetchKlineFromSourcesWithAdjust(
+    String symbol, {
+    required String period,
+    required String startDate,
+    required String endDate,
+    required String adjust,
+    required DataApiProviderConstraint constraint,
+  }) async {
     final normalizedSymbol = _normalizeKlineSymbol(symbol);
     final interfaceId = _klineInterfaceId(symbol);
     final result = await _router.runCapability<List<KlineBar>>(

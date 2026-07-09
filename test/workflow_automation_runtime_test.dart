@@ -348,7 +348,8 @@ void main() {
       final control = WorkflowAutomationControl(
         agent: agent,
         enabled: true,
-        promptRunHandler: (_) => promptCompleter.future,
+        promptRunHandler: (_, {disabledTools = const {}}) =>
+            promptCompleter.future,
         interactiveStateProvider: () => {
           'hasPendingUserQuestion': true,
           'currentQuestionIndex': 0,
@@ -383,6 +384,33 @@ void main() {
       expect(send['ok'], isTrue);
     },
   );
+
+  test('scenario timeout returns a bounded failure report', () async {
+    final promptCompleter = Completer<List<AgentEvent>>();
+    final agent = _makeAgent(
+      tmpDir.path,
+      _MockLLMClient([_MockLLMResponse.text('unused')]),
+    );
+    final control = WorkflowAutomationControl(
+      agent: agent,
+      enabled: true,
+      promptRunHandler: (_, {disabledTools = const {}}) =>
+          promptCompleter.future,
+    );
+
+    final result = await control.runScenario(
+      const WorkflowAutomationScenario(
+        id: 'timeout-case',
+        prompt: 'Run a workflow that never finishes.',
+        timeoutMs: 20,
+      ),
+    );
+
+    expect(result.ok, isFalse);
+    expect(result.run.report['workflowTimeout'], isTrue);
+    expect(result.run.report['timeoutMs'], 20);
+    expect('${result.run.error}', contains('timed out'));
+  });
 
   test(
     'in-process bridge drives FinAgent MarketData provenance without HTTP host',

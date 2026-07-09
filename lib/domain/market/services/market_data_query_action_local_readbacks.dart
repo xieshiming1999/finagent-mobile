@@ -829,22 +829,40 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
   ) {
     final providerConstraint = _providerCacheConstraint(input);
     final source = input['source'] as String?;
-    final rows = _queryMapsWithProviderConstraint(
+    final keyword = input['keyword'] as String? ?? input['query'] as String?;
+    var rows = _queryMapsWithProviderConstraint(
       constraint: providerConstraint,
       fallbackProvider: source,
       query: (provider) =>
           _storeForContext(context)?.queryFinanceNews(
-            keyword: input['keyword'] as String? ?? input['query'] as String?,
+            keyword: keyword,
             source: provider,
             limit: _inputLimit(input, 50),
           ) ??
           _dataManager?.queryFinanceNews(
-            keyword: input['keyword'] as String? ?? input['query'] as String?,
+            keyword: keyword,
             source: provider,
             limit: _inputLimit(input, 50),
           ) ??
           const <Map<String, dynamic>>[],
     );
+    final queryMiss = rows.isEmpty && keyword != null && keyword.trim().isNotEmpty;
+    if (queryMiss) {
+      rows = _queryMapsWithProviderConstraint(
+        constraint: providerConstraint,
+        fallbackProvider: source,
+        query: (provider) =>
+            _storeForContext(context)?.queryFinanceNews(
+              source: provider,
+              limit: _inputLimit(input, 50),
+            ) ??
+            _dataManager?.queryFinanceNews(
+              source: provider,
+              limit: _inputLimit(input, 50),
+            ) ??
+            const <Map<String, dynamic>>[],
+      );
+    }
     final sourceDataTime = _latestValue(rows, const ['published_at']);
     final fetchedAt = _latestValue(rows, const ['fetched_at']);
     return {
@@ -868,7 +886,10 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
           ? providerConstraint.isStrict
                 ? 'cacheFirst strict provider read rejected local cache rows that did not match ${providerConstraint.requestedProvider}; no finance_news rows matched the requirement'
                 : 'cacheFirst read reusable local data; no finance_news rows matched the requirement'
-          : 'cacheFirst read reusable local data before provider routing; cache reader returned usable finance_news rows',
+          : queryMiss
+              ? 'cacheFirst target-specific finance_news query returned no rows; reused latest governed finance_news rows as broad macro/news context'
+              : 'cacheFirst read reusable local data before provider routing; cache reader returned usable finance_news rows',
+      if (queryMiss) 'queryMiss': keyword,
       'canonicalSchema': 'finance_news',
       'canonicalTable': 'finance_news',
       if (sourceDataTime != null) 'sourceDataTime': sourceDataTime,

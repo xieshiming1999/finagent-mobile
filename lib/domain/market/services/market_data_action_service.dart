@@ -1,7 +1,9 @@
 import '../../../agent/data_fetcher/data_manager.dart';
+import '../../../agent/data_fetcher/reusable_data_store.dart';
 import '../../../agent/tool_context.dart';
 import 'market_data_backtest_action_service.dart';
 import 'market_data_market_action_service.dart';
+import 'macro_research_extraction.dart';
 import 'market_data_query_action_service.dart';
 import 'market_data_tdx_action_service.dart';
 import 'market_data_tushare_action_service.dart';
@@ -36,6 +38,16 @@ class MarketDataActionService {
     Map<String, dynamic> input,
     ToolContext context,
   ) async {
+    if (action == 'macro_research_extract') {
+      final store = context.basePath.isEmpty
+          ? null
+          : ReusableDataStore(context.basePath);
+      return await macroResearchExtract(
+        store,
+        input,
+        basePath: context.basePath,
+      );
+    }
     if (_queryActions.contains(action)) {
       return _query.query(action, symbols, input, context);
     }
@@ -163,6 +175,14 @@ const _queryActions = {
   'query_chip',
   'query_market_screening',
   'query_macro_factors',
+  'query_macro_attribution',
+  'query_macro_numeric_series',
+  'macro_numeric_series_catalog',
+  'macro_research_sources',
+  'macro_research_provenance',
+  'macro_research_extraction_status',
+  'query_macro_research_content',
+  'query_macro_research_evidence',
   'query_margin_trading',
   'query_technical_indicator',
   'query_alpha_factors',

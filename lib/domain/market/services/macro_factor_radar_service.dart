@@ -5,16 +5,20 @@ import 'package:http/http.dart' as http;
 
 import '../../../agent/data_fetcher/reusable_data_store.dart';
 import '../../../shared/api_config.dart';
+import 'macro_numeric_series_catalog.dart';
+import 'macro_research_source_catalog_data.dart';
 
 class MacroFactorRadarResult {
   final List<Map<String, dynamic>> rows;
   final List<Map<String, dynamic>> sources;
+  final List<Map<String, dynamic>> numericSeriesCatalog;
   final String generatedAt;
   final String? error;
 
   const MacroFactorRadarResult({
     required this.rows,
     required this.sources,
+    this.numericSeriesCatalog = const [],
     required this.generatedAt,
     this.error,
   });
@@ -38,6 +42,7 @@ class MacroFactorRadarService {
       return MacroFactorRadarResult(
         rows: existing,
         sources: _sourceRegistrySnapshot(),
+        numericSeriesCatalog: _numericSeriesCatalogSnapshot(),
         generatedAt: generatedAt,
       );
     }
@@ -45,6 +50,7 @@ class MacroFactorRadarService {
     return MacroFactorRadarResult(
       rows: store.queryMarketMovingFactors(limit: 80),
       sources: _sourceRegistrySnapshot(),
+      numericSeriesCatalog: _numericSeriesCatalogSnapshot(),
       generatedAt: generatedAt,
     );
   }
@@ -69,17 +75,20 @@ class MacroFactorRadarService {
       },
     ];
 
-    final fred = await _fetchFred(generatedAt);
-    rows.addAll(fred.rows);
-    sources.add(fred.source);
-
-    final bls = await _fetchBls(generatedAt);
-    rows.addAll(bls.rows);
-    sources.add(bls.source);
-
-    final bea = await _fetchBea(generatedAt);
-    rows.addAll(bea.rows);
-    sources.add(bea.source);
+    final officialResults = await Future.wait([
+      _fetchFred(generatedAt),
+      _fetchBls(generatedAt),
+      _fetchBea(generatedAt),
+      _fetchWorldBank(generatedAt),
+      _fetchImf(generatedAt),
+      _fetchOecd(generatedAt),
+      _fetchEia(generatedAt),
+      _fetchNbsChina(generatedAt),
+    ]);
+    for (final result in officialResults) {
+      rows.addAll(result.rows);
+      sources.add(result.source);
+    }
 
     final wind = _readCachedWindFactors(generatedAt);
     rows.addAll(wind.rows);
@@ -93,8 +102,20 @@ class MacroFactorRadarService {
     return MacroFactorRadarResult(
       rows: store.queryMarketMovingFactors(limit: 80),
       sources: sources,
+      numericSeriesCatalog: _numericSeriesCatalogSnapshot(),
       generatedAt: generatedAt,
     );
+  }
+
+  List<Map<String, dynamic>> _numericSeriesCatalogSnapshot() {
+    final result = macroNumericSeriesCatalog(const {'limit': 80});
+    final rows = result['rows'];
+    return rows is List
+        ? rows
+              .whereType<Map>()
+              .map((row) => Map<String, dynamic>.from(row))
+              .toList()
+        : const <Map<String, dynamic>>[];
   }
 
   Future<_FetchResult> _fetchFred(String fetchedAt) async {
@@ -401,12 +422,543 @@ class MacroFactorRadarService {
     }
   }
 
+  Future<_FetchResult> _fetchWorldBank(String fetchedAt) async {
+    final uri = Uri.https(
+      'api.worldbank.org',
+      '/v2/country/US/indicator/NY.GDP.MKTP.CD',
+      {'format': 'json', 'per_page': '2'},
+    );
+    try {
+      final json = await _getJsonList(uri);
+      final metadata = json.isNotEmpty && json.first is Map
+          ? json.first as Map
+          : const <String, dynamic>{};
+      final data = json.length > 1 && json[1] is List ? json[1] as List : [];
+      final point = data.cast<Object?>().whereType<Map>().firstWhere(
+        (row) => row['value'] != null,
+        orElse: () => data.isNotEmpty && data.first is Map
+            ? data.first as Map
+            : const <String, dynamic>{},
+      );
+      final date = point['date']?.toString();
+      return _FetchResult(
+        rows: [
+          {
+            'factor_id':
+                'world_bank:macro_series:NY.GDP.MKTP.CD:${date ?? fetchedAt.substring(0, 10)}',
+            'family': 'macro_series',
+            'title': 'US GDP current US\$ World Bank observation',
+            'summary':
+                'World Bank GDP current US\$ is official numeric growth evidence for cross-country macro and broad equity/rates analysis.',
+            'source_name': 'World Bank',
+            'source_url':
+                'https://api.worldbank.org/v2/country/US/indicator/NY.GDP.MKTP.CD',
+            'source_type': 'official_api',
+            'source_published_at': metadata['lastupdated'] ?? date,
+            'fetched_at': fetchedAt,
+            'event_at': date,
+            'affected_assets': [
+              'US equities',
+              'global equities',
+              'Treasury yields',
+              'USD',
+              'cyclical sectors',
+            ],
+            'affected_regions': ['United States', 'Global'],
+            'affected_sectors': ['Cyclicals'],
+            'transmission_channels': [
+              'growth level',
+              'earnings expectations',
+              'cross-country macro comparison',
+            ],
+            'expected_direction': 'mixed',
+            'severity': 'medium',
+            'confidence': 'high',
+            'status': 'active',
+            'evidence_items': [
+              {
+                'label':
+                    'NY.GDP.MKTP.CD ${date ?? '-'} = ${point['value'] ?? '-'}',
+                'source_url':
+                    'https://data.worldbank.org/indicator/NY.GDP.MKTP.CD?locations=US',
+                'retrieved_at': fetchedAt,
+              },
+            ],
+            'macro_values': {
+              'actual': _parseNumber(point['value']),
+              'unit': 'current US\$',
+              'period': date,
+              'frequency': 'annual',
+              'lastUpdated': metadata['lastupdated'],
+            },
+            'retrieval_test': _retrieval(
+              'world_bank',
+              'world_bank.indicator.NY.GDP.MKTP.CD',
+              'ok',
+            ),
+            'raw_json': point,
+          },
+        ],
+        source: {
+          'id': 'world_bank',
+          'name': 'World Bank API',
+          'state': 'ok',
+          'detail': 'US GDP current US\$ latest row retrieved.',
+        },
+      );
+    } catch (e) {
+      return _sourceFailure(
+        'world_bank',
+        'World Bank API',
+        'macro_series',
+        'World Bank GDP retrieval failed',
+        fetchedAt,
+        e,
+      );
+    }
+  }
+
+  Future<_FetchResult> _fetchImf(String fetchedAt) async {
+    final uri = Uri.https(
+      'www.imf.org',
+      '/external/datamapper/api/v1/NGDP_RPCH/USA',
+    );
+    try {
+      final json = await _getJson(uri);
+      final values = json['values']?['NGDP_RPCH']?['USA'];
+      final point = _latestNumericEntry(values);
+      return _FetchResult(
+        rows: [
+          {
+            'factor_id':
+                'imf:macro_series:NGDP_RPCH:USA:${point?['period'] ?? fetchedAt.substring(0, 10)}',
+            'family': 'macro_series',
+            'title': 'US real GDP growth IMF DataMapper observation',
+            'summary':
+                'IMF real GDP growth is official numeric growth evidence for cross-country macro and broad asset-allocation analysis.',
+            'source_name': 'IMF',
+            'source_url':
+                'https://www.imf.org/external/datamapper/api/v1/NGDP_RPCH/USA',
+            'source_type': 'official_api',
+            'source_published_at': point?['period'],
+            'fetched_at': fetchedAt,
+            'event_at': point?['period'],
+            'affected_assets': [
+              'US equities',
+              'global equities',
+              'Treasury yields',
+              'USD',
+              'cyclical sectors',
+            ],
+            'affected_regions': ['United States', 'Global'],
+            'affected_sectors': ['Cyclicals'],
+            'transmission_channels': [
+              'growth momentum',
+              'cross-country macro comparison',
+              'policy expectation',
+            ],
+            'expected_direction': 'mixed',
+            'severity': 'medium',
+            'confidence': 'high',
+            'status': 'active',
+            'evidence_items': [
+              {
+                'label':
+                    'NGDP_RPCH USA ${point?['period'] ?? '-'} = ${point?['value'] ?? '-'}',
+                'source_url':
+                    'https://www.imf.org/external/datamapper/NGDP_RPCH@WEO/USA',
+                'retrieved_at': fetchedAt,
+              },
+            ],
+            'macro_values': {
+              'actual': point?['value'],
+              'unit': 'percent change',
+              'period': point?['period'],
+              'frequency': 'annual',
+            },
+            'retrieval_test': _retrieval(
+              'imf',
+              'imf.datamapper.NGDP_RPCH.USA',
+              'ok',
+            ),
+            'raw_json': {
+              'indicator': 'NGDP_RPCH',
+              'country': 'USA',
+              'period': point?['period'],
+              'value': point?['value'],
+            },
+          },
+        ],
+        source: {
+          'id': 'imf',
+          'name': 'IMF DataMapper API',
+          'state': 'ok',
+          'detail': 'US real GDP growth latest row retrieved.',
+        },
+      );
+    } catch (e) {
+      return _sourceFailure(
+        'imf',
+        'IMF DataMapper API',
+        'macro_series',
+        'IMF real GDP growth retrieval failed',
+        fetchedAt,
+        e,
+      );
+    }
+  }
+
+  Future<_FetchResult> _fetchOecd(String fetchedAt) async {
+    final uri = Uri.https(
+      'sdmx.oecd.org',
+      '/public/rest/v1/data/OECD.SDD.NAD,DSD_NAMAIN1@DF_QNA_EXPENDITURE_GROWTH_OECD',
+      {
+        'startPeriod': '2024-Q1',
+        'endPeriod': '2026-Q4',
+        'firstNObservations': '20',
+      },
+    );
+    try {
+      final json = await _getJsonWithHeaders(uri, const {
+        'Accept': 'application/vnd.sdmx.data+json; version=2.0',
+        'Accept-Language': 'en',
+        'User-Agent': 'Mozilla/5.0',
+      });
+      final point = _extractOecdGrowthObservation(json);
+      if (point == null) {
+        throw const FormatException(
+          'OECD SDMX response did not include the governed B1GQ OECD growth series.',
+        );
+      }
+      final period = point['period']?.toString();
+      final value = point['value'];
+      return _FetchResult(
+        rows: [
+          {
+            'factor_id':
+                'oecd:macro_series:DF_QNA_EXPENDITURE_GROWTH_OECD:OECD:${period ?? fetchedAt.substring(0, 10)}',
+            'family': 'macro_series',
+            'title': 'OECD quarterly real GDP growth observation',
+            'summary':
+                'OECD quarterly real GDP growth is official numeric growth evidence for cross-country macro, country-risk, rates, FX, and equity analysis.',
+            'source_name': 'OECD',
+            'source_url': uri.toString(),
+            'source_type': 'official_api',
+            'source_published_at': period,
+            'fetched_at': fetchedAt,
+            'event_at': period,
+            'affected_assets': ['global equities', 'country risk', 'FX', 'rates'],
+            'affected_regions': ['OECD', 'Global'],
+            'affected_sectors': ['Cyclicals'],
+            'transmission_channels': [
+              'growth momentum',
+              'cross-country macro comparison',
+              'risk appetite',
+            ],
+            'expected_direction': 'mixed',
+            'severity': 'medium',
+            'confidence': 'high',
+            'status': 'active',
+            'evidence_items': [
+              {
+                'label':
+                    'DF_QNA_EXPENDITURE_GROWTH_OECD B1GQ OECD ${period ?? '-'} = ${value ?? '-'}',
+                'source_url': uri.toString(),
+                'retrieved_at': fetchedAt,
+              },
+            ],
+            'macro_values': {
+              'actual': value,
+              'unit': 'percent',
+              'period': period,
+              'frequency': 'quarterly',
+              'transformation': 'GCM',
+              'seriesId': 'DF_QNA_EXPENDITURE_GROWTH_OECD:B1GQ:OECD:GCM',
+            },
+            'retrieval_test': _retrieval(
+              'oecd',
+              'oecd.sdmx.DF_QNA_EXPENDITURE_GROWTH_OECD.B1GQ',
+              'ok',
+            ),
+            'raw_json': point['raw'],
+          },
+        ],
+        source: {
+          'id': 'oecd',
+          'name': 'OECD SDMX API',
+          'state': 'ok',
+          'detail':
+              'OECD quarterly real GDP growth latest row retrieved from official SDMX JSON.',
+        },
+      );
+    } catch (e) {
+      return _sourceFailure(
+        'oecd',
+        'OECD SDMX API',
+        'macro_series',
+        'OECD quarterly real GDP growth retrieval failed',
+        fetchedAt,
+        e,
+      );
+    }
+  }
+
+  Future<_FetchResult> _fetchEia(String fetchedAt) async {
+    final key = apiConfig?.get('EIA_API_KEY')?.trim();
+    if (key == null || key.isEmpty) {
+      return _FetchResult(
+        rows: [
+          _failureRow(
+            'eia:macro_series:WCESTUS1:credential',
+            'macro_series',
+            'EIA API key missing',
+            'EIA',
+            'credential_missing',
+            fetchedAt,
+            'EIA_API_KEY is required for official EIA v2 data calls.',
+          ),
+        ],
+        source: {
+          'id': 'eia',
+          'name': 'EIA API',
+          'state': 'credential-gated',
+          'detail': 'EIA_API_KEY is required for official EIA v2 data calls.',
+        },
+      );
+    }
+    final uri = Uri.https('api.eia.gov', '/v2/petroleum/stoc/wstk/data/', {
+      'api_key': key,
+      'frequency': 'weekly',
+      'data[0]': 'value',
+      'facets[series][]': 'WCESTUS1',
+      'sort[0][column]': 'period',
+      'sort[0][direction]': 'desc',
+      'offset': '0',
+      'length': '1',
+    });
+    try {
+      final json = await _getJson(uri);
+      final data = json['response']?['data'];
+      final point = data is List && data.isNotEmpty
+          ? data.first as Map
+          : const <String, dynamic>{};
+      final period = point['period']?.toString();
+      return _FetchResult(
+        rows: [
+          {
+            'factor_id':
+                'eia:macro_series:WCESTUS1:${period ?? fetchedAt.substring(0, 10)}',
+            'family': 'macro_series',
+            'title': 'US commercial crude oil inventories EIA observation',
+            'summary':
+                'EIA weekly petroleum stocks are official numeric energy inventory evidence for oil, inflation, energy equities, and commodity-sensitive macro analysis.',
+            'source_name': 'EIA',
+            'source_url': 'https://api.eia.gov/v2/petroleum/stoc/wstk/data/',
+            'source_type': 'official_api',
+            'source_published_at': period,
+            'fetched_at': fetchedAt,
+            'event_at': period,
+            'affected_assets': [
+              'oil',
+              'energy equities',
+              'inflation expectations',
+              'commodity currencies',
+            ],
+            'affected_regions': ['United States', 'Global'],
+            'affected_sectors': ['Energy'],
+            'transmission_channels': [
+              'energy inventory',
+              'oil supply demand',
+              'inflation input',
+            ],
+            'expected_direction': 'mixed',
+            'severity': 'medium',
+            'confidence': 'high',
+            'status': 'active',
+            'evidence_items': [
+              {
+                'label': 'WCESTUS1 ${period ?? '-'} = ${point['value'] ?? '-'}',
+                'source_url':
+                    'https://www.eia.gov/dnav/pet/pet_stoc_wstk_dcu_nus_w.htm',
+                'retrieved_at': fetchedAt,
+              },
+            ],
+            'macro_values': {
+              'actual': _parseNumber(point['value']),
+              'unit': point['units'] ?? 'thousand barrels',
+              'period': period,
+              'frequency': 'weekly',
+            },
+            'retrieval_test': _retrieval(
+              'eia',
+              'eia.petroleum.stoc.wstk.WCESTUS1',
+              'ok',
+            ),
+            'raw_json': point,
+          },
+        ],
+        source: {
+          'id': 'eia',
+          'name': 'EIA API',
+          'state': 'ok',
+          'detail': 'US weekly crude inventory latest row retrieved.',
+        },
+      );
+    } catch (e) {
+      return _sourceFailure(
+        'eia',
+        'EIA API',
+        'macro_series',
+        'EIA weekly crude inventory retrieval failed',
+        fetchedAt,
+        e,
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> _getJson(Uri uri) async {
     final response = await _http.get(uri).timeout(const Duration(seconds: 12));
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw HttpException('HTTP ${response.statusCode}');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> _getJsonWithHeaders(
+    Uri uri,
+    Map<String, String> headers,
+  ) async {
+    final response = await _http
+        .get(uri, headers: headers)
+        .timeout(const Duration(seconds: 12));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw HttpException('HTTP ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Map<String, dynamic>? _latestNumericEntry(Object? values) {
+    if (values is! Map) return null;
+    final entries =
+        values.entries
+            .map((entry) {
+              final value = _parseNumber(entry.value);
+              if (value == null) return null;
+              return {'period': '${entry.key}', 'value': value};
+            })
+            .whereType<Map<String, dynamic>>()
+            .toList()
+          ..sort(
+            (a, b) => num.parse(
+              '${a['period']}',
+            ).compareTo(num.parse('${b['period']}')),
+          );
+    return entries.isEmpty ? null : entries.last;
+  }
+
+  Future<List<dynamic>> _getJsonList(Uri uri) async {
+    final response = await _http.get(uri).timeout(const Duration(seconds: 12));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw HttpException('HTTP ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
+  Map<String, dynamic>? _extractOecdGrowthObservation(
+    Map<String, dynamic> json,
+  ) {
+    final data = json['data'] is Map ? json['data'] as Map : json;
+    final dataSets = data['dataSets'];
+    final structures = data['structures'];
+    if (dataSets is! List ||
+        dataSets.isEmpty ||
+        dataSets.first is! Map ||
+        structures is! List ||
+        structures.isEmpty ||
+        structures.first is! Map) {
+      return null;
+    }
+    final dataSet = dataSets.first as Map;
+    final structure = structures.first as Map;
+    final dimensions = structure['dimensions'];
+    if (dimensions is! Map) return null;
+    final seriesDims = dimensions['series'];
+    final observationDims = dimensions['observation'];
+    if (seriesDims is! List || observationDims is! List) return null;
+    final timeDim = observationDims.whereType<Map>().firstWhere(
+      (dim) => dim['id'] == 'TIME_PERIOD',
+      orElse: () => observationDims.first is Map
+          ? observationDims.first as Map
+          : const <String, dynamic>{},
+    );
+    final timeValues = timeDim['values'];
+    final series = dataSet['series'];
+    if (timeValues is! List || series is! Map) return null;
+
+    for (final entry in series.entries) {
+      final key = '${entry.key}';
+      final parts = key.split(':');
+      final byDim = <String, String>{};
+      for (var i = 0; i < parts.length && i < seriesDims.length; i++) {
+        final dim = seriesDims[i];
+        if (dim is! Map) continue;
+        final values = dim['values'];
+        final index = int.tryParse(parts[i]);
+        if (values is! List || index == null || index >= values.length) {
+          continue;
+        }
+        final value = values[index];
+        if (value is Map) {
+          byDim['${dim['id'] ?? i}'] = '${value['id'] ?? value['name'] ?? ''}';
+        }
+      }
+      if (byDim['FREQ'] != 'Q' ||
+          byDim['ADJUSTMENT'] != 'Y' ||
+          byDim['REF_AREA'] != 'OECD' ||
+          byDim['SECTOR'] != 'S1' ||
+          byDim['COUNTERPART_SECTOR'] != 'S1' ||
+          byDim['TRANSACTION'] != 'B1GQ' ||
+          byDim['UNIT_MEASURE'] != 'PC' ||
+          byDim['TRANSFORMATION'] != 'GCM' ||
+          byDim['TABLE_IDENTIFIER'] != 'T0102') {
+        continue;
+      }
+      final seriesRow = entry.value;
+      if (seriesRow is! Map || seriesRow['observations'] is! Map) {
+        return null;
+      }
+      final points = <Map<String, dynamic>>[];
+      for (final observation in (seriesRow['observations'] as Map).entries) {
+        final obsKey = '${observation.key}'.split(':').first;
+        final timeIndex = int.tryParse(obsKey);
+        if (timeIndex == null || timeIndex >= timeValues.length) continue;
+        final timeValue = timeValues[timeIndex];
+        final period = timeValue is Map
+            ? '${timeValue['id'] ?? timeValue['name'] ?? ''}'
+            : null;
+        final rawList = observation.value is List
+            ? observation.value as List
+            : null;
+        final rawValue = rawList == null
+            ? observation.value
+            : (rawList.isEmpty ? null : rawList.first);
+        final value = _parseNumber(rawValue);
+        if (period == null || period.isEmpty || value == null) continue;
+        points.add({
+          'period': period,
+          'value': value,
+          'raw': {
+            'seriesKey': key,
+            'dimensions': byDim,
+            'observationKey': observation.key,
+            'value': rawValue,
+          },
+        });
+      }
+      points.sort((a, b) => '${a['period']}'.compareTo('${b['period']}'));
+      return points.isEmpty ? null : points.last;
+    }
+    return null;
   }
 
   Future<Map<String, dynamic>> _postJson(
@@ -424,6 +976,30 @@ class MacroFactorRadarService {
       throw HttpException('HTTP ${response.statusCode}');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<_FetchResult> _fetchNbsChina(String fetchedAt) async {
+    const message =
+        'NBS China official entry pages are validated, but current EasyQuery numeric API probes returned HTTP 403 UrlACL from this environment. Keep China official numeric series as browser/manual or future source-specific adapter evidence until a stable public table/API contract is verified.';
+    return _FetchResult(
+      rows: [
+        _failureRow(
+          'nbs_china:macro_series:easyquery:security_control',
+          'macro_series',
+          'NBS China official numeric series access requires source-specific validation',
+          'NBS China',
+          'security_control',
+          fetchedAt,
+          message,
+        ),
+      ],
+      source: {
+        'id': 'nbs_china',
+        'name': 'National Bureau of Statistics of China',
+        'state': 'security-control',
+        'detail': message,
+      },
+    );
   }
 
   _FetchResult _readCachedWindFactors(String fetchedAt) {
@@ -716,38 +1292,40 @@ List<Map<String, dynamic>> _seedRows(String fetchedAt) => [
   },
 ];
 
-List<Map<String, dynamic>> _sourceRegistrySnapshot() => [
-  {
-    'id': 'fred',
-    'name': 'FRED API',
-    'state': 'credential-gated',
-    'detail': 'Uses FRED_API_KEY when configured.',
-  },
-  {
-    'id': 'bls',
-    'name': 'BLS Public Data API',
-    'state': 'ok',
-    'detail': 'Public CPI/labor/price series path.',
-  },
-  {
-    'id': 'bea',
-    'name': 'BEA API',
-    'state': 'credential-gated',
-    'detail': 'Uses BEA_API_KEY or local bea.txt fallback.',
-  },
-  {
-    'id': 'manual.msci',
-    'name': 'MSCI official/manual seed',
-    'state': 'fallback-only',
-    'detail': 'Use configured official URL or manual seed before broad search.',
-  },
-  {
-    'id': 'manual.goldman-copper',
-    'name': 'Goldman/public research summary',
-    'state': 'fallback-only',
-    'detail': 'Public/licensed summaries only.',
-  },
-];
+List<Map<String, dynamic>> _sourceRegistrySnapshot() =>
+    macroResearchSourceCatalog
+        .map(
+          (source) => {
+            'id': source['id'],
+            'name': source['providerName'],
+            'state': _sourceState(source),
+            'detail': [
+              source['evidenceValue'],
+              source['accessClass'],
+              source['testedStatus'],
+              source['nextAction'],
+            ].whereType<Object>().join(' · '),
+          },
+        )
+        .toList();
+
+String _sourceState(Map<String, Object?> source) {
+  final access = source['accessClass']?.toString() ?? '';
+  final tested = source['testedStatus']?.toString() ?? '';
+  if (access.contains('anti-bot') ||
+      access.contains('manual') ||
+      access.contains('security') ||
+      access.contains('licensed')) {
+    return 'manual-or-gated';
+  }
+  if (tested.contains('needs-live-validation')) return 'needs-validation';
+  if (tested.contains('ok') ||
+      tested.contains('readable') ||
+      access.contains('official-api')) {
+    return 'available';
+  }
+  return 'cataloged';
+}
 
 Map<String, dynamic> _failureRow(
   String factorId,
@@ -818,6 +1396,12 @@ Map<String, dynamic> _newsFactorRow(
     'source_name': row['source'] ?? row['publisher'] ?? 'finance_news',
     'source_url': row['url'],
     'source_type': 'cached_finance_news',
+    'evidence_tier': 'linked_news_evidence',
+    'limitations': [
+      'Finance news is a current-event clue, not an official macro fact.',
+      'Use official data or content-backed research before making a root-cause conclusion.',
+    ],
+    'linked_macro_evidence_ids': [],
     'source_published_at': row['published_at'],
     'fetched_at': fetchedAt,
     'event_at': row['published_at'],
@@ -832,7 +1416,15 @@ Map<String, dynamic> _newsFactorRow(
     'evidence_items': [
       {'label': title, 'source_url': row['url'], 'retrieved_at': fetchedAt},
     ],
-    'macro_values': {},
+    'macro_values': {
+      'evidenceTier': 'linked_news_evidence',
+      'limitation': 'news_clue_not_official_fact',
+      'limitations': [
+        'Finance news is a current-event clue, not an official macro fact.',
+        'Use official data or content-backed research before making a root-cause conclusion.',
+      ],
+      'publisher': row['publisher'] ?? row['source'],
+    },
     'retrieval_test': _retrieval(
       'finance_news',
       'finance_news.cached_macro_readback',

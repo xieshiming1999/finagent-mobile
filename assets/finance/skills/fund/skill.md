@@ -22,6 +22,7 @@ MarketData(action: "query_fund_nav", symbols: ["110011.OF"], limit: 60)
 MarketData(action: "query_fund_money_yield", symbols: ["000009"], limit: 60)
 MarketData(action: "fund_money_yield", symbols: ["000009"])
 MarketData(action: "query_macro_factors", assets: "bond funds", family: "rates_liquidity", limit: 10)
+MarketData(action: "query_macro_attribution", assets: "bond funds", family: "rates_liquidity", limit: 10)
 MarketData(action: "query_api_calls", source: "eastmoney", minutes: 30)
 ```
 
@@ -67,6 +68,19 @@ sector, or index/passive-flow effects, read the governed macro factor layer
 with `MarketData(action:"query_macro_factors", ...)`. Keep that evidence in a
 separate macro-context section with source time and fetched time. It should not
 be presented as a direct subscribe/redeem signal.
+For fund root-cause, fund-observation, rates/liquidity attribution, or strategy
+assumption discussion, follow the factor readback with
+`MarketData(action:"query_macro_attribution", ...)` using the same structured
+filters. Use its confidence, missing evidence, contradictions, invalidation
+condition, and next update action as fund context, not as an automatic
+subscribe/redeem trigger.
+When the prompt asks how rates or liquidity changes affect fund observation,
+also read macro source/evidence rows before the final answer:
+`MarketData(action:"macro_research_sources", category:"rates_liquidity", priority:1, limit:5)`
+and
+`MarketData(action:"query_macro_research_evidence", family:"rates_liquidity", limit:5)`.
+Use numeric-series readback only for specific current values; do not loop
+through rate series when the user only asks for observation conditions.
 
 When a bounded fund-candidate workflow returns
 `analysisEvidence.kind:"candidate_research"` with

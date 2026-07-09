@@ -12,7 +12,10 @@ typedef WorkflowUiArtifactsProvider =
     FutureOr<List<Map<String, dynamic>>> Function();
 typedef WorkflowUiClearHandler = FutureOr<void> Function();
 typedef WorkflowPromptRunHandler =
-    Future<List<AgentEvent>> Function(String prompt);
+    Future<List<AgentEvent>> Function(
+      String prompt, {
+      Set<String> disabledTools,
+    });
 typedef WorkflowInteractiveStateProvider =
     FutureOr<Map<String, dynamic>?> Function();
 typedef WorkflowInteractiveAnswerHandler =
@@ -61,11 +64,18 @@ class WorkflowAutomationControl {
 
   bool get isAvailable => enabled;
 
-  Future<WorkflowAutomationRunResult> sendPrompt(String prompt) async {
+  Future<WorkflowAutomationRunResult> sendPrompt(
+    String prompt, {
+    Set<String> disabledTools = const {},
+    int? timeoutMs,
+  }) async {
     _ensureEnabled();
     final startedAt = DateTime.now().toUtc();
     final runId = _runId(startedAt);
     final events = <AgentEvent>[];
+    final deadline = timeoutMs == null
+        ? null
+        : startedAt.add(Duration(milliseconds: timeoutMs));
 
     Object? error;
     String? limitError;
@@ -77,10 +87,30 @@ class WorkflowAutomationControl {
     } else {
       try {
         if (promptRunHandler != null) {
-          final rawEvents = await promptRunHandler!(prompt);
+          final future = promptRunHandler!(
+            prompt,
+            disabledTools: disabledTools,
+          );
+          final rawEvents = deadline == null
+              ? await future
+              : await future.timeout(
+                  _remainingUntil(deadline),
+                  onTimeout: () => throw TimeoutException(
+                    'workflow automation prompt timed out after ${timeoutMs}ms',
+                    Duration(milliseconds: timeoutMs ?? 0),
+                  ),
+                );
           events.addAll(rawEvents);
         } else {
-          await for (final event in agent.run(prompt)) {
+          final stream = agent.run(
+            prompt,
+            disabledTools: disabledTools,
+          );
+          await for (final event in _withDeadline(
+            stream,
+            deadline: deadline,
+            timeoutMs: timeoutMs,
+          )) {
             events.add(event);
           }
         }
@@ -92,6 +122,9 @@ class WorkflowAutomationControl {
         );
       } catch (e) {
         error = e;
+        if (e is TimeoutException) {
+          agent.cancel();
+        }
       }
     }
 
@@ -105,6 +138,11 @@ class WorkflowAutomationControl {
       events: events,
       error: error,
     );
+    if (error is TimeoutException) {
+      report['workflowTimeout'] = true;
+      report['timeoutMs'] = timeoutMs;
+      report['agentRunningAfterCancel'] = agent.isRunning;
+    }
     final path = await _writeReport(runId, report);
     return WorkflowAutomationRunResult(
       runId: runId,
@@ -311,7 +349,11 @@ class WorkflowAutomationControl {
     if (scenario.allowPendingUserQuestion) {
       return _sendPromptWithPendingQuestionSupport(scenario);
     }
-    final run = await sendPrompt(scenario.prompt);
+    final run = await sendPrompt(
+      _promptWithScenarioConstraints(scenario),
+      disabledTools: scenario.disallowTools.toSet(),
+      timeoutMs: scenario.timeoutMs,
+    );
     return _applyScenarioLimit(scenario, run);
   }
 
@@ -320,7 +362,9 @@ class WorkflowAutomationControl {
   ) async {
     var completed = false;
     final future = sendPrompt(
-      scenario.prompt,
+      _promptWithScenarioConstraints(scenario),
+      disabledTools: scenario.disallowTools.toSet(),
+      timeoutMs: scenario.timeoutMs,
     ).whenComplete(() => completed = true);
     final pendingSnapshots = <Map<String, dynamic>>[];
     final answeredPendingKeys = <String>{};
@@ -368,6 +412,40 @@ class WorkflowAutomationControl {
       );
     }
     return _applyScenarioLimit(scenario, run);
+  }
+
+  String _promptWithScenarioConstraints(WorkflowAutomationScenario scenario) {
+    final constraints = <String>[];
+    if (scenario.disallowTools.isNotEmpty) {
+      constraints.add(
+        'Do not use these tools in this scenario: '
+        '${scenario.disallowTools.join(', ')}.',
+      );
+    }
+    if (scenario.maxToolCalls != null) {
+      constraints.add(
+        'Keep the workflow within ${scenario.maxToolCalls} total tool calls.',
+      );
+    }
+    if (scenario.maxDataToolCalls != null) {
+      constraints.add(
+        'Keep the workflow within ${scenario.maxDataToolCalls} finance/data workflow tool calls.',
+      );
+    }
+    if (scenario.maxToolActionCounts.isNotEmpty) {
+      constraints.add(
+        'Respect these per-action call limits: '
+        '${scenario.maxToolActionCounts.entries.map((entry) => '${entry.key} <= ${entry.value}').join(', ')}.',
+      );
+    }
+    if (constraints.isEmpty) return scenario.prompt;
+    return [
+      '<workflow-test-constraints>',
+      ...constraints,
+      '</workflow-test-constraints>',
+      '',
+      scenario.prompt,
+    ].join('\n');
   }
 
   String _pendingQuestionKey(Map<String, dynamic> state) {
@@ -716,6 +794,43 @@ class WorkflowAutomationControl {
       );
     }
   }
+}
+
+Stream<AgentEvent> _withDeadline(
+  Stream<AgentEvent> stream, {
+  required DateTime? deadline,
+  required int? timeoutMs,
+}) async* {
+  if (deadline == null) {
+    yield* stream;
+    return;
+  }
+  await for (final event in stream.timeout(
+    _remainingUntil(deadline),
+    onTimeout: (sink) {
+      sink.addError(
+        TimeoutException(
+          'workflow automation prompt timed out after ${timeoutMs}ms',
+          Duration(milliseconds: timeoutMs ?? 0),
+        ),
+      );
+    },
+  )) {
+    if (!DateTime.now().toUtc().isBefore(deadline)) {
+      throw TimeoutException(
+        'workflow automation prompt timed out after ${timeoutMs}ms',
+        Duration(milliseconds: timeoutMs ?? 0),
+      );
+    }
+    yield event;
+  }
+}
+
+Duration _remainingUntil(DateTime deadline) {
+  final remaining = deadline.difference(DateTime.now().toUtc());
+  return remaining.isNegative || remaining == Duration.zero
+      ? const Duration(milliseconds: 1)
+      : remaining;
 }
 
 class WorkflowAutomationScenario {
@@ -1657,8 +1772,25 @@ Map<String, int> _stringIntMap(Object? value) {
 bool _toolActionMatches(List<String> toolActions, String expected) =>
     toolActions.any((actual) => _toolActionNameMatches(actual, expected));
 
-bool _toolActionNameMatches(String actual, String expected) =>
-    actual == expected || actual.endsWith('.$expected');
+bool _toolActionNameMatches(String actual, String expected) {
+  if (actual == expected || actual.endsWith('.$expected')) return true;
+  final normalizedActual = _equivalentToolActionName(actual);
+  final normalizedExpected = _equivalentToolActionName(expected);
+  return normalizedActual == normalizedExpected ||
+      normalizedActual.endsWith('.$normalizedExpected');
+}
+
+String _equivalentToolActionName(String value) {
+  final text = value.trim();
+  final action = text.contains('.') ? text.split('.').last : text;
+  if (action == 'quote' || action == 'query_quote') {
+    final prefix = text.contains('.')
+        ? text.substring(0, text.length - action.length)
+        : '';
+    return '${prefix}query_quote';
+  }
+  return text;
+}
 
 int? _optionalPositiveInt(Object? value) {
   final parsed = value is num ? value.toInt() : int.tryParse('$value');
