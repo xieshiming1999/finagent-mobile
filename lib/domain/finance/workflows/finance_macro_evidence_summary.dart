@@ -48,6 +48,11 @@ class FinanceMacroEvidenceSummary {
     if (evidence.contextLines.isNotEmpty) {
       lines.add('- 分析对象/口径：${evidence.contextLines.take(4).join('；')}。');
     }
+    if (_hasFundContext(evidence)) {
+      lines.add(
+        '- 基金分类口径：消费基金关注消费复苏、居民收入、白酒/零售政策和风险偏好；科技基金关注流动性、产业政策、外部限制和成长股估值折现率；债券基金关注利率、信用、流动性和久期风险。缺失任一类别的高等级证据时，应降低对应结论置信度。',
+      );
+    }
     if (evidence.nonMacroLines.isNotEmpty) {
       lines.add('- 非宏观证据状态：${evidence.nonMacroLines.take(6).join('；')}。');
     }
@@ -70,10 +75,14 @@ class FinanceMacroEvidenceSummary {
       lines.add('- 不确定性/数据缺口：${evidence.missingLines.take(4).join('；')}。');
     }
     if (evidence.reliabilityLines.isNotEmpty) {
-      lines.add('- 可靠性：${evidence.reliabilityLines.take(5).join('；')}。');
+      lines.add(
+        '- 可靠性（证据等级/新鲜度/访问/置信度）：${evidence.reliabilityLines.take(5).join('；')}。',
+      );
     }
     if (evidence.assetImpactLines.isNotEmpty) {
-      lines.add('- 资产影响：${evidence.assetImpactLines.take(5).join('；')}。');
+      lines.add(
+        '- 资产影响（行业/基金/策略口径）：${evidence.assetImpactLines.take(5).join('；')}。',
+      );
     }
     if (evidence.decisionLines.isNotEmpty) {
       lines.add('- 置信度/下一步：${evidence.decisionLines.take(5).join('；')}。');
@@ -322,6 +331,33 @@ class FinanceMacroEvidenceSummary {
     if (RegExp(r'^bond funds?$', caseSensitive: false).hasMatch(value)) {
       return '债券基金';
     }
+    if (RegExp(r'^consumption funds?$', caseSensitive: false).hasMatch(value)) {
+      return '消费基金';
+    }
+    if (value.toLowerCase() == 'consumer equities') return '消费基金/消费权益';
+    if (RegExp(r'^technology funds?$', caseSensitive: false).hasMatch(value)) {
+      return '科技基金';
+    }
+    if (value.toLowerCase() == 'technology equities') return '科技基金/科技权益';
+    if (RegExp(r'^equity funds?$', caseSensitive: false).hasMatch(value)) {
+      return '权益基金';
+    }
+    if (RegExp(r'^index funds?$', caseSensitive: false).hasMatch(value)) {
+      return '指数基金';
+    }
+    if (RegExp(r'^money funds?$', caseSensitive: false).hasMatch(value)) {
+      return '货币基金';
+    }
+    if (RegExp(r'^industry funds?$', caseSensitive: false).hasMatch(value)) {
+      return '行业基金';
+    }
+    if (RegExp(r'^(stock|equity)$', caseSensitive: false).hasMatch(value)) {
+      return '股票/权益';
+    }
+    if (RegExp(r'^funds?$', caseSensitive: false).hasMatch(value)) {
+      return '基金';
+    }
+    if (value.toLowerCase() == 'strategy') return '策略';
     if (value.toLowerCase() == 'moutai' ||
         value.toLowerCase() == 'kweichow moutai') {
       return '贵州茅台 / Moutai';
@@ -340,6 +376,9 @@ class FinanceMacroEvidenceSummary {
       'narrative_attention': '叙事/关注度',
       'commodity_research': '商品/能源',
       'index_classification': '指数/被动资金',
+      'risk_appetite': '风险偏好',
+      'macro_official_series': '官方宏观数值序列',
+      'official_macro_fact': '官方宏观事实',
     };
     return labels[value] ?? value;
   }
@@ -862,14 +901,31 @@ class FinanceMacroEvidenceSummary {
 
   List<String> _listValues(Object? value) {
     if (value is List)
-      return value.map(_text).where((v) => v.isNotEmpty).toList();
+      return value
+          .map(_text)
+          .map(_displayMacroValue)
+          .where((v) => v.isNotEmpty)
+          .toList();
     final text = _text(value);
     if (text.isEmpty) return const [];
     return text
         .split(RegExp(r'[;,，、]'))
         .map((item) => item.trim())
+        .map(_displayMacroValue)
         .where((item) => item.isNotEmpty)
         .toList();
+  }
+
+  String _displayMacroValue(String value) => _targetLabel(_familyLabel(value));
+
+  bool _hasFundContext(MacroEvidence evidence) {
+    final textValue = [
+      ...evidence.contextLines,
+      ...evidence.factorLines,
+      ...evidence.assetImpactLines,
+      ...evidence.decisionLines,
+    ].join(' ');
+    return RegExp(r'基金|fund', caseSensitive: false).hasMatch(textValue);
   }
 
   String _compactMax(String value, int maxLength) {
