@@ -7,8 +7,10 @@ import 'package:finagent/domain/market/services/market_data_action_service.dart'
 import 'package:finagent/domain/market/services/macro_factor_radar_service.dart';
 import 'package:finagent/domain/market/services/macro_research_extraction.dart';
 import 'package:finagent/domain/market/services/macro_research_source_catalog_data.dart';
+import 'package:finagent/shared/api_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 void main() {
   group('MacroFactorRadarService', () {
@@ -68,7 +70,159 @@ void main() {
           },
         ]);
 
-        final service = MacroFactorRadarService(store: store);
+        final service = MacroFactorRadarService(
+          store: store,
+          httpClient: MockClient((request) async {
+            final url = request.url.toString();
+            if (url.contains('api.bls.gov/publicAPI/v2/timeseries/data')) {
+              return http.Response(
+                jsonEncode({
+                  'Results': {
+                    'series': [
+                      {
+                        'data': [
+                          {
+                            'year': '2026',
+                            'period': 'M06',
+                            'periodName': 'June',
+                            'value': '321.0',
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                }),
+                200,
+                headers: {'content-type': 'application/json'},
+              );
+            }
+            if (url.contains(
+              'api.worldbank.org/v2/country/US/indicator/NY.GDP.MKTP.CD',
+            )) {
+              return http.Response(
+                jsonEncode([
+                  {'lastupdated': '2026-07-01'},
+                  [
+                    {'date': '2025', 'value': 30769700000000},
+                  ],
+                ]),
+                200,
+                headers: {'content-type': 'application/json'},
+              );
+            }
+            if (url.contains(
+              'imf.org/external/datamapper/api/v1/NGDP_RPCH/USA',
+            )) {
+              return http.Response(
+                jsonEncode({
+                  'values': {
+                    'NGDP_RPCH': {
+                      'USA': {'2030': 1.7, '2031': 1.8},
+                    },
+                  },
+                }),
+                200,
+                headers: {'content-type': 'application/json'},
+              );
+            }
+            if (url.contains(
+              'sdmx.oecd.org/public/rest/v1/data/OECD.SDD.NAD',
+            )) {
+              return http.Response(
+                jsonEncode({
+                  'dataSets': [
+                    {
+                      'series': {
+                        '0:0:0:0:0:0:0:0:0': {
+                          'observations': {
+                            '0': [1.2],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                  'structures': [
+                    {
+                      'dimensions': {
+                        'series': [
+                          {
+                            'id': 'FREQ',
+                            'values': [
+                              {'id': 'Q'},
+                            ],
+                          },
+                          {
+                            'id': 'ADJUSTMENT',
+                            'values': [
+                              {'id': 'Y'},
+                            ],
+                          },
+                          {
+                            'id': 'REF_AREA',
+                            'values': [
+                              {'id': 'OECD'},
+                            ],
+                          },
+                          {
+                            'id': 'SECTOR',
+                            'values': [
+                              {'id': 'S1'},
+                            ],
+                          },
+                          {
+                            'id': 'COUNTERPART_SECTOR',
+                            'values': [
+                              {'id': 'S1'},
+                            ],
+                          },
+                          {
+                            'id': 'TRANSACTION',
+                            'values': [
+                              {'id': 'B1GQ'},
+                            ],
+                          },
+                          {
+                            'id': 'UNIT_MEASURE',
+                            'values': [
+                              {'id': 'PC'},
+                            ],
+                          },
+                          {
+                            'id': 'TRANSFORMATION',
+                            'values': [
+                              {'id': 'GCM'},
+                            ],
+                          },
+                          {
+                            'id': 'TABLE_IDENTIFIER',
+                            'values': [
+                              {'id': 'T0102'},
+                            ],
+                          },
+                        ],
+                        'observation': [
+                          {
+                            'id': 'TIME_PERIOD',
+                            'values': [
+                              {'id': '2026-Q1'},
+                            ],
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                }),
+                200,
+                headers: {'content-type': 'application/json'},
+              );
+            }
+            return http.Response(
+              jsonEncode({'error': 'unexpected test URL'}),
+              404,
+              headers: {'content-type': 'application/json'},
+            );
+          }),
+        );
         final result = await service.refresh();
         final queryService = MarketDataActionService();
         final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
@@ -532,6 +686,90 @@ void main() {
         expect(eiaRow['value'], 420000);
         expect(eiaRow['unit'], 'thousand barrels');
         expect(eiaRow['sourceDataTime'], '2026-07-03');
+      },
+    );
+
+    test(
+      'configured EIA refresh persists governed numeric readback rows',
+      () async {
+        final dir = Directory.systemTemp.createTempSync(
+          'finagent_macro_factor_',
+        );
+        addTearDown(() => dir.deleteSync(recursive: true));
+
+        final apiConfig = ApiConfigStore()..set('EIA_API_KEY', 'test-eia-key');
+        final store = ReusableDataStore(dir.path);
+        final service = MacroFactorRadarService(
+          store: store,
+          apiConfig: apiConfig,
+          httpClient: MockClient((request) async {
+            final url = request.url.toString();
+            if (url.contains('api.eia.gov/v2/petroleum/stoc/wstk/data')) {
+              return http.Response(
+                jsonEncode({
+                  'response': {
+                    'data': [
+                      {
+                        'period': '2026-07-03',
+                        'series': 'WCESTUS1',
+                        'value': '420000',
+                        'units': 'MBBL',
+                        'series-description':
+                            'Weekly U.S. Ending Stocks of Crude Oil',
+                      },
+                    ],
+                  },
+                }),
+                200,
+                headers: {'content-type': 'application/json'},
+              );
+            }
+            return http.Response(
+              jsonEncode({'error': 'provider not needed for this test'}),
+              500,
+              headers: {'content-type': 'application/json'},
+            );
+          }),
+        );
+
+        final refreshed = await service.refresh();
+        final eiaRow = refreshed.rows.firstWhere(
+          (row) => row['factor_id'] == 'eia:macro_series:WCESTUS1:2026-07-03',
+        );
+        expect(eiaRow['family'], 'macro_series');
+        expect(eiaRow['source_name'], 'EIA');
+        expect(eiaRow['source_type'], 'official_api');
+        expect(eiaRow['status'], 'active');
+        expect(eiaRow['access_status'], 'public');
+        expect(eiaRow['freshness_status'], 'acceptable');
+        expect(eiaRow['confidence_effect'], 'mixed');
+        expect((eiaRow['macro_values'] as Map)['actual'], 420000);
+        expect((eiaRow['macro_values'] as Map)['unit'], 'MBBL');
+        expect((eiaRow['retrieval_test'] as Map)['provider'], 'eia');
+        expect((eiaRow['retrieval_test'] as Map)['status'], 'ok');
+
+        final queryService = MarketDataActionService();
+        final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
+        final readback =
+            await queryService.run('query_macro_numeric_series', const [], {
+                  'provider': 'eia',
+                  'seriesId': 'WCESTUS1',
+                  'limit': 5,
+                }, context)
+                as Map<String, dynamic>;
+        expect(readback['action'], 'query_macro_numeric_series');
+        expect(readback['status'], 'ok');
+        expect(readback['count'], 1);
+        expect((readback['provenance'] as Map)['canonicalTable'],
+            'market_moving_factor');
+        expect((readback['provenance'] as Map)['readbackAction'],
+            'query_macro_numeric_series');
+        final seriesRow = ((readback['series'] as List).first as Map);
+        expect(seriesRow['provider'], 'eia');
+        expect(seriesRow['seriesId'], 'WCESTUS1');
+        expect(seriesRow['value'], 420000);
+        expect(seriesRow['unit'], 'MBBL');
+        expect(seriesRow['sourceDataTime'], '2026-07-03');
       },
     );
 
