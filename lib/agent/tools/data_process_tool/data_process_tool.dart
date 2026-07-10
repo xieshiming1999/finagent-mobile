@@ -2702,6 +2702,11 @@ UTILITY:
       return ToolResult(toolUseId: toolUseId, content: '无策略。策略会在首次使用时自动从预设加载。');
     }
     final buf = StringBuffer('策略列表 (${store.strategies.length}):\n\n');
+    buf.writeln(
+      '执行合同: strategy_list 只列出预设策略，不执行策略。strategy_execute 必须提供 symbol 或非空 symbols；'
+      '宽泛选股/观察问题应先通过 MarketData/DataProcess(screen) 得到候选代码，再用 symbols 批量验证最强候选。',
+    );
+    buf.writeln();
     for (final s in store.strategies) {
       final wr = s.timesUsed > 0
           ? '${(s.winRate * 100).toStringAsFixed(0)}%'

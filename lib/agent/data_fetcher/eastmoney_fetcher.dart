@@ -39,6 +39,33 @@ double? _toDouble(dynamic value) {
   return null;
 }
 
+StockQuote eastMoneyQuoteFromStockData(
+  Map<String, dynamic> data, {
+  required String requestedCode,
+  required String source,
+}) {
+  final price = _toDouble(data['f43']) ?? 0;
+  final prevClose = _toDouble(data['f60']) ?? 0;
+  return StockQuote(
+    code: _cleanCode((data['f57'] as String?) ?? requestedCode),
+    name: data['f58'] as String? ?? '',
+    price: price,
+    change: price - prevClose,
+    changePct: _toDouble(data['f170']) ?? 0,
+    open: _toDouble(data['f46']) ?? 0,
+    high: _toDouble(data['f44']) ?? 0,
+    low: _toDouble(data['f45']) ?? 0,
+    prevClose: prevClose,
+    volume: _toDouble(data['f47']) ?? 0,
+    amount: _toDouble(data['f48']) ?? 0,
+    pe: _toDouble(data['f115']) ?? _toDouble(data['f9']),
+    pb: _toDouble(data['f23']),
+    marketCap: _toDouble(data['f116']),
+    turnoverRate: _toDouble(data['f168']),
+    source: source,
+  );
+}
+
 /// EastMoney (东方财富) data fetcher.
 /// Covers A-shares, ETFs, indices.
 class EastMoneyFetcher extends BaseFetcher {
@@ -76,7 +103,7 @@ class EastMoneyFetcher extends BaseFetcher {
             'fltt': '2',
             'invt': '2',
             'fields':
-                'f43,f44,f45,f46,f47,f48,f50,f51,f52,f55,f57,f58,f60,f116,f117,f168,f170,f171',
+                'f9,f23,f43,f44,f45,f46,f47,f48,f50,f57,f58,f60,f115,f116,f117,f168,f170,f171',
             'secid': secId,
           },
           rateLimiter: _rateLimiter,
@@ -86,27 +113,8 @@ class EastMoneyFetcher extends BaseFetcher {
         final data = json['data'] as Map<String, dynamic>?;
         if (data == null) continue;
 
-        final price = _toDouble(data['f43']) ?? 0;
-        final prevClose = _toDouble(data['f60']) ?? 0;
         quotes.add(
-          StockQuote(
-            code: _cleanCode(code),
-            name: data['f58'] as String? ?? '',
-            price: price,
-            change: price - prevClose,
-            changePct: _toDouble(data['f170']) ?? 0,
-            open: _toDouble(data['f46']) ?? 0,
-            high: _toDouble(data['f44']) ?? 0,
-            low: _toDouble(data['f45']) ?? 0,
-            prevClose: prevClose,
-            volume: _toDouble(data['f47']) ?? 0,
-            amount: _toDouble(data['f48']) ?? 0,
-            pe: _toDouble(data['f55']),
-            pb: _toDouble(data['f51']),
-            marketCap: _toDouble(data['f116']),
-            turnoverRate: _toDouble(data['f168']),
-            source: name,
-          ),
+          eastMoneyQuoteFromStockData(data, requestedCode: code, source: name),
         );
       }
 

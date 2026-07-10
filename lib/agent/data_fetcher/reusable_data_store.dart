@@ -99,6 +99,14 @@ class ReusableDataStore {
     _migrateReusableDataStore(this, db);
   }
 
+  double? _quoteValuation(Row row, String field) {
+    final value = _nullableNum(row[field]);
+    if (value == null || value <= 0) return null;
+    if (field == 'pb' && value > 100) return null;
+    if (field == 'pe' && value > 1000) return null;
+    return value;
+  }
+
   StockQuote _quoteFromRow(Row row) {
     return StockQuote(
       code: row['code'] as String,
@@ -114,8 +122,8 @@ class ReusableDataStore {
       prevClose: _num(row['prev_close']),
       volume: _num(row['volume']),
       amount: _num(row['amount']),
-      pe: _nullableNum(row['pe']),
-      pb: _nullableNum(row['pb']),
+      pe: _quoteValuation(row, 'pe'),
+      pb: _quoteValuation(row, 'pb'),
       marketCap: _nullableNum(row['market_cap']),
       turnoverRate: _nullableNum(row['turnover_rate']),
       source: row['source'] as String,
