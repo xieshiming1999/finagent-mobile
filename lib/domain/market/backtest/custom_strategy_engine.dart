@@ -842,8 +842,14 @@ class CustomStrategyEngine {
 
   bool _wantsDetailedCatalog(Map<String, dynamic> input) {
     final detail = '${input['detail'] ?? input['mode'] ?? ''}'.toLowerCase();
+    final requestedFields = input['fields'] is List
+        ? (input['fields'] as List).join(' ')
+        : '${input['fields'] ?? ''}';
     return input['includeCatalog'] == true ||
         input['full'] == true ||
+        input['indicators'] != null ||
+        requestedFields.contains('indicatorCatalog') ||
+        requestedFields.contains('indicators') ||
         detail == 'catalog' ||
         detail == 'full' ||
         detail == 'detailed';

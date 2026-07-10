@@ -86,6 +86,25 @@ void main() {
   });
 
   test(
+    'custom strategy help treats field catalog requests as detailed help',
+    () {
+      final help = CustomStrategyEngine().help({
+        'fields': 'executableV1.indicatorCatalog,executableV1.indicators',
+        'indicators': ['sma', 'rsi'],
+      });
+
+      expect(help['detail'], 'catalog');
+      final executable = help['executableV1'] as Map;
+      expect(executable['indicatorCatalog'], isNotEmpty);
+      expect(
+        executable['indicatorCatalog'],
+        contains(isA<Map>().having((row) => row['type'], 'type', 'rsi')),
+      );
+      expect(executable['stockExample'], isA<Map>());
+    },
+  );
+
+  test(
     'normalizes structured top-level fund signals into observation rules',
     () {
       final validation = CustomStrategyEngine().validate({
@@ -218,6 +237,65 @@ void main() {
       ),
     );
   });
+
+  test(
+    'normalizes legacy structured signals and exits into StrategySpec v1',
+    () {
+      final validation = CustomStrategyEngine().validate({
+        'name': '茅台RSI均值回归',
+        'type': 'stockTrading',
+        'market': 'cn',
+        'signals': {
+          'entry': [
+            {'indicator': 'rsi', 'period': 14, 'operator': '<', 'value': 35},
+            {
+              'indicator': 'price_change_pct',
+              'period': 1,
+              'operator': '>',
+              'value': 0,
+            },
+          ],
+        },
+        'exits': {
+          'stop_loss_pct': 8,
+          'take_profit_pct': 12,
+          'trailing_stop_pct': 6,
+        },
+        'positionSizing': 'fixed_fraction',
+        'fixedFraction': 0.3,
+      });
+
+      expect(validation['status'], 'validated');
+      final spec = validation['spec'] as Map;
+      final indicatorIds = (spec['indicators'] as List)
+          .whereType<Map>()
+          .map((row) => row['id'])
+          .toList();
+      expect(indicatorIds, containsAll(['rsi14', 'price_change_pct1']));
+      expect(
+        (spec['entry'] as Map)['all'],
+        containsAll([
+          isA<Map>()
+              .having((row) => row['left'], 'left', 'rsi14')
+              .having((row) => row['op'], 'op', '<')
+              .having((row) => row['right'], 'right', 35.0),
+          isA<Map>()
+              .having((row) => row['left'], 'left', 'price_change_pct1')
+              .having((row) => row['op'], 'op', '>')
+              .having((row) => row['right'], 'right', 0.0),
+        ]),
+      );
+      expect(
+        (spec['exit'] as Map)['any'],
+        containsAll([
+          {'type': 'stop_loss_pct', 'value': 8},
+          {'type': 'take_profit_pct', 'value': 12},
+          {'type': 'trailing_stop_pct', 'value': 6},
+        ]),
+      );
+      expect(spec['positionSizing'], {'type': 'fixed_fraction', 'value': 0.3});
+    },
+  );
 
   test('custom strategy list summary does not expose storage paths', () {
     final dir = Directory.systemTemp.createTempSync(

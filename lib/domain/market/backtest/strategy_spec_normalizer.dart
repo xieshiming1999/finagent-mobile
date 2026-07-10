@@ -128,7 +128,7 @@ Map<String, dynamic> normalizeStrategySpec(Map<String, dynamic> input) {
         'time_stop_bars',
       ],
     ),
-    'positionSizing': _normalizeSizing(input['positionSizing']),
+    'positionSizing': _normalizeSizing(_sizingSource(input)),
     'cost': input['cost'] ?? {'commissionPct': 0.1, 'slippagePct': 0.05},
     'notes': input['notes'] ?? [],
   };
@@ -458,10 +458,7 @@ bool _isFundExitObservation(Map<String, dynamic> rule) {
 List<Map<String, dynamic>> _indicatorsFromRules(Map<String, dynamic> input) {
   final seen = <String>{};
   final indicators = <Map<String, dynamic>>[];
-  for (final group in [
-    _entrySource(input),
-    input['exit'] ?? input['exitRule'],
-  ]) {
+  for (final group in [_entrySource(input), _exitSource(input)]) {
     final rules = _looseConditionList(group);
     for (final raw in rules.whereType<Map>()) {
       final rule = Map<String, dynamic>.from(raw);
@@ -534,7 +531,10 @@ Map<String, dynamic>? _normalizeRuleGroup(
 }
 
 Object? _entrySource(Map<String, dynamic> input) =>
-    input['entry'] ?? input['entryRule'] ?? input['entryConditions'];
+    input['entry'] ??
+    (_mapOf(input['signals'])?['entry']) ??
+    input['entryRule'] ??
+    input['entryConditions'];
 
 bool _isAnyRuleGroup(Map<String, dynamic> source) {
   if (source.containsKey('any') || source.containsKey('or')) return true;
@@ -896,7 +896,11 @@ Object? _volumeComparisonRight(
 }
 
 Object? _exitSource(Map<String, dynamic> input) {
-  final rawExit = input['exit'] ?? input['exitRule'] ?? input['exitConditions'];
+  final rawExit =
+      input['exit'] ??
+      input['exits'] ??
+      input['exitRule'] ??
+      input['exitConditions'];
   final exit = rawExit is List
       ? <String, dynamic>{'any': rawExit}
       : _mapOf(rawExit) ?? <String, dynamic>{};
@@ -953,6 +957,26 @@ Object? _exitSource(Map<String, dynamic> input) {
     exit['operator'] = 'or';
   }
   return exit.isEmpty ? input['exit'] : exit;
+}
+
+Object? _sizingSource(Map<String, dynamic> input) {
+  if (input.containsKey('positionSizing')) {
+    final positionSizing = input['positionSizing'];
+    if (positionSizing is String) {
+      final fixedFraction =
+          _numOf(input['fixedFraction']) ?? _numOf(input['fixed_fraction']);
+      if (fixedFraction != null) {
+        return {'type': positionSizing, 'value': fixedFraction};
+      }
+    }
+    return positionSizing;
+  }
+  final fixedFraction =
+      _numOf(input['fixedFraction']) ?? _numOf(input['fixed_fraction']);
+  if (fixedFraction != null) {
+    return {'type': 'fixed_fraction', 'value': fixedFraction};
+  }
+  return null;
 }
 
 String _normalizeSizingType(String raw) => raw
