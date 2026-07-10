@@ -412,6 +412,17 @@ Map<String, dynamic> validateStockStrategySpec(Map<String, dynamic> spec) {
       ),
     );
   }
+  final suggestedActions = errors.isEmpty
+      ? [
+          {
+            'action': 'custom_strategy_backtest',
+            'symbols': _strategySpecSymbols(spec),
+            'strategySpec': spec,
+            'boundary':
+                'Use this full strategySpec for an unsaved strategy. strategyId alone is valid only after custom_strategy_save or custom_strategy_run readback.',
+          },
+        ]
+      : const [];
 
   return {
     'action': 'custom_strategy_validate',
@@ -440,10 +451,34 @@ Map<String, dynamic> validateStockStrategySpec(Map<String, dynamic> spec) {
       'minBars': minBars,
       'requiredLookbackBars': requiredLookbackBars,
     },
+    'suggestedActions': suggestedActions,
     'workflowAdvice': errors.isEmpty
         ? 'If the user asked to validate only or not save, answer now from this validation result. Do not call custom_strategy_backtest, custom_strategy_save, query_kline, query_technical_indicator, Script, or other tools unless the user explicitly asks for backtest, save, or extra market evidence.'
         : 'This validation failed. Report the unsupported executable parts directly. Do not replace them with proxy indicators, and do not call custom_strategy_backtest or custom_strategy_save unless the user explicitly asks for a separate proxy redesign.',
   };
+}
+
+List<String> _strategySpecSymbols(Map<String, dynamic> spec) {
+  final direct = '${spec['symbol'] ?? spec['code'] ?? ''}'.trim();
+  if (direct.isNotEmpty) return [direct];
+  final symbols = spec['symbols'];
+  if (symbols is List) {
+    final out = symbols
+        .map((item) => '$item'.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+    if (out.isNotEmpty) return out;
+  }
+  final universe = _mapOf(spec['universe']);
+  final universeSymbols = universe?['symbols'];
+  if (universeSymbols is List) {
+    final out = universeSymbols
+        .map((item) => '$item'.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+    if (out.isNotEmpty) return out;
+  }
+  return const [];
 }
 
 Map<String, dynamic> validateFundStrategySpec(Map<String, dynamic> spec) {

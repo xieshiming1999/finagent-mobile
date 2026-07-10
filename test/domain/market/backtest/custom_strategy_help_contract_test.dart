@@ -294,6 +294,18 @@ void main() {
         ]),
       );
       expect(spec['positionSizing'], {'type': 'fixed_fraction', 'value': 0.3});
+      expect(
+        validation['suggestedActions'],
+        contains(
+          isA<Map>()
+              .having(
+                (row) => row['action'],
+                'action',
+                'custom_strategy_backtest',
+              )
+              .having((row) => row['strategySpec'], 'strategySpec', isA<Map>()),
+        ),
+      );
     },
   );
 
