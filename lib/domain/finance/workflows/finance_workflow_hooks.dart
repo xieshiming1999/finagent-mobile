@@ -13,6 +13,7 @@ import 'finance_fund_watch_summary.dart';
 import 'finance_macro_evidence_summary.dart';
 import 'finance_market_overview_summary.dart';
 import 'finance_portfolio_monitor_summary.dart';
+import 'finance_preset_backtest_evidence_summary.dart';
 import 'finance_stock_candidate_summary.dart';
 import 'finance_stock_watch_recovery.dart';
 import 'finance_strategy_budget_summary.dart';
@@ -51,6 +52,8 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       FinanceMarketOverviewSummary();
   final FinancePortfolioMonitorSummary _portfolioMonitorSummary =
       FinancePortfolioMonitorSummary();
+  final FinancePresetBacktestEvidenceSummary _presetBacktestEvidenceSummary =
+      FinancePresetBacktestEvidenceSummary();
   final FinanceStockCandidateSummary _stockCandidateSummary =
       FinanceStockCandidateSummary();
   final FinanceStockWatchRecovery _stockWatchRecovery =
@@ -2179,7 +2182,15 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       return saveEvidence;
     }
     if (_hasSuccessfulCustomStrategyRun(messages, turnStartIndex)) return null;
-    return saveEvidence;
+    final presetBacktestEvidence = _presetBacktestEvidenceSummary.build(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+    );
+    if (saveEvidence != null) return saveEvidence;
+    if (presetBacktestEvidence != null) {
+      return '$answer\n\n$presetBacktestEvidence';
+    }
+    return null;
   }
 
   bool _hasCustomStrategySaveOrRunCall(List<ToolUse> toolCalls) {

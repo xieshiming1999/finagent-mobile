@@ -298,11 +298,15 @@ Map<String, dynamic> calcMetrics(
   double stampTaxPct = 0.1,
   int annFactor = 252,
 }) {
+  final costModel =
+      'commission=$commissionPct‰ + slippage=$slippagePct‰ + stamp_tax=$stampTaxPct‰ (sell)';
   if (trades.isEmpty) {
     return {
       'total_trades': 0,
       'total_return_pct': 0.0,
       'win_rate_pct': 0.0,
+      'cost_model': costModel,
+      'cost_assumption': costModel,
       'note': 'No trades generated',
     };
   }
@@ -387,8 +391,8 @@ Map<String, dynamic> calcMetrics(
     'calmar_ratio': r(calmar),
     'sqn': r(sqn),
     'expectancy_pct': r(expectancy),
-    'cost_model':
-        'commission=$commissionPct‰ + slippage=$slippagePct‰ + stamp_tax=$stampTaxPct‰ (sell)',
+    'cost_model': costModel,
+    'cost_assumption': costModel,
     'best_trade_pct': r(trades.map((t) => t.returnPct).reduce(max)),
     'worst_trade_pct': r(trades.map((t) => t.returnPct).reduce(min)),
     'equity_curve': equityCurve,

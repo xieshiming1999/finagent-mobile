@@ -533,6 +533,7 @@ Map<String, dynamic>? _normalizeRuleGroup(
 Object? _entrySource(Map<String, dynamic> input) =>
     input['entry'] ??
     (_mapOf(input['signals'])?['entry']) ??
+    input['entryRules'] ??
     input['entryRule'] ??
     input['entryConditions'];
 
@@ -899,6 +900,7 @@ Object? _exitSource(Map<String, dynamic> input) {
   final rawExit =
       input['exit'] ??
       input['exits'] ??
+      input['exitRules'] ??
       input['exitRule'] ??
       input['exitConditions'];
   final exit = rawExit is List

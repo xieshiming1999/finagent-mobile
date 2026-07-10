@@ -79,6 +79,13 @@ such as `indicators`, `support`, `volume`, `pattern`, `trend`, or `summary`,
 call one concrete `symbol` at a time. Do not pass `symbols` unless the tool
 help explicitly lists that action as batch-capable.
 
+Preset strategy evidence rule: when using
+`MarketData(action:"backtest")` or `DataProcess(action:"strategy_backtest")`,
+report the returned strategy name, data window, return, max drawdown, trade
+count or signal count, and `cost_assumption` / `cost_model` when present. If
+comparing two preset strategies, make the window and cost assumption explicit
+before drawing the comparison.
+
 ## Agent-Created Strategies
 
 When the user asks to invent, create, or save a new strategy, do not pass an

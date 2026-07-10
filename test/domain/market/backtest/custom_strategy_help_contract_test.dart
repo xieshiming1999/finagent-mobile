@@ -47,6 +47,83 @@ void main() {
     expect(help.containsKey('outputContracts'), isFalse);
   });
 
+  test('custom strategy accepts entryRules and exitRules lists', () async {
+    final service = BacktestMarketDataService(
+      candleLoader: (symbol, period, context) async =>
+          _relativeStrengthCandles(symbol),
+    );
+
+    final validation = await service.customStrategyValidate({
+      'strategySpec': {
+        'name': 'EMA Cross Trend 600519',
+        'market': 'cn',
+        'symbols': ['600519'],
+        'indicators': [
+          {
+            'id': 'ema_fast',
+            'type': 'ema',
+            'source': 'close',
+            'params': {'period': 12},
+          },
+          {
+            'id': 'ema_slow',
+            'type': 'ema',
+            'source': 'close',
+            'params': {'period': 26},
+          },
+          {
+            'id': 'rsi14',
+            'type': 'rsi',
+            'source': 'close',
+            'params': {'period': 14},
+          },
+        ],
+        'entryRules': [
+          {
+            'left': 'ema_fast',
+            'operator': 'crosses_above',
+            'right': 'ema_slow',
+          },
+        ],
+        'exitRules': [
+          {
+            'left': 'ema_fast',
+            'operator': 'crosses_below',
+            'right': 'ema_slow',
+          },
+          {'left': 'rsi14', 'operator': '>', 'right': 70},
+        ],
+      },
+    });
+
+    expect(validation.isError, isFalse);
+    final content = validation.content as Map<String, dynamic>;
+    expect(content['status'], 'validated');
+    final spec = content['spec'] as Map<String, dynamic>;
+    expect((spec['entry'] as Map)['all'], contains(isA<Map>()));
+    expect((spec['exit'] as Map)['any'], contains(isA<Map>()));
+  });
+
+  test(
+    'preset backtest exposes cost assumptions when no trades occur',
+    () async {
+      final service = BacktestMarketDataService(
+        candleLoader: (symbol, period, context) async => _flatCandles(),
+      );
+
+      final result = await service.backtest('600519', {
+        'strategy': 'turtle_breakout',
+        'period': '1y',
+      }, ToolContext(basePath: '', serviceBaseUrl: 'http://localhost'));
+
+      expect(result.isError, isFalse);
+      final content = result.content as Map<String, dynamic>;
+      expect(content['total_trades'], 0);
+      expect(content['cost_model'], contains('commission='));
+      expect(content['cost_assumption'], content['cost_model']);
+    },
+  );
+
   test('custom strategy help exposes full catalogs only when requested', () {
     final help = CustomStrategyEngine().help({'detail': 'catalog'});
 
@@ -610,6 +687,19 @@ List<Candle> _relativeStrengthCandles(String symbol) {
       low: close - 0.2,
       close: close,
       volume: 1000 + index * 10,
+    );
+  });
+}
+
+List<Candle> _flatCandles() {
+  return List<Candle>.generate(60, (index) {
+    return Candle(
+      date: '2026-01-${(index % 28 + 1).toString().padLeft(2, '0')}',
+      open: 100,
+      high: 100,
+      low: 100,
+      close: 100,
+      volume: 1000,
     );
   });
 }
