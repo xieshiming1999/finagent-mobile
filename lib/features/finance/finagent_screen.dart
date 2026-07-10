@@ -659,14 +659,14 @@ class _FinAgentScreenState extends State<FinAgentScreen> {
       if (event is AgentTextDelta) buffer.write(event.text);
     }
     final text = buffer.toString().trim();
-    if (text.isNotEmpty) return _truncateWorkflowText(text, max: 4000);
+    if (text.isNotEmpty) return _truncateWorkflowText(text, max: 12000);
     return _latestAssistantText();
   }
 
   String _latestAssistantText() {
     for (final message in widget.agent.messages.reversed) {
       if (message.role == Role.assistant && message.content.trim().isNotEmpty) {
-        return _truncateWorkflowText(message.content.trim(), max: 4000);
+        return _truncateWorkflowText(message.content.trim(), max: 12000);
       }
     }
     return '';

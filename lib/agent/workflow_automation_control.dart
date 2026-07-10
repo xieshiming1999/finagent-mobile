@@ -102,10 +102,7 @@ class WorkflowAutomationControl {
                 );
           events.addAll(rawEvents);
         } else {
-          final stream = agent.run(
-            prompt,
-            disabledTools: disabledTools,
-          );
+          final stream = agent.run(prompt, disabledTools: disabledTools);
           await for (final event in _withDeadline(
             stream,
             deadline: deadline,
@@ -1448,7 +1445,7 @@ Map<String, dynamic> _summarizeReportFile(File file) {
 String _finalAssistantText(List<Message> messages) {
   for (final message in messages.reversed) {
     if (message.role == Role.assistant && message.content.trim().isNotEmpty) {
-      return _truncate(message.content.trim(), max: 4000);
+      return _truncate(message.content.trim(), max: 12000);
     }
   }
   return '';

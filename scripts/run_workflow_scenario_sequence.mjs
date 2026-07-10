@@ -206,7 +206,7 @@ function renderReviewMarkdown({ scenario, result, review, jsonPath }) {
       "Agent final answer:",
       "",
       "```text",
-      trimForMarkdown(String(turn.finalAssistant ?? ""), 6000),
+      trimForMarkdown(String(turn.finalAssistant ?? ""), 12000),
       "```",
       "",
     );
