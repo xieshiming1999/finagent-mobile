@@ -33,6 +33,11 @@ class FileWriteTool extends Tool {
         'type': 'string',
         'description': 'The content to write to the file',
       },
+      'overwrite': {
+        'type': 'boolean',
+        'description':
+            'Set true only when intentionally replacing an existing generated memory artifact such as memory/pages/*.html or memory/dashboards/*.html.',
+      },
     },
     'required': ['file_path', 'content'],
   };
@@ -85,9 +90,15 @@ class FileWriteTool extends Tool {
       return 'bundle/ is read-only. Write to memory/ instead.';
     }
 
-    // For existing files: enforce read-before-write and staleness checks
+    final overwrite = input['overwrite'] == true;
+    final isGeneratedArtifact =
+        filePath.startsWith('memory/pages/') ||
+        filePath.startsWith('memory/dashboards/');
+
+    // For existing files: enforce read-before-write and staleness checks unless
+    // the caller explicitly declares a complete generated artifact replacement.
     final file = File(resolved);
-    if (file.existsSync()) {
+    if (file.existsSync() && !overwrite && !isGeneratedArtifact) {
       // Read-before-write enforcement
       if (!context.readFileTimestamps.containsKey(resolved)) {
         return 'File has not been read yet. Read it first before writing to it.';

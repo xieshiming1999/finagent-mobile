@@ -314,7 +314,10 @@ extension _WebViewHandlers on _FinAgentScreenState {
         final x = params['x'] as int? ?? 0;
         final y = params['y'] as int? ?? 0;
         final absolute = params['absolute'] as bool? ?? false;
-        absolute ? await ctrl.scrollTo(x, y) : await ctrl.scrollBy(x, y);
+        final scrollScript = absolute
+            ? 'window.scrollTo($x, $y);'
+            : 'window.scrollBy($x, $y);';
+        await ctrl.runJavaScript(scrollScript);
         final posInfo = await ctrl.runJavaScriptReturningResult(
           "JSON.stringify({scrollY:Math.round(window.scrollY),"
           "pageHeight:document.documentElement.scrollHeight,"

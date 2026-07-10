@@ -856,7 +856,7 @@ class _FinAgentScreenState extends State<FinAgentScreen> {
 
   List<Map<String, dynamic>> _workflowAutomationUiArtifacts() {
     final semantics = _workflowAutomationUiSemantics();
-    return [
+    final artifacts = <Map<String, dynamic>>[
       {
         'kind': 'mobile-semantic-snapshot',
         'runtime': 'finagent',
@@ -867,6 +867,27 @@ class _FinAgentScreenState extends State<FinAgentScreen> {
         'semantics': semantics,
       },
     ];
+    final activeDashboard = semantics['activeDashboard'];
+    if (activeDashboard is Map) {
+      final filePath = activeDashboard['filePath']?.toString() ?? '';
+      final title = activeDashboard['title']?.toString() ?? '';
+      if (filePath.isNotEmpty) {
+        artifacts.add({
+          'kind': 'dashboard',
+          'runtime': 'finagent',
+          'capturedAt': DateTime.now().toUtc().toIso8601String(),
+          'source': 'WorkflowAutomationInProcessBridge',
+          'sourceKind': filePath.contains('/memory/pages/')
+              ? 'page-file'
+              : 'dashboard-file',
+          'title': title,
+          'path': filePath,
+          'summary': 'Active FinAgent dashboard/page artifact',
+          'readable': true,
+        });
+      }
+    }
+    return artifacts;
   }
 
   void _send() {

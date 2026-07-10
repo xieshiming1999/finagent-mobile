@@ -116,8 +116,8 @@ class WebViewTool extends Tool {
     Map<String, dynamic> input,
     ToolContext context,
   ) async {
-    final action = input['action'] as String?;
-    if (action == null) return 'action is required';
+    final action = _actionFromInput(input);
+    if (action.isEmpty) return 'action is required';
 
     switch (action) {
       case 'query':
@@ -141,7 +141,7 @@ class WebViewTool extends Tool {
     Map<String, dynamic> input,
     ToolContext context,
   ) async {
-    final action = input['action'] as String;
+    final action = _actionFromInput(input);
     final target = input['target'] as String? ?? _activeTarget;
 
     if (target == null || !_handlers.containsKey(target)) {
@@ -173,5 +173,14 @@ class WebViewTool extends Tool {
         isError: true,
       );
     }
+  }
+
+  String _actionFromInput(Map<String, dynamic> input) {
+    final action = input['action'] as String?;
+    if (action != null && action.trim().isNotEmpty) return action;
+    if (input['javascript'] != null || input['selector'] != null) {
+      return 'query';
+    }
+    return '';
   }
 }

@@ -325,7 +325,12 @@ class LLMConfigStore {
   }
 
   List<LLMProviderConfig> getByTag(String tag) =>
-      providers.where((p) => p.enabled && p.tags.contains(tag)).toList();
+      providers.where((p) => p.enabled && _matchesTag(p, tag)).toList();
+
+  bool _matchesTag(LLMProviderConfig provider, String tag) {
+    if (provider.tags.contains(tag)) return true;
+    return tag == 'llm' && provider.tags.isEmpty;
+  }
 
   LLMProviderConfig? primary([String tag = 'llm']) {
     final list = getByTag(tag);

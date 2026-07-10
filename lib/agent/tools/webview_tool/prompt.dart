@@ -13,6 +13,10 @@ Actions:
   {"action":"input", "selector":"input[name=search]", "text":"crude oil"}
 
 - screenshot: Capture the current WebView as a PNG image for visual analysis.
+  For generated HTML dashboards/pages, verify readable content with query,
+  get_info, get_html, selectors, and page text first. Use screenshots for
+  visual-only questions such as chart pixels, canvas rendering, layout overlap,
+  or image/crop inspection.
   {"action":"screenshot"}
 
 - navigate: Load a URL or local file. Local paths (starting with / or memory/)

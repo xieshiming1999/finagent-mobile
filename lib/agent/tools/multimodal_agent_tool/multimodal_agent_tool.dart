@@ -18,7 +18,7 @@ class MultimodalAgentTool extends Tool {
 
   @override
   String get description =>
-      'Analyze image/audio files with a configured multimodal model. Use this when the main model is text-only and a screenshot or image needs visual inspection.';
+      'Analyze image/audio files with a configured multimodal model. Use this only when the required evidence is visual and cannot be verified from page text, DOM, or structured tool output.';
 
   @override
   String get prompt =>
@@ -26,7 +26,7 @@ class MultimodalAgentTool extends Tool {
       'Parameters:\n'
       '- files: image file paths, usually from WebView screenshot or Read image result\n'
       '- task: what to inspect in the image\n'
-      'Use this after WebView(action:"screenshot") when the main model is not vision-capable.';
+      'Do not use this for generated HTML dashboard/page readability checks when WebView query/get_info/get_html or DOM selectors can answer the task. Calling this only to confirm text, table rows, headings, or source labels in a DOM-readable page is incorrect. Use this after WebView(action:"screenshot") only for visual-only evidence such as chart pixels, canvas rendering, image/crop content, or layout overlap when text/DOM evidence is insufficient.';
 
   @override
   Map<String, dynamic> get inputSchema => {
