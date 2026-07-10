@@ -72,6 +72,11 @@ class WatchlistTool extends Tool {
         'description':
             'Structured strategy-derived rules used for watchlist/monitor provenance.',
       },
+      'macroEvidence': {
+        'type': 'object',
+        'description':
+            'Structured macro evidence/provenance used for macro-condition observation rows.',
+      },
       'portfolioEvidence': {
         'type': 'object',
         'description':
@@ -230,6 +235,49 @@ class WatchlistTool extends Tool {
         isError: true,
       );
     }
+    if (itemType == 'macro-condition' && !_hasMacroConditionEvidence(input)) {
+      return ToolResult(
+        toolUseId: id,
+        content: const JsonEncoder.withIndent('  ').convert({
+          'error': 'macro-condition evidence required',
+          'requiredBeforeAdd': [
+            {
+              'tool': 'MarketData',
+              'input': {
+                'action': 'query_macro_factors',
+                'target': '<asset/theme>',
+                'limit': 10,
+              },
+            },
+            {
+              'tool': 'MarketData',
+              'input': {
+                'action': 'query_macro_attribution',
+                'target': '<asset/theme>',
+                'limit': 10,
+              },
+            },
+            {
+              'tool': 'MarketData',
+              'input': {
+                'action': 'query_finance_news',
+                'query': '<asset/theme>',
+                'limit': 10,
+              },
+            },
+          ],
+          'acceptedEvidenceFields': [
+            'macroEvidence',
+            'strategyRules.evidenceTier',
+            'strategyRules.provenance',
+            'source with governed provider/evidence metadata',
+          ],
+          'boundary':
+              'macro-condition rows are observation/invalidation evidence only, not executable buy/sell triggers',
+        }),
+        isError: true,
+      );
+    }
     final item = WatchlistItem(
       groupId: groupId,
       symbol: symbol,
@@ -293,6 +341,36 @@ class WatchlistTool extends Tool {
       content:
           'Added ${item.name.isNotEmpty ? item.name : symbol} to watchlist (id: ${item.id}, group: $groupId, ${groupItems.length} items in group)',
     );
+  }
+
+  bool _hasMacroConditionEvidence(Map<String, dynamic> input) {
+    if (input['macroEvidence'] is Map &&
+        (input['macroEvidence'] as Map).isNotEmpty) {
+      return true;
+    }
+    final rules = _normalizeStrategyRules(input);
+    if (rules != null) {
+      const evidenceKeys = {
+        'evidenceTier',
+        'provenance',
+        'sourceEvidence',
+        'macroEvidence',
+        'dataQuality',
+        'refreshPolicy',
+        'missingEvidence',
+      };
+      if (evidenceKeys.any(rules.containsKey)) return true;
+    }
+    final source = (input['source'] as String?)?.trim() ?? '';
+    if (source.isEmpty) return false;
+    const genericSources = {'agent', 'user', 'manual'};
+    if (genericSources.contains(source.toLowerCase())) return false;
+    return source.contains('provider=') ||
+        source.contains('evidence') ||
+        source.contains('interface') ||
+        source.contains('provenance') ||
+        source.contains('official') ||
+        source.contains('macro');
   }
 
   ToolResult _remove(String id, Map<String, dynamic> input) {

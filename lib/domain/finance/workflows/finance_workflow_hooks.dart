@@ -1216,6 +1216,13 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
               call.input['type'] == 'macro-condition',
         )
         .toList(growable: false);
+    if (proposedMacroWrites.isNotEmpty) {
+      final missingEvidence = _requiredMacroEvidenceReadbackCalls(
+        turnMessages,
+        'MarketData',
+      );
+      if (missingEvidence.isNotEmpty) return missingEvidence;
+    }
     final proposedMacroReadback = proposedToolCalls.any(
       (call) =>
           call.name == 'Watchlist' &&

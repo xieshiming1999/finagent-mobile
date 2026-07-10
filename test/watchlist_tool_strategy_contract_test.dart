@@ -10,7 +10,9 @@ void main() {
   test(
     'Watchlist preserves strategy id and structured strategy rules',
     () async {
-      final dir = await Directory.systemTemp.createTemp('finagent-watchlist-strategy-');
+      final dir = await Directory.systemTemp.createTemp(
+        'finagent-watchlist-strategy-',
+      );
       addTearDown(() => dir.deleteSync(recursive: true));
       final store = WatchlistStore()..load(dir.path);
       final tool = WatchlistTool(store: store);
@@ -76,7 +78,9 @@ void main() {
   test(
     'Watchlist filters strategy-derived rows by strategy id for exact readback',
     () async {
-      final dir = await Directory.systemTemp.createTemp('finagent-watchlist-strategy-filter-');
+      final dir = await Directory.systemTemp.createTemp(
+        'finagent-watchlist-strategy-filter-',
+      );
       addTearDown(() => dir.deleteSync(recursive: true));
       final store = WatchlistStore()..load(dir.path);
       final tool = WatchlistTool(store: store);
@@ -104,9 +108,13 @@ void main() {
         'symbol': '600519',
         'status': 'watching',
       }, context);
-      final symbolPayload = jsonDecode(bySymbol.content) as Map<String, dynamic>;
+      final symbolPayload =
+          jsonDecode(bySymbol.content) as Map<String, dynamic>;
       expect(symbolPayload['count'], 1);
-      expect((symbolPayload['items'] as List).first['strategyId'], 'custom_20_v1');
+      expect(
+        (symbolPayload['items'] as List).first['strategyId'],
+        'custom_20_v1',
+      );
       expect((symbolPayload['items'] as List).first['addedAt'], isA<String>());
 
       final byStrategy = await tool.call('list-strategy', {
@@ -115,8 +123,10 @@ void main() {
         'strategyId': 'custom_20_v1',
         'status': 'watching',
       }, context);
-      final strategyPayload = jsonDecode(byStrategy.content) as Map<String, dynamic>;
-      final item = (strategyPayload['items'] as List).single as Map<String, dynamic>;
+      final strategyPayload =
+          jsonDecode(byStrategy.content) as Map<String, dynamic>;
+      final item =
+          (strategyPayload['items'] as List).single as Map<String, dynamic>;
       expect(item['symbol'], '600519');
       expect(item['strategyId'], 'custom_20_v1');
       expect((item['strategyRules'] as Map)['id'], 'custom_20_v1');
@@ -127,14 +137,19 @@ void main() {
         'strategyId': 'older_strategy_v1',
         'status': 'watching',
       }, context);
-      expect((jsonDecode(mismatch.content) as Map<String, dynamic>)['count'], 0);
+      expect(
+        (jsonDecode(mismatch.content) as Map<String, dynamic>)['count'],
+        0,
+      );
     },
   );
 
   test(
     'Watchlist supports macro-condition rows without fund or ETF placeholders',
     () async {
-      final dir = await Directory.systemTemp.createTemp('finagent-watchlist-macro-');
+      final dir = await Directory.systemTemp.createTemp(
+        'finagent-watchlist-macro-',
+      );
       addTearDown(() => dir.deleteSync(recursive: true));
       final store = WatchlistStore()..load(dir.path);
       final tool = WatchlistTool(store: store);
@@ -168,8 +183,36 @@ void main() {
     },
   );
 
+  test(
+    'Watchlist rejects macro-condition rows without evidence provenance',
+    () async {
+      final dir = await Directory.systemTemp.createTemp(
+        'finagent-watchlist-macro-evidence-',
+      );
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final store = WatchlistStore()..load(dir.path);
+      final tool = WatchlistTool(store: store);
+      final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
+
+      final add = await tool.call('add-macro-no-evidence', {
+        'action': 'add',
+        'type': 'macro-condition',
+        'name': '油价库存观察',
+        'entryCondition': '油价和库存变化只作为能源股观察条件',
+        'source': 'agent',
+      }, context);
+
+      expect(add.isError, isTrue);
+      expect(add.content, contains('macro-condition evidence required'));
+      expect(add.content, contains('query_macro_factors'));
+      expect(add.content, contains('query_macro_attribution'));
+    },
+  );
+
   test('Watchlist rejects fund placeholders without identity name', () async {
-    final dir = await Directory.systemTemp.createTemp('finagent-watchlist-fund-validation-');
+    final dir = await Directory.systemTemp.createTemp(
+      'finagent-watchlist-fund-validation-',
+    );
     addTearDown(() => dir.deleteSync(recursive: true));
     final store = WatchlistStore()..load(dir.path);
     final tool = WatchlistTool(store: store);
