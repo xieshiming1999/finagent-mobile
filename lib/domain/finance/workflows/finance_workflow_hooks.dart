@@ -1221,10 +1221,7 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
               call.input['groupType'] == 'macro-condition'),
     );
     if (proposedMacroWrites.isNotEmpty && !proposedMacroReadback) {
-      return [
-        ...proposedMacroWrites,
-        _macroConditionWatchlistReadbackCall(),
-      ];
+      return [...proposedMacroWrites, _macroConditionWatchlistReadbackCall()];
     }
     final executedIds = _executedToolUseIds(turnMessages);
     final hasMacroConditionWrite = turnMessages.any((message) {
@@ -1353,7 +1350,11 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
         ToolUse(
           id: 'auto_macro_condition_factors_${DateTime.now().microsecondsSinceEpoch}',
           name: toolName,
-          input: {'action': 'query_macro_factors', 'target': target, 'limit': 10},
+          input: {
+            'action': 'query_macro_factors',
+            'target': target,
+            'limit': 10,
+          },
         ),
       if (!actions.contains('query_macro_attribution'))
         ToolUse(
@@ -1540,7 +1541,9 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       hasError = true;
       final content = result.content.toLowerCase();
       if (content.contains('finance_news failed') ||
-          content.contains('all finance news feed interface providers failed') ||
+          content.contains(
+            'all finance news feed interface providers failed',
+          ) ||
           content.contains('source-health:empty-result')) {
         return true;
       }
@@ -1863,7 +1866,8 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       if (uses == null) return false;
       return uses.any(
         (call) =>
-            call.name == 'Skill' && '${call.input['skill'] ?? ''}' == 'watchlist',
+            call.name == 'Skill' &&
+            '${call.input['skill'] ?? ''}' == 'watchlist',
       );
     });
     final inspectedWatchlistHelp = turnMessages.any((message) {

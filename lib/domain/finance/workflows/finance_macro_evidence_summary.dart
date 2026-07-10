@@ -54,7 +54,9 @@ class FinanceMacroEvidenceSummary {
       );
     }
     if (evidence.nonMacroLines.isNotEmpty) {
-      lines.add('- 非宏观证据状态：${evidence.nonMacroLines.take(6).join('；')}。');
+      lines.add(
+        '- 非宏观证据状态：${_sortEvidenceLines(evidence.nonMacroLines).take(12).join('；')}。',
+      );
     }
     if (evidence.sourceLines.isNotEmpty) {
       lines.add('- 来源目录读回：${evidence.sourceLines.take(4).join('；')}。');
@@ -115,6 +117,14 @@ class FinanceMacroEvidenceSummary {
     final nonMacroLines = <String>[];
     var sawMacroAction = false;
     var hasNewsRefresh = false;
+    final toolCallsById = <String, ToolUse>{};
+
+    for (final message in messages.skip(turnStartIndex)) {
+      if (message.role != Role.assistant) continue;
+      for (final call in message.toolUses ?? const <ToolUse>[]) {
+        toolCallsById[call.id] = call;
+      }
+    }
 
     for (final message in messages.skip(turnStartIndex)) {
       if (message.role == Role.assistant) {
@@ -141,7 +151,14 @@ class FinanceMacroEvidenceSummary {
         newsLines.add(financeNewsLine);
         continue;
       }
-      if (!content.startsWith('{')) continue;
+      if (!content.startsWith('{')) {
+        final call = toolCallsById[result.toolUseId];
+        final line = call == null
+            ? _nonMacroTextResultLineFromContent(content)
+            : _nonMacroTextResultLine(call, content);
+        if (line.isNotEmpty) nonMacroLines.add(line);
+        continue;
+      }
       try {
         final decoded = jsonDecode(content);
         if (decoded is! Map<String, dynamic>) continue;
@@ -281,6 +298,8 @@ class FinanceMacroEvidenceSummary {
     final action = _text(payload['action']);
     final label = _actionLabel(action);
     if (label.isEmpty) return '';
+    final evidenceDetail = _structuredEvidenceDetail(action, payload);
+    if (evidenceDetail.isNotEmpty) return '$label: $evidenceDetail';
     final rows = payload['rows'];
     final count = _text(payload['count']).isNotEmpty
         ? _text(payload['count'])
@@ -299,11 +318,208 @@ class FinanceMacroEvidenceSummary {
     return detail.isEmpty ? '$label: 已返回结构化结果' : '$label: $detail';
   }
 
+  String _nonMacroTextResultLine(ToolUse call, String content) {
+    if (RegExp(r'^\s*Skipped:', caseSensitive: false).hasMatch(content)) {
+      return '';
+    }
+    if (call.name != 'DataStore' &&
+        call.name != 'MarketData' &&
+        call.name != 'DataProcess') {
+      return '';
+    }
+    final action = _text(call.input['action']);
+    final label = _actionLabel(action).isNotEmpty
+        ? _actionLabel(action)
+        : _dataProcessActionLabel(action);
+    if (label.isEmpty) return '';
+    final code = _text(call.input['code']).isNotEmpty
+        ? _text(call.input['code'])
+        : _text(call.input['symbol']).isNotEmpty
+        ? _text(call.input['symbol'])
+        : _extractCode(content);
+    final provenance = _extractProvenance(content);
+    final facts = _extractEvidenceFacts(action, content);
+    final parts = [
+      code,
+      provenance,
+      facts,
+    ].where((value) => value.isNotEmpty).join(' / ');
+    return parts.isEmpty ? '$label: 已返回工具结果' : '$label: $parts';
+  }
+
+  String _nonMacroTextResultLineFromContent(String content) {
+    if (RegExp(r'^\s*Skipped:', caseSensitive: false).hasMatch(content)) {
+      return '';
+    }
+    final action = _inferActionFromContent(content);
+    if (action.isEmpty) return '';
+    final label = _actionLabel(action).isNotEmpty
+        ? _actionLabel(action)
+        : _dataProcessActionLabel(action);
+    if (label.isEmpty) return '';
+    final code = _extractCode(content);
+    final provenance = _extractProvenance(content);
+    final facts = _extractEvidenceFacts(action, content);
+    final parts = [
+      code,
+      provenance,
+      facts,
+    ].where((value) => value.isNotEmpty).join(' / ');
+    return parts.isEmpty ? '$label: 已返回工具结果' : '$label: $parts';
+  }
+
+  String _inferActionFromContent(String content) {
+    if (RegExp(
+          r'interface:stock\.quote\b',
+          caseSensitive: false,
+        ).hasMatch(content) ||
+        RegExp(
+          r'\bquote snapshots\b',
+          caseSensitive: false,
+        ).hasMatch(content)) {
+      return 'query_quote';
+    }
+    if (RegExp(
+          r'interface:stock\.daily_kline\b',
+          caseSensitive: false,
+        ).hasMatch(content) ||
+        RegExp(r'\bdaily kline\b', caseSensitive: false).hasMatch(content)) {
+      return 'query_kline';
+    }
+    if (RegExp(
+          r'interface:stock\.daily_valuation\b',
+          caseSensitive: false,
+        ).hasMatch(content) ||
+        RegExp(r'\bfundamentals\b', caseSensitive: false).hasMatch(content)) {
+      return 'query_fundamental';
+    }
+    if (RegExp(
+          r'interface:market\.sector_ranking\b',
+          caseSensitive: false,
+        ).hasMatch(content) ||
+        RegExp(r'\bSector ranking\b', caseSensitive: false).hasMatch(content)) {
+      return 'query_sector_ranking';
+    }
+    return '';
+  }
+
+  String _dataProcessActionLabel(String action) {
+    const labels = {
+      'summary': '技术摘要',
+      'indicators': '技术指标',
+      'support_summary': '支撑阻力',
+      'volume_analysis': '量能分析',
+    };
+    return labels[action] ?? '';
+  }
+
+  String _extractCode(String content) {
+    return RegExp(r'\b\d{6}\b').firstMatch(content)?.group(0) ?? '';
+  }
+
+  String _extractProvenance(String content) {
+    String match(String pattern) =>
+        RegExp(pattern).firstMatch(content)?.group(1)?.trim() ?? '';
+    final interfaceId = match(r'interface:([^|\n]+)');
+    final provider = match(r'provider:([^|\n]+)');
+    final cache = match(r'cacheStatus:([^|\n]+)');
+    final asOf = match(r'asOf:([^|\n]+)');
+    final fetchedAt = match(r'fetchedAt:([^|\n]+)');
+    return [
+      if (interfaceId.isNotEmpty) 'interface=$interfaceId',
+      if (provider.isNotEmpty) 'provider=$provider',
+      if (cache.isNotEmpty) 'cache=$cache',
+      if (asOf.isNotEmpty) 'asOf=$asOf',
+      if (fetchedAt.isNotEmpty) 'fetchedAt=$fetchedAt',
+    ].join(' / ');
+  }
+
+  String _extractEvidenceFacts(String action, String content) {
+    final compacted = _compact(content.replaceAll(RegExp(r'\s+'), ' '));
+    if (action == 'query_kline' || action == 'kline') {
+      final bars = RegExp(
+        r'(\d+)\s+bars',
+        caseSensitive: false,
+      ).firstMatch(content)?.group(1);
+      final window = RegExp(
+        r'\((\d{4}-\d{2}-\d{2}\s*~\s*\d{4}-\d{2}-\d{2})\)',
+      ).firstMatch(content)?.group(1);
+      return _orFallback([
+        if (bars != null) '$bars bars',
+        if (window != null) window,
+      ], compacted);
+    }
+    if (action == 'query_fundamental') {
+      final pe = RegExp(r'\bPE:([^\s]+)').firstMatch(content)?.group(1);
+      final pb = RegExp(r'\bPB:([^\s]+)').firstMatch(content)?.group(1);
+      final roe = RegExp(r'\bROE:([^\s]+)').firstMatch(content)?.group(1);
+      final report = RegExp(
+        r'(\d{4}-\d{2}-\d{2})',
+      ).firstMatch(content)?.group(1);
+      return _orFallback([
+        if (report != null) 'report=$report',
+        if (pe != null) 'PE=$pe',
+        if (pb != null) 'PB=$pb',
+        if (roe != null) 'ROE=$roe',
+      ], compacted);
+    }
+    if (action == 'quote' || action == 'query_quote') {
+      final price = RegExp(
+        r'(?:price|Price|最新价|C):\s*([0-9.]+)',
+      ).firstMatch(content)?.group(1);
+      final change = RegExp(
+        r'(?:change|涨幅|Chg):\s*([+\-0-9.]+%?)',
+      ).firstMatch(content)?.group(1);
+      return _orFallback([
+        if (price != null) 'price=$price',
+        if (change != null) 'change=$change',
+      ], compacted);
+    }
+    if (action == 'summary' || action == 'indicators') {
+      final signal = RegExp(
+        r'"overall"\s*:\s*"([^"]+)"',
+      ).firstMatch(content)?.group(1);
+      final rsi = RegExp(
+        r'RSI(?:\(14\))?[:=]\s*([0-9.]+)',
+        caseSensitive: false,
+      ).firstMatch(content)?.group(1);
+      return _orFallback([
+        if (signal != null) 'signal=$signal',
+        if (rsi != null) 'RSI=$rsi',
+      ], compacted);
+    }
+    return compacted;
+  }
+
+  String _structuredEvidenceDetail(
+    String action,
+    Map<String, dynamic> payload,
+  ) {
+    if (action == 'score_technical') {
+      return [
+        _text(payload['code']),
+        if (_text(payload['score']).isNotEmpty)
+          'score=${_text(payload['score'])}',
+        if (_text(payload['grade']).isNotEmpty)
+          'grade=${_text(payload['grade'])}',
+        if (_text(payload['signal']).isNotEmpty)
+          'signal=${_text(payload['signal'])}',
+        if (_text(payload['rsi']).isNotEmpty) 'RSI=${_text(payload['rsi'])}',
+      ].where((value) => value.isNotEmpty).join(' / ');
+    }
+    return '';
+  }
+
   String _actionLabel(String action) {
     const labels = {
+      'quote': '个股行情',
+      'kline': 'K 线/技术面',
+      'money_flow': '资金流向',
       'query_quote': '个股行情',
       'query_index_quote': '指数/市场技术面',
       'query_kline': 'K 线/技术面',
+      'query_fundamental': '基本面/估值',
+      'query_money_flow': '资金流向',
       'query_sector_ranking': '板块热度',
       'query_flow_rank': '资金流向',
       'query_northbound_flow': '北向资金',
@@ -312,6 +528,8 @@ class FinanceMacroEvidenceSummary {
       'query_fund_holding': '基金持仓',
       'query_stock_company_info': '自选股公司信息',
       'query_fund_company_info': '基金公司信息',
+      'summary': '技术摘要',
+      'score_technical': '技术评分',
     };
     if (labels.containsKey(action)) return labels[action]!;
     if (action == 'fetch') return '数据刷新';
@@ -945,6 +1163,14 @@ class FinanceMacroEvidenceSummary {
     return RegExp(r'基金|fund', caseSensitive: false).hasMatch(textValue);
   }
 
+  List<String> _sortEvidenceLines(List<String> lines) {
+    final copy = [...lines];
+    copy.sort((a, b) => _evidenceLineRank(a).compareTo(_evidenceLineRank(b)));
+    return copy;
+  }
+
+  int _evidenceLineRank(String line) => line.contains('已请求') ? 2 : 0;
+
   String _compactMax(String value, int maxLength) {
     final oneLine = value.replaceAll(RegExp(r'\s+'), ' ').trim();
     return oneLine.length > maxLength
@@ -1018,6 +1244,11 @@ class FinanceMacroEvidenceSummary {
   String _compact(String value) {
     final oneLine = value.replaceAll(RegExp(r'\s+'), ' ').trim();
     return oneLine.length > 120 ? '${oneLine.substring(0, 119)}...' : oneLine;
+  }
+
+  String _orFallback(List<String> parts, String fallback) {
+    final joined = parts.where((value) => value.isNotEmpty).join(' / ');
+    return joined.isEmpty ? fallback : joined;
   }
 
   List<String> _dedupe(List<String> values) {

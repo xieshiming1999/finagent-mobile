@@ -303,7 +303,10 @@ void main() {
   test('cites EIA numeric evidence for oil-market A-share sector risk', () {
     final summary = FinanceMacroEvidenceSummary().build(
       messages: [
-        Message(role: Role.user, content: 'EIA oil inventory macro sector risk'),
+        Message(
+          role: Role.user,
+          content: 'EIA oil inventory macro sector risk',
+        ),
         Message(
           role: Role.assistant,
           content: '',
@@ -564,6 +567,16 @@ void main() {
               name: 'MarketData',
               input: {'action': 'query_quote', 'code': '600519'},
             ),
+            ToolUse(
+              id: 'kline',
+              name: 'MarketData',
+              input: {'action': 'query_kline', 'code': '600519', 'limit': 120},
+            ),
+            ToolUse(
+              id: 'fund',
+              name: 'MarketData',
+              input: {'action': 'query_fundamental', 'code': '600519'},
+            ),
             ToolUse(id: 'watch', name: 'Watchlist', input: {'action': 'list'}),
             ToolUse(
               id: 'factor',
@@ -575,6 +588,30 @@ void main() {
               },
             ),
           ],
+        ),
+        Message(
+          role: Role.tool,
+          toolResult: ToolResult(
+            toolUseId: 'auto-retained-quote',
+            content:
+                '600519 quote | interface:stock.quote | provider:local | cacheStatus:local-hit | asOf:2026-07-10T14:06:20Z | fetchedAt:2026-07-10T14:06:21Z Price: 1204.98 change: +1.93%',
+          ),
+        ),
+        Message(
+          role: Role.tool,
+          toolResult: ToolResult(
+            toolUseId: 'auto-retained-kline',
+            content:
+                '600519 daily kline | interface:stock.daily_kline | provider:tencent | cacheStatus:local-hit | asOf:2026-07-07 | fetchedAt:2026-07-10T13:47:08Z: 120 bars (2026-01-06 ~ 2026-07-07)',
+          ),
+        ),
+        Message(
+          role: Role.tool,
+          toolResult: ToolResult(
+            toolUseId: 'auto-retained-fund',
+            content:
+                '600519 fundamentals | interface:stock.daily_valuation | provider:eastmoney | cacheStatus:local-hit | asOf:2026-03-31 | fetchedAt:2026-07-07T07:43:20Z: 2026-03-31 PE:13.64 PB:6.3 ROE:10.57%',
+          ),
         ),
         _tool('factor', {
           'action': 'query_macro_factors',
@@ -592,6 +629,9 @@ void main() {
 
     expect(summary, contains('贵州茅台'));
     expect(summary, contains('债券基金'));
+    expect(summary, contains('price=1204.98'));
+    expect(summary, contains('120 bars'));
+    expect(summary, contains('PE=13.64'));
     expect(summary, contains('自选股'));
     expect(summary, contains('信用'));
   });
