@@ -197,6 +197,7 @@ class WorkflowAutomationControl {
       'toolCalls': run.report['toolCalls'],
       'toolResults': run.report['toolResults'],
       'toolErrors': run.report['toolErrors'],
+      'minToolCalls': scenario.minToolCalls,
       'maxToolCalls': scenario.maxToolCalls,
       'maxDataToolCalls': scenario.maxDataToolCalls,
       'finalAssistantText': run.report['finalAssistantText'],
@@ -256,6 +257,7 @@ class WorkflowAutomationControl {
           id: '$scenarioId:$turnId',
           prompt: prompt,
           workflowState: turn['workflowState'],
+          minToolCalls: _optionalPositiveInt(turn['minToolCalls']),
           maxToolCalls: _optionalPositiveInt(turn['maxToolCalls']),
           maxDataToolCalls: _optionalPositiveInt(turn['maxDataToolCalls']),
           expectTools: _stringList(turn['expectTools']),
@@ -423,6 +425,11 @@ class WorkflowAutomationControl {
     if (scenario.maxToolCalls != null) {
       constraints.add(
         'Keep the workflow within ${scenario.maxToolCalls} total tool calls.',
+      );
+    }
+    if (scenario.minToolCalls != null) {
+      constraints.add(
+        'This workflow requires at least ${scenario.minToolCalls} observable tool calls before the final answer.',
       );
     }
     if (scenario.maxDataToolCalls != null) {
@@ -846,6 +853,7 @@ class WorkflowAutomationScenario {
     required this.prompt,
     this.workflowState,
     this.cleanSession = false,
+    this.minToolCalls,
     this.maxToolCalls,
     this.maxDataToolCalls,
     this.expectTools = const [],
@@ -869,6 +877,7 @@ class WorkflowAutomationScenario {
   final String prompt;
   final Object? workflowState;
   final bool cleanSession;
+  final int? minToolCalls;
   final int? maxToolCalls;
   final int? maxDataToolCalls;
   final List<String> expectTools;
@@ -1022,6 +1031,7 @@ class WorkflowAutomationInProcessBridge {
     required String id,
     required String prompt,
     bool cleanSession = false,
+    int? minToolCalls,
     int? maxToolCalls,
     int? maxDataToolCalls,
     List<String> expectTools = const [],
@@ -1048,6 +1058,7 @@ class WorkflowAutomationInProcessBridge {
         id: trimmedId,
         prompt: trimmedPrompt,
         cleanSession: cleanSession,
+        minToolCalls: minToolCalls,
         maxToolCalls: maxToolCalls,
         maxDataToolCalls: maxDataToolCalls,
         expectTools: expectTools,
@@ -1268,6 +1279,7 @@ class WorkflowAutomationHttpHost {
           prompt: prompt,
           workflowState: parsed['workflowState'],
           cleanSession: parsed['cleanSession'] == true,
+          minToolCalls: _optionalPositiveInt(parsed['minToolCalls']),
           maxToolCalls: _optionalPositiveInt(parsed['maxToolCalls']),
           maxDataToolCalls: _optionalPositiveInt(parsed['maxDataToolCalls']),
           expectTools: _stringList(parsed['expectTools']),
@@ -1560,6 +1572,16 @@ List<WorkflowAutomationScenarioAssertion> _evaluateScenario(
         name: 'maxToolCalls.${scenario.maxToolCalls}',
         ok: toolCalls.length <= scenario.maxToolCalls!,
         expected: '<= ${scenario.maxToolCalls}',
+        actual: toolCalls,
+      ),
+    );
+  }
+  if (scenario.minToolCalls != null) {
+    assertions.add(
+      WorkflowAutomationScenarioAssertion(
+        name: 'minToolCalls.${scenario.minToolCalls}',
+        ok: toolCalls.length >= scenario.minToolCalls!,
+        expected: '>= ${scenario.minToolCalls}',
         actual: toolCalls,
       ),
     );

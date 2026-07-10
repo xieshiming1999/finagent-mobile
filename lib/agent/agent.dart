@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -2165,20 +2166,93 @@ class Agent {
     final filePath = '$outputDir/$fileName';
     File(filePath).writeAsStringSync(updatedResult.content);
 
-    final preview = updatedResult.content.substring(0, 2000);
+    final compactJson = _compactPersistedJsonResult(
+      updatedResult.content,
+      filePath: filePath,
+    );
+    final preview = compactJson ?? updatedResult.content.substring(0, 2000);
     return ToolResult(
       toolUseId: updatedResult.toolUseId,
-      content:
+      content: compactJson ??
           '$preview\n\n'
-          '... (${updatedResult.content.length} chars total, '
-          'full output was persisted in diagnostic tool-output storage. '
-          'For normal answers, use this preview and call a narrower query '
-          'with limit/filters or a code-owned summary action instead of reading '
-          'the full generated output.)',
+              '... (${updatedResult.content.length} chars total, '
+              'full output was persisted in diagnostic tool-output storage at $filePath. '
+              'For normal answers, use this preview and call a narrower query '
+              'with limit/filters or a code-owned summary action instead of reading '
+              'the full generated output.)',
       images: updatedResult.images,
       imagePaths: updatedResult.imagePaths,
       isError: updatedResult.isError,
     );
+  }
+
+  String? _compactPersistedJsonResult(
+    String content, {
+    required String filePath,
+  }) {
+    final text = content.trimLeft();
+    if (!text.startsWith('{')) return null;
+    try {
+      final decoded = jsonDecode(content);
+      if (decoded is! Map<String, dynamic>) return null;
+      final compact = <String, dynamic>{};
+      const preserveKeys = [
+        'action',
+        'interfaceId',
+        'provider',
+        'capabilityId',
+        'cacheStatus',
+        'cacheMode',
+        'cachePolicyMode',
+        'cacheDecision',
+        'canonicalSchema',
+        'canonicalTable',
+        'sourceDataTime',
+        'fetchedAt',
+        'count',
+        'source',
+        'symbol',
+        'fundCodes',
+        'seriesSummary',
+        'provenance',
+        'status',
+        'missingReason',
+      ];
+      for (final key in preserveKeys) {
+        if (decoded.containsKey(key)) compact[key] = decoded[key];
+      }
+      _copyCompactedRows(decoded, compact, 'data');
+      _copyCompactedRows(decoded, compact, 'rows');
+      compact['diagnosticOutputPath'] = filePath;
+      compact['diagnosticTruncated'] = true;
+      compact['diagnosticOriginalChars'] = content.length;
+      return const JsonEncoder.withIndent('  ').convert(compact);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _copyCompactedRows(
+    Map<String, dynamic> decoded,
+    Map<String, dynamic> compact,
+    String key,
+  ) {
+    final value = decoded[key];
+    if (value is! List) return;
+    const headCount = 12;
+    const tailCount = 3;
+    final head = value.take(headCount).toList(growable: false);
+    final tailStart = value.length - tailCount < headCount
+        ? headCount
+        : value.length - tailCount;
+    final tail = value.length > headCount
+        ? value.skip(tailStart).toList(growable: false)
+        : const [];
+    compact[key] = [...head, ...tail];
+    compact['${key}PreviewCount'] = head.length + tail.length;
+    compact['${key}OriginalCount'] = value.length;
+    final omitted = value.length - head.length - tail.length;
+    compact['${key}OmittedCount'] = omitted < 0 ? 0 : omitted;
   }
 
   /// Strip images from messages older than [keepTurns] user turns.

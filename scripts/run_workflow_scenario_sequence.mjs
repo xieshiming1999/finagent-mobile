@@ -49,6 +49,7 @@ for (const scenario of selected) {
       prompt: runtimeTurn.prompt,
       workflowState: runtimeTurn.workflowState,
       cleanSession: false,
+      minToolCalls: runtimeTurn.minToolCalls,
       maxToolCalls: runtimeTurn.maxToolCalls,
       maxDataToolCalls: runtimeTurn.maxDataToolCalls,
       disallowTools: runtimeTurn.disallowTools,
