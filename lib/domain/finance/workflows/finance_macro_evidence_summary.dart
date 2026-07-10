@@ -174,6 +174,7 @@ class FinanceMacroEvidenceSummary {
         decisionLines.addAll(_decisionRows(decoded));
         switch (action) {
           case 'query_macro_factors':
+          case 'query_macro_numeric_series':
             factorLines.addAll(_factorRows(decoded));
             break;
           case 'macro_research_sources':
@@ -211,22 +212,30 @@ class FinanceMacroEvidenceSummary {
   }
 
   List<String> _factorRows(Map<String, dynamic> payload) {
-    final rows = payload['rows'];
-    if (rows is! List || rows.isEmpty) return const [];
+    final rows = _macroRows(payload);
+    if (rows.isEmpty) return const [];
     return rows
         .whereType<Map>()
         .map((row) {
           final title = _text(
-            row['title'] ?? row['factor_name'] ?? row['factorId'],
+            row['title'] ??
+                row['factor_name'] ??
+                row['factorId'] ??
+                row['metricName'] ??
+                row['seriesId'],
           );
           final family = _text(row['family']);
           final source = _text(row['source'] ?? row['provider']);
           final time = _text(row['sourceDataTime'] ?? row['source_time']);
+          final value = _text(row['value']);
+          final unit = _text(row['unit']);
           return [
             title,
             family,
             source,
             time,
+            if (value.isNotEmpty)
+              'value=$value${unit.isNotEmpty ? ' $unit' : ''}',
           ].where((v) => v.isNotEmpty).join(' / ');
         })
         .where((line) => line.isNotEmpty)
@@ -700,8 +709,7 @@ class FinanceMacroEvidenceSummary {
 
   List<Map> _evidenceCandidateRows(Map<String, dynamic> payload) {
     final candidates = <Map>[];
-    final rows = payload['rows'];
-    if (rows is List) candidates.addAll(rows.whereType<Map>());
+    candidates.addAll(_macroRows(payload).whereType<Map>());
     final contentEvidence = payload['contentEvidence'];
     if (contentEvidence is List)
       candidates.addAll(contentEvidence.whereType<Map>());
@@ -734,6 +742,15 @@ class FinanceMacroEvidenceSummary {
             : '',
       },
     ];
+  }
+
+  List<Object?> _macroRows(Map<String, dynamic> payload) {
+    final rows = <Object?>[];
+    final directRows = payload['rows'];
+    if (directRows is List) rows.addAll(directRows);
+    final seriesRows = payload['series'];
+    if (seriesRows is List) rows.addAll(seriesRows);
+    return rows;
   }
 
   String _tierForRow(Map row) {

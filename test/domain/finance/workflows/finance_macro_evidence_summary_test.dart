@@ -67,13 +67,10 @@ void main() {
     );
 
     final actions = rewritten.map((call) => call.input['action']).toList();
-    expect(actions, contains('finance_news'));
+    expect(actions, isNot(contains('finance_news')));
     expect(actions.where((action) => action == 'query_finance_news').length, 1);
-    expect(
-      actions.indexOf('finance_news') <
-          actions.lastIndexOf('query_finance_news'),
-      isTrue,
-    );
+    expect(actions, contains('query_macro_attribution'));
+    expect(actions, contains('query_macro_research_evidence'));
   });
 
   test('labels raw finance news result as refresh and readback evidence', () {
@@ -301,6 +298,203 @@ void main() {
     expect(interception.answer, contains('tier=official_event_document'));
     expect(interception.answer, contains('impact=mixed'));
     expect(interception.answer, contains('Research/WebFetch'));
+  });
+
+  test('cites EIA numeric evidence for oil-market A-share sector risk', () {
+    final summary = FinanceMacroEvidenceSummary().build(
+      messages: [
+        Message(role: Role.user, content: 'EIA oil inventory macro sector risk'),
+        Message(
+          role: Role.assistant,
+          content: '',
+          toolUses: const [
+            ToolUse(
+              id: 'eia',
+              name: 'MarketData',
+              input: {
+                'action': 'query_macro_numeric_series',
+                'provider': 'eia',
+                'seriesId': 'WCESTUS1',
+                'target': 'A-shares',
+              },
+            ),
+          ],
+        ),
+        _tool('eia', {
+          'action': 'query_macro_numeric_series',
+          'status': 'ok',
+          'series': [
+            {
+              'seriesId': 'WCESTUS1',
+              'metricName': 'WCESTUS1 US commercial crude oil inventories',
+              'provider': 'eia',
+              'sourceName': 'EIA',
+              'value': 420000,
+              'unit': 'MBBL',
+              'sourceDataTime': '2026-07-03',
+              'fetchedAt': '2026-07-10T02:20:00.000Z',
+              'affectedAssets': ['oil', 'energy equities', 'A-shares'],
+              'affectedSectors': ['Energy', 'Transport', 'Materials'],
+              'transmissionChannels': ['energy inventory', 'inflation input'],
+              'expectedDirection': 'mixed',
+              'evidenceTier': 'official_numeric_fact',
+              'accessStatus': 'public',
+              'confidenceEffect': 'mixed',
+              'nextEvidenceAction': 'use cache/readback',
+            },
+          ],
+        }),
+      ],
+      turnStartIndex: 0,
+      failureSummary: 'test',
+    );
+
+    expect(summary, contains('WCESTUS1 US commercial crude oil inventories'));
+    expect(summary, contains('EIA'));
+    expect(summary, contains('value=420000 MBBL'));
+    expect(summary, contains('能源'));
+    expect(summary, contains('商品/能源'));
+    expect(summary, contains('不能直接编译成可执行交易信号'));
+  });
+
+  test('uses EIA only as stock and fund macro context', () {
+    final summary = FinanceMacroEvidenceSummary().build(
+      messages: [
+        Message(role: Role.user, content: 'stock and fund macro context'),
+        Message(
+          role: Role.assistant,
+          content: '',
+          toolUses: const [
+            ToolUse(
+              id: 'quote',
+              name: 'MarketData',
+              input: {'action': 'query_quote', 'code': '601857'},
+            ),
+            ToolUse(
+              id: 'fund',
+              name: 'MarketData',
+              input: {'action': 'query_fund_nav', 'code': '162411'},
+            ),
+            ToolUse(
+              id: 'eia',
+              name: 'MarketData',
+              input: {
+                'action': 'query_macro_numeric_series',
+                'provider': 'eia',
+                'seriesId': 'WCESTUS1',
+                'assets': 'funds',
+              },
+            ),
+          ],
+        ),
+        _tool('quote', {
+          'action': 'query_quote',
+          'status': 'ok',
+          'rows': [
+            {'code': '601857', 'name': '中国石油', 'source': 'local'},
+          ],
+        }),
+        _tool('fund', {
+          'action': 'query_fund_nav',
+          'status': 'ok',
+          'code': '162411',
+          'source': 'local',
+          'count': 1,
+        }),
+        _tool('eia', {
+          'action': 'query_macro_numeric_series',
+          'status': 'ok',
+          'series': [
+            {
+              'seriesId': 'WCESTUS1',
+              'metricName': 'US commercial crude oil inventories',
+              'provider': 'eia',
+              'sourceName': 'EIA',
+              'value': 420000,
+              'unit': 'MBBL',
+              'sourceDataTime': '2026-07-03',
+              'fetchedAt': '2026-07-10T02:20:00.000Z',
+              'affectedAssets': ['oil', 'energy equities', 'funds'],
+              'affectedSectors': ['Energy'],
+              'transmissionChannels': ['energy inventory', 'oil supply demand'],
+              'expectedDirection': 'mixed',
+              'evidenceTier': 'official_numeric_fact',
+              'accessStatus': 'public',
+            },
+          ],
+        }),
+      ],
+      turnStartIndex: 0,
+      failureSummary: 'test',
+    );
+
+    expect(summary, contains('个股行情'));
+    expect(summary, contains('基金净值'));
+    expect(summary, contains('US commercial crude oil inventories'));
+    expect(summary, contains('基金'));
+    expect(summary, contains('不能直接编译成可执行交易信号'));
+    expect(summary, contains('本轮没有执行下单'));
+  });
+
+  test('keeps EIA strategy and watchlist use as observation context', () {
+    final summary = FinanceMacroEvidenceSummary().build(
+      messages: [
+        Message(role: Role.user, content: 'strategy watch with EIA'),
+        Message(
+          role: Role.assistant,
+          content: '',
+          toolUses: const [
+            ToolUse(
+              id: 'watch',
+              name: 'Watchlist',
+              input: {'action': 'list', 'type': 'macro-condition'},
+            ),
+            ToolUse(
+              id: 'eia',
+              name: 'MarketData',
+              input: {
+                'action': 'query_macro_numeric_series',
+                'provider': 'eia',
+                'seriesId': 'WCESTUS1',
+                'assets': 'strategy',
+              },
+            ),
+          ],
+        ),
+        _tool('eia', {
+          'action': 'query_macro_numeric_series',
+          'status': 'ok',
+          'series': [
+            {
+              'seriesId': 'WCESTUS1',
+              'metricName': 'US commercial crude oil inventories',
+              'provider': 'eia',
+              'sourceName': 'EIA',
+              'value': 420000,
+              'unit': 'MBBL',
+              'sourceDataTime': '2026-07-03',
+              'fetchedAt': '2026-07-10T02:20:00.000Z',
+              'affectedAssets': ['strategy', 'oil', 'energy equities'],
+              'affectedSectors': ['Energy'],
+              'transmissionChannels': ['energy inventory'],
+              'expectedDirection': 'mixed',
+              'evidenceTier': 'official_numeric_fact',
+              'accessStatus': 'public',
+              'nextEvidenceAction': 'use cache/readback',
+            },
+          ],
+        }),
+      ],
+      turnStartIndex: 0,
+      failureSummary: 'test',
+    );
+
+    expect(summary, contains('自选股'));
+    expect(summary, contains('策略'));
+    expect(summary, contains('观察条件'));
+    expect(summary, contains('失效条件'));
+    expect(summary, contains('本轮没有执行下单、保存策略'));
+    expect(summary, contains('不能直接编译成可执行交易信号'));
   });
 
   test(
