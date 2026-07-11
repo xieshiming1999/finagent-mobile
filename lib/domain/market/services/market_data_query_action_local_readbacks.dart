@@ -57,6 +57,7 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
       }
     }
     final sourceProviders = _quoteSourceProviders(rows);
+    final provenance = _quoteReadbackProvenance(rows);
     return {
       'action': action,
       'symbols': symbols,
@@ -76,6 +77,7 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
           : 'cacheFirst read reusable local index.quote rows before provider routing',
       'canonicalSchema': 'quote_snapshot',
       'canonicalTable': 'quote_snapshot',
+      ...provenance,
       'count': rows.length,
       'source': 'local quote_snapshot',
       'data': rows.map((row) => row.toJson()).toList(),
@@ -106,6 +108,7 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
       }
     }
     final sourceProviders = _quoteSourceProviders(rows);
+    final provenance = _quoteReadbackProvenance(rows);
     return {
       'action': action,
       'symbols': symbols,
@@ -129,6 +132,7 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
           : 'cacheFirst read reusable local data before provider routing; cache reader returned usable quote_snapshot rows for requested symbols',
       'canonicalSchema': 'quote_snapshot',
       'canonicalTable': 'quote_snapshot',
+      ...provenance,
       'count': rows.length,
       'source': 'local quote_snapshot',
       'data': rows.map((row) => row.toJson()).toList(),
@@ -153,6 +157,7 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
       constraint: providerConstraint,
     );
     final sourceProviders = _quoteSourceProviders(rows);
+    final provenance = _quoteReadbackProvenance(rows);
     final identity =
         store?.queryStockIdentity(symbol) ??
         _dataManager?.queryStockIdentity(symbol);
@@ -184,10 +189,48 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
           : 'cacheFirst read reusable local data before provider routing; cache reader returned usable quote_snapshot rows',
       'canonicalSchema': 'quote_snapshot',
       'canonicalTable': 'quote_snapshot',
+      ...provenance,
       'count': rows.length,
       'source': 'local quote_snapshot',
       'data': rows.map((row) => row.toJson()).toList(),
     };
+  }
+
+  Map<String, dynamic> _quoteReadbackProvenance(List<StockQuote> rows) {
+    final sourceDataTime = _latestQuoteValue(rows, (row) => row.timestamp);
+    final fetchedAt = _latestQuoteValue(rows, (row) => row.fetchedAt);
+    final sources = _quoteSourceProviders(rows);
+    return {
+      if (sourceDataTime != null) 'sourceDataTime': sourceDataTime,
+      if (fetchedAt != null) 'fetchedAt': fetchedAt,
+      if (sourceDataTime != null || fetchedAt != null || sources.isNotEmpty)
+        'sourceCoverage': {
+          if (sources.isNotEmpty) 'sources': sources,
+          if (sourceDataTime != null) 'sourceDataTime': sourceDataTime,
+          if (fetchedAt != null) 'fetchedAt': fetchedAt,
+          'cacheStatus': rows.isEmpty ? 'cache-miss' : 'cache-hit',
+        },
+      if (sourceDataTime != null || fetchedAt != null || sources.isNotEmpty)
+        'sourceCoverageBrief': [
+          if (sources.isNotEmpty) 'source=${sources.join(',')}',
+          if (sourceDataTime != null) 'sourceDataTime=$sourceDataTime',
+          if (fetchedAt != null) 'fetchedAt=$fetchedAt',
+          'cache=${rows.isEmpty ? 'cache-miss' : 'cache-hit'}',
+        ].join('; '),
+    };
+  }
+
+  String? _latestQuoteValue(
+    List<StockQuote> rows,
+    String? Function(StockQuote row) read,
+  ) {
+    String? latest;
+    for (final row in rows) {
+      final value = read(row);
+      if (value == null || value.isEmpty) continue;
+      if (latest == null || value.compareTo(latest) > 0) latest = value;
+    }
+    return latest;
   }
 
   String _resolveQuoteReadback(
@@ -846,7 +889,8 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
           ) ??
           const <Map<String, dynamic>>[],
     );
-    final queryMiss = rows.isEmpty && keyword != null && keyword.trim().isNotEmpty;
+    final queryMiss =
+        rows.isEmpty && keyword != null && keyword.trim().isNotEmpty;
     if (queryMiss) {
       rows = _queryMapsWithProviderConstraint(
         constraint: providerConstraint,
@@ -887,8 +931,8 @@ extension _MarketDataQueryActionLocalReadbacks on MarketDataQueryActionService {
                 ? 'cacheFirst strict provider read rejected local cache rows that did not match ${providerConstraint.requestedProvider}; no finance_news rows matched the requirement'
                 : 'cacheFirst read reusable local data; no finance_news rows matched the requirement'
           : queryMiss
-              ? 'cacheFirst target-specific finance_news query returned no rows; reused latest governed finance_news rows as broad macro/news context'
-              : 'cacheFirst read reusable local data before provider routing; cache reader returned usable finance_news rows',
+          ? 'cacheFirst target-specific finance_news query returned no rows; reused latest governed finance_news rows as broad macro/news context'
+          : 'cacheFirst read reusable local data before provider routing; cache reader returned usable finance_news rows',
       if (queryMiss) 'queryMiss': keyword,
       'canonicalSchema': 'finance_news',
       'canonicalTable': 'finance_news',

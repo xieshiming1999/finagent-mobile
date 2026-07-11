@@ -1,12 +1,54 @@
 import 'dart:io';
 
 import 'package:finagent/agent/data_fetcher/data_manager.dart';
+import 'package:finagent/agent/data_fetcher/models.dart';
 import 'package:finagent/agent/data_fetcher/reusable_data_store.dart';
 import 'package:finagent/agent/tool_context.dart';
 import 'package:finagent/domain/market/services/market_data_query_action_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('index quote readback exposes envelope-level provenance', () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'finagent-query-index-quote-provenance-',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final store = ReusableDataStore(dir.path)..cleanup();
+    store.saveQuoteSnapshots([
+      StockQuote(
+        code: '000001',
+        timestamp: '2026-07-10T15:00:00.000Z',
+        fetchedAt: '2026-07-10T15:01:00.000Z',
+        name: '上证指数',
+        price: 4031.5,
+        change: 10,
+        changePct: 0.25,
+        open: 4020,
+        high: 4040,
+        low: 4010,
+        prevClose: 4021.5,
+        volume: 1000,
+        amount: 1000000,
+        source: '通达信:index_quote',
+      ),
+    ], '通达信:index_quote');
+
+    final service = MarketDataQueryActionService(dataManager: DataManager());
+    final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
+
+    final payload = service.query('query_index_quote', ['000001'], {}, context);
+
+    expect(payload['action'], 'query_index_quote');
+    expect(payload['interfaceId'], 'index.quote');
+    expect(payload['cacheStatus'], 'cache-hit');
+    expect(payload['count'], 1);
+    expect(payload['sourceDataTime'], '2026-07-10T15:00:00.000Z');
+    expect(payload['fetchedAt'], '2026-07-10T15:01:00.000Z');
+    expect(payload['sourceCoverageBrief'], contains('sourceDataTime='));
+    expect(payload['sourceCoverageBrief'], contains('fetchedAt='));
+    expect(payload['sourceProviders'], contains('通达信:index_quote'));
+  });
+
   test(
     'query_fund_nav excludes known money funds from ordinary NAV rows',
     () async {
