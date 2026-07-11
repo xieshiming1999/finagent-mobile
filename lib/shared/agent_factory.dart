@@ -75,6 +75,7 @@ import '../agent/tools/image_extract_tool/image_extract_tool.dart';
 import '../agent/tools/interaction_evidence_tool/interaction_evidence_tool.dart';
 import '../agent/tools/workflow_evidence_tool/workflow_evidence_tool.dart';
 import '../agent/tools/finance_workflow_state_tool/finance_workflow_state_tool.dart';
+import '../agent/tools/capability_status_tool/capability_status_tool.dart';
 import '../agent/tools/multimodal_agent_tool/multimodal_agent_tool.dart';
 import '../domain/market/services/market_data_resolve_service.dart';
 import 'api_config.dart';
@@ -291,6 +292,9 @@ AgentRuntime createAgentRuntime({
       : baseTools.where((t) => !excludeTools.contains(t.name)).toList();
   if (!excludeTools.contains('ToolCatalog')) {
     tools.add(ToolCatalogTool(toolsProvider: () => tools));
+  }
+  if (!excludeTools.contains('CapabilityStatus')) {
+    tools.add(CapabilityStatusTool(toolsProvider: () => tools));
   }
 
   final financeDataBudgetPolicy = FinanceDataBudgetPolicy();
