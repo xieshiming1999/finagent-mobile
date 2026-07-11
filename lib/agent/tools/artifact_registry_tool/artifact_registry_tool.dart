@@ -23,7 +23,7 @@ class ArtifactRegistryTool extends Tool {
     'properties': {
       'action': {
         'type': 'string',
-        'enum': ['help', 'list', 'get', 'register'],
+        'enum': ['help', 'list', 'get', 'register', 'graph'],
       },
       'kind': {
         'type': 'string',
@@ -82,6 +82,11 @@ class ArtifactRegistryTool extends Tool {
         return _get(toolUseId, registry, input);
       case 'register':
         return _register(toolUseId, registry, input);
+      case 'graph':
+        return ToolResult(
+          toolUseId: toolUseId,
+          content: jsonEncode(_graph(registry, input)),
+        );
       default:
         return ToolResult(
           toolUseId: toolUseId,
@@ -94,12 +99,13 @@ class ArtifactRegistryTool extends Tool {
 
   Map<String, dynamic> _help() => {
     'contract': 'artifact-registry-help-v1',
-    'actions': ['help', 'list', 'get', 'register'],
+    'actions': ['help', 'list', 'get', 'register', 'graph'],
     'kinds': ArtifactKind.values.map((kind) => kind.wireName).toList(),
     'guidance': [
       'Register artifacts after creating durable workflow outputs; do not rely only on chat text.',
       'Use provenance and freshness to explain where evidence came from and whether it is reusable.',
       'Use get/list before reusing an existing artifact in later turns.',
+      'Use graph to inspect claim/evidence/source relationships before citing a prior artifact.',
     ],
   };
 
@@ -198,6 +204,75 @@ class ArtifactRegistryTool extends Tool {
         'artifact': record.toJson(),
       }),
     );
+  }
+
+  Map<String, dynamic> _graph(
+    ArtifactRegistry registry,
+    Map<String, dynamic> input,
+  ) {
+    final kind = _kindOrNull(input['kind']);
+    final limit = _intValue(input['limit'], defaultValue: 50).clamp(1, 100);
+    final records = registry.list(kind: kind).take(limit).toList();
+    final nodes = <String, Map<String, dynamic>>{};
+    final edges = <Map<String, dynamic>>[];
+
+    void addNode(String id, String type, Map<String, dynamic> data) {
+      if (id.trim().isEmpty) return;
+      nodes[id] = {'id': id, 'type': type, ...data};
+    }
+
+    for (final record in records) {
+      final artifact = record.toJson();
+      final artifactId = artifact['stableRef'] as String;
+      addNode(artifactId, 'artifact', {
+        'kind': artifact['kind'],
+        'title': artifact['title'],
+        'verificationStatus': artifact['verificationStatus'],
+        'freshness': artifact['freshness'],
+      });
+      final sourceId = 'source:${artifact['source']}';
+      addNode(sourceId, 'source', {'source': artifact['source']});
+      edges.add({
+        'from': artifactId,
+        'to': sourceId,
+        'relation': 'from_source',
+      });
+
+      final provenance = artifact['provenance'];
+      if (provenance is Map) {
+        for (final entry in provenance.entries) {
+          final key = '${entry.key}';
+          final value = entry.value;
+          if (value is String && value.trim().isNotEmpty) {
+            final nodeId = '$key:$value';
+            addNode(nodeId, key, {'value': value});
+            edges.add({
+              'from': artifactId,
+              'to': nodeId,
+              'relation': 'proves_with',
+            });
+          }
+        }
+      }
+      for (final link in _stringList(artifact['links'])) {
+        addNode(
+          link,
+          link.startsWith('artifact:') ? 'artifact_ref' : 'reference',
+          {'value': link},
+        );
+        edges.add({'from': artifactId, 'to': link, 'relation': 'links_to'});
+      }
+    }
+    return {
+      'contract': 'artifact-evidence-graph-v1',
+      'artifactCount': records.length,
+      'nodeCount': nodes.length,
+      'edgeCount': edges.length,
+      'nodes': nodes.values.toList(),
+      'edges': edges,
+      'guidance':
+          'Use this graph to connect claims, artifacts, source/provider evidence, freshness, and missing links before reusing prior analysis.',
+    };
   }
 }
 

@@ -59,6 +59,30 @@ void main() {
               )
               as Map<String, dynamic>;
       expect(get['artifact']['title'], 'Stock analysis');
+
+      final graph =
+          jsonDecode(
+                (await tool.call('artifact-graph', {
+                  'action': 'graph',
+                  'kind': 'analysis',
+                }, context)).content,
+              )
+              as Map<String, dynamic>;
+      expect(graph['contract'], 'artifact-evidence-graph-v1');
+      expect(graph['artifactCount'], 1);
+      expect(
+        graph['nodes'],
+        contains(containsPair('id', artifact['stableRef'])),
+      );
+      expect(
+        graph['edges'],
+        contains(
+          allOf([
+            containsPair('from', artifact['stableRef']),
+            containsPair('relation', 'from_source'),
+          ]),
+        ),
+      );
     },
   );
 
