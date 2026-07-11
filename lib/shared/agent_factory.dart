@@ -69,6 +69,7 @@ import '../agent/tools/portfolio_tool/portfolio_tool.dart';
 import '../agent/tools/research_tool/research_tool.dart';
 import '../agent/tools/report_download_tool/report_download_tool.dart';
 import '../agent/tools/report_parse_tool/report_parse_tool.dart';
+import '../agent/tools/runbook_tool/runbook_tool.dart';
 import '../agent/tools/page_render_tool/page_render_tool.dart';
 import '../agent/tools/image_crop_tool/image_crop_tool.dart';
 import '../agent/tools/image_extract_tool/image_extract_tool.dart';
@@ -237,6 +238,7 @@ AgentRuntime createAgentRuntime({
     environmentTool,
     InteractionEvidenceTool(),
     WorkflowEvidenceTool(),
+    RunbookTool(),
     FinanceWorkflowStateTool(),
     ...extraTools,
     uiQueryTool,
