@@ -34,6 +34,9 @@ void main() {
     expect(summary['health']['toolCallCount'], 1);
     expect(summary['health']['toolErrorCount'], 1);
     expect(summary['health']['uiArtifactCount'], 1);
+    expect(summary['runtimeState']['contract'], 'agent-runtime-state-v1');
+    expect(summary['runtimeState']['state'], 'waiting_for_user');
+    expect(summary['runtimeState']['observed']['pendingInteractions'], 1);
   });
 
   test('CapabilityStatus evaluates required evidence', () async {
@@ -100,6 +103,7 @@ void main() {
             as Map<String, dynamic>;
 
     expect(summary['health']['repeatedFailureCount'], 1);
+    expect(summary['runtimeState']['state'], 'blocked');
     final repeated =
         (summary['session']['repeatedFailedToolCalls'] as List).single
             as Map<String, dynamic>;

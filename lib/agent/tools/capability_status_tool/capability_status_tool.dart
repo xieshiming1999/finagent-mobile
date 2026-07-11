@@ -184,6 +184,11 @@ class CapabilityStatusTool extends Tool {
       'pendingInteractions': pending,
       'session': session,
       'artifacts': artifacts,
+      'runtimeState': _deriveRuntimeState(
+        pendingInteractions: pending,
+        session: session,
+        uiArtifactCount: uiArtifactCount,
+      ),
       'guidance':
           'Use evaluate to check whether selected evidence classes are present before final workflow claims.',
     };
@@ -315,8 +320,12 @@ class CapabilityStatusTool extends Tool {
     final recentFailedTools = <Map<String, dynamic>>[];
     final toolUsesById = <String, Map<String, dynamic>>{};
     final repeatedFailuresBySignature = <String, Map<String, dynamic>>{};
+    final resolvedToolUseIds = <String>{};
     var toolCallCount = 0;
     var toolErrorCount = 0;
+    var lastRole = '';
+    var lastAssistantHadToolUse = false;
+    var lastToolResultIsError = false;
     for (final line in file.readAsLinesSync()) {
       final text = line.trim();
       if (text.isEmpty) continue;
@@ -325,9 +334,12 @@ class CapabilityStatusTool extends Tool {
         if (decoded is! Map<String, dynamic> || decoded['type'] != 'message') {
           continue;
         }
+        lastRole = '${decoded['role'] ?? ''}';
         final toolUses = decoded['toolUses'];
         if (toolUses is List) {
           toolCallCount += toolUses.length;
+          lastAssistantHadToolUse =
+              lastRole == 'assistant' && toolUses.isNotEmpty;
           for (final item in toolUses) {
             if (item is Map) {
               final id = '${item['id'] ?? ''}';
@@ -341,6 +353,11 @@ class CapabilityStatusTool extends Tool {
           }
         }
         final result = decoded['toolResult'] ?? decoded['tool_result'];
+        if (result is Map) {
+          final toolUseId = '${result['toolUseId'] ?? ''}';
+          if (toolUseId.isNotEmpty) resolvedToolUseIds.add(toolUseId);
+          lastToolResultIsError = result['isError'] == true;
+        }
         if (result is Map && result['isError'] == true) {
           toolErrorCount++;
           final toolUseId = '${result['toolUseId'] ?? ''}';
@@ -372,6 +389,10 @@ class CapabilityStatusTool extends Tool {
       'exists': true,
       'toolCallCount': toolCallCount,
       'toolErrorCount': toolErrorCount,
+      'lastRole': lastRole,
+      'lastAssistantHadToolUse': lastAssistantHadToolUse,
+      'lastToolResultIsError': lastToolResultIsError,
+      'unresolvedToolCallCount': toolUsesById.length - resolvedToolUseIds.length,
       'recentFailedTools': recentFailedTools,
       'repeatedFailureCount': repeatedFailuresBySignature.values
           .where((row) => (row['count'] as int) >= 3)
@@ -386,6 +407,70 @@ class CapabilityStatusTool extends Tool {
             },
           )
           .toList(),
+    };
+  }
+
+  Map<String, dynamic> _deriveRuntimeState({
+    required List<Map<String, dynamic>> pendingInteractions,
+    required Map<String, dynamic> session,
+    required int uiArtifactCount,
+  }) {
+    final pendingTypes = pendingInteractions
+        .map((item) => '${item['type'] ?? ''}'.toLowerCase())
+        .toList();
+    String state = 'idle';
+    String reason = 'No active session evidence is visible.';
+    String nextAction = 'Start a workflow or inspect ToolCatalog/Runbook before broad action.';
+
+    if (pendingTypes.any((type) => type.contains('approval') || type.contains('permission'))) {
+      state = 'waiting_for_approval';
+      reason = 'A structured approval or permission interaction is pending.';
+      nextAction = 'Resolve the pending approval before continuing the workflow.';
+    } else if (pendingInteractions.isNotEmpty) {
+      state = 'waiting_for_user';
+      reason = 'A structured user question is pending.';
+      nextAction = 'Answer the pending user question before continuing.';
+    } else if ((session['unresolvedToolCallCount'] as int? ?? 0) > 0) {
+      state = 'using_tool';
+      reason = 'At least one tool call has no visible result yet.';
+      nextAction = 'Wait for the tool result or inspect WorkflowEvidence for missing output.';
+    } else if ((session['repeatedFailureCount'] as int? ?? 0) > 0) {
+      state = 'blocked';
+      reason = 'Repeated identical failed tool calls are visible.';
+      nextAction = 'Stop repeating the same call; inspect help/status or choose a recovery path.';
+    } else if ((session['toolErrorCount'] as int? ?? 0) > 0) {
+      state = 'blocked';
+      reason = 'Failed tool results are visible in the current session.';
+      nextAction = 'Inspect recentFailedTools and recover before final claims.';
+    } else if (session['lastRole'] == 'tool' && session['lastToolResultIsError'] != true) {
+      state = 'verifying_result';
+      reason = 'The latest visible event is a successful tool result.';
+      nextAction = 'Verify evidence and synthesize the result before finalizing.';
+    } else if (session['lastRole'] == 'assistant' &&
+        session['lastAssistantHadToolUse'] != true &&
+        ((session['toolCallCount'] as int? ?? 0) > 0 || uiArtifactCount > 0)) {
+      state = 'complete';
+      reason = 'The latest assistant message follows collected tool or UI evidence.';
+      nextAction = 'Use CapabilityStatus(action:"evaluate") or WorkflowEvidence before relying on completion.';
+    } else if ((session['toolCallCount'] as int? ?? 0) > 0) {
+      state = 'thinking';
+      reason = 'Tool evidence exists but no terminal assistant synthesis is visible.';
+      nextAction = 'Continue reasoning or inspect workflow evidence.';
+    }
+
+    return {
+      'contract': 'agent-runtime-state-v1',
+      'state': state,
+      'reason': reason,
+      'nextAction': nextAction,
+      'observed': {
+        'pendingInteractions': pendingInteractions.length,
+        'toolCalls': session['toolCallCount'] ?? 0,
+        'toolErrors': session['toolErrorCount'] ?? 0,
+        'repeatedFailures': session['repeatedFailureCount'] ?? 0,
+        'uiArtifacts': uiArtifactCount,
+        'lastRole': session['lastRole'] ?? '',
+      },
     };
   }
 

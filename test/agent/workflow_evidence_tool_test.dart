@@ -99,5 +99,8 @@ void main() {
     expect(summary['session']['toolErrorCount'], 1);
     expect(summary['artifacts']['dashboards']['count'], 1);
     expect(summary['artifacts']['pages']['count'], 1);
+    expect(summary['runtimeState']['contract'], 'agent-runtime-state-v1');
+    expect(summary['runtimeState']['state'], 'waiting_for_user');
+    expect(summary['runtimeState']['observed']['toolErrors'], 1);
   });
 }

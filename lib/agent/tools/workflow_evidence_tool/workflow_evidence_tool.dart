@@ -68,6 +68,9 @@ class WorkflowEvidenceTool extends Tool {
     final sessionEvidence = _readCurrentSession(context, limit);
     final artifacts = _listArtifacts(context, limit);
     final pending = readPendingInteractionState(context);
+    final uiArtifactCount =
+        ((artifacts['pages'] as Map)['count'] as int) +
+        ((artifacts['dashboards'] as Map)['count'] as int);
     return ToolResult(
       toolUseId: toolUseId,
       content: jsonEncode({
@@ -83,6 +86,11 @@ class WorkflowEvidenceTool extends Tool {
         'pendingInteractions': pending,
         'session': sessionEvidence,
         'artifacts': artifacts,
+        'runtimeState': _deriveRuntimeState(
+          pendingInteractions: pending,
+          session: sessionEvidence,
+          uiArtifactCount: uiArtifactCount,
+        ),
         'guidance':
             'Use this summary to verify tool calls, failures, pending human input, and UI artifacts. It is evidence, not a substitute for a full app workflow check.',
       }),
@@ -120,6 +128,11 @@ class WorkflowEvidenceTool extends Tool {
     var toolCallCount = 0;
     var toolResultCount = 0;
     var toolErrorCount = 0;
+    var lastRole = '';
+    var lastAssistantHadToolUse = false;
+    var lastToolResultIsError = false;
+    final toolUseIds = <String>{};
+    final resolvedToolUseIds = <String>{};
 
     for (final line in file.readAsLinesSync()) {
       final text = line.trim();
@@ -130,6 +143,7 @@ class WorkflowEvidenceTool extends Tool {
         if (decoded['type'] != 'message') continue;
         messageCount++;
         final role = decoded['role']?.toString() ?? '';
+        lastRole = role;
         final item = <String, dynamic>{
           'role': role,
           if (decoded['timestamp'] != null) 'timestamp': decoded['timestamp'],
@@ -137,6 +151,7 @@ class WorkflowEvidenceTool extends Tool {
         final toolUses = decoded['toolUses'];
         if (toolUses is List && toolUses.isNotEmpty) {
           toolCallCount += toolUses.length;
+          lastAssistantHadToolUse = role == 'assistant';
           item['toolUses'] = toolUses
               .whereType<Map>()
               .map(
@@ -146,11 +161,18 @@ class WorkflowEvidenceTool extends Tool {
                 },
               )
               .toList();
+          for (final tool in toolUses.whereType<Map>()) {
+            final id = '${tool['id'] ?? ''}';
+            if (id.isNotEmpty) toolUseIds.add(id);
+          }
         }
         final toolResult = decoded['toolResult'] ?? decoded['tool_result'];
         if (toolResult is Map) {
           toolResultCount++;
           final isError = toolResult['isError'] == true;
+          lastToolResultIsError = isError;
+          final toolUseId = '${toolResult['toolUseId'] ?? ''}';
+          if (toolUseId.isNotEmpty) resolvedToolUseIds.add(toolUseId);
           if (isError) toolErrorCount++;
           item['toolResult'] = {
             'isError': isError,
@@ -172,10 +194,14 @@ class WorkflowEvidenceTool extends Tool {
       'exists': true,
       'messageCount': messageCount,
       'toolCallCount': toolCallCount,
-      'toolResultCount': toolResultCount,
-      'toolErrorCount': toolErrorCount,
-      'recent': recent,
-    };
+        'toolResultCount': toolResultCount,
+        'toolErrorCount': toolErrorCount,
+        'lastRole': lastRole,
+        'lastAssistantHadToolUse': lastAssistantHadToolUse,
+        'lastToolResultIsError': lastToolResultIsError,
+        'unresolvedToolCallCount': toolUseIds.length - resolvedToolUseIds.length,
+        'recent': recent,
+      };
   }
 
   Map<String, dynamic> _listArtifacts(ToolContext context, int limit) {
@@ -226,4 +252,63 @@ class WorkflowEvidenceTool extends Tool {
 
   String _truncate(String value, int max) =>
       value.length <= max ? value : '${value.substring(0, max)}...';
+
+  Map<String, dynamic> _deriveRuntimeState({
+    required List<Map<String, dynamic>> pendingInteractions,
+    required Map<String, dynamic> session,
+    required int uiArtifactCount,
+  }) {
+    final pendingTypes = pendingInteractions
+        .map((item) => '${item['type'] ?? ''}'.toLowerCase())
+        .toList();
+    String state = 'idle';
+    String reason = 'No active session evidence is visible.';
+    String nextAction = 'Start a workflow or inspect tool help before broad action.';
+
+    if (pendingTypes.any((type) => type.contains('approval') || type.contains('permission'))) {
+      state = 'waiting_for_approval';
+      reason = 'A structured approval or permission interaction is pending.';
+      nextAction = 'Resolve the pending approval before continuing the workflow.';
+    } else if (pendingInteractions.isNotEmpty) {
+      state = 'waiting_for_user';
+      reason = 'A structured user question is pending.';
+      nextAction = 'Answer the pending user question before continuing.';
+    } else if ((session['unresolvedToolCallCount'] as int? ?? 0) > 0) {
+      state = 'using_tool';
+      reason = 'At least one tool call has no visible result yet.';
+      nextAction = 'Wait for the tool result or inspect session evidence for missing output.';
+    } else if ((session['toolErrorCount'] as int? ?? 0) > 0) {
+      state = 'blocked';
+      reason = 'Failed tool results are visible in the current session.';
+      nextAction = 'Inspect failed tool results and recover before final claims.';
+    } else if (session['lastRole'] == 'tool' && session['lastToolResultIsError'] != true) {
+      state = 'verifying_result';
+      reason = 'The latest visible event is a successful tool result.';
+      nextAction = 'Verify evidence and synthesize the result before finalizing.';
+    } else if (session['lastRole'] == 'assistant' &&
+        session['lastAssistantHadToolUse'] != true &&
+        ((session['toolCallCount'] as int? ?? 0) > 0 || uiArtifactCount > 0)) {
+      state = 'complete';
+      reason = 'The latest assistant message follows collected tool or UI evidence.';
+      nextAction = 'Use WorkflowEvidence or CapabilityStatus evaluation before relying on completion.';
+    } else if ((session['toolCallCount'] as int? ?? 0) > 0) {
+      state = 'thinking';
+      reason = 'Tool evidence exists but no terminal assistant synthesis is visible.';
+      nextAction = 'Continue reasoning or inspect workflow evidence.';
+    }
+
+    return {
+      'contract': 'agent-runtime-state-v1',
+      'state': state,
+      'reason': reason,
+      'nextAction': nextAction,
+      'observed': {
+        'pendingInteractions': pendingInteractions.length,
+        'toolCalls': session['toolCallCount'] ?? 0,
+        'toolErrors': session['toolErrorCount'] ?? 0,
+        'uiArtifacts': uiArtifactCount,
+        'lastRole': session['lastRole'] ?? '',
+      },
+    };
+  }
 }
