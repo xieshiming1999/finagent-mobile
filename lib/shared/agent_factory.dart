@@ -26,6 +26,7 @@ import '../agent/tool_context.dart';
 import '../agent/tools/agent_tool/agent_tool.dart';
 import '../agent/tools/agent_self_debug_tool/agent_self_debug_tool.dart';
 import '../agent/tools/bash_tool/bash_tool.dart';
+import '../agent/tools/budget_governor_tool/budget_governor_tool.dart';
 import '../agent/tools/cron_create_tool/cron_create_tool.dart';
 import '../agent/tools/cron_delete_tool/cron_delete_tool.dart';
 import '../agent/tools/cron_list_tool/cron_list_tool.dart';
@@ -246,6 +247,7 @@ AgentRuntime createAgentRuntime({
     WorkflowVerifierTool(),
     ProviderRouterTool(),
     RecoveryPlannerTool(),
+    BudgetGovernorTool(),
     RunbookTool(),
     ArtifactRegistryTool(),
     FinanceWorkflowStateTool(),
