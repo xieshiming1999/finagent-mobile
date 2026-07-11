@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:finagent/agent/message.dart';
+import 'package:finagent/agent/prompt_builder.dart';
 import 'package:finagent/agent/tool.dart';
 import 'package:finagent/agent/tool_context.dart';
 import 'package:finagent/agent/tools/ask_user_question_tool/ask_user_question_tool.dart';
@@ -96,5 +97,26 @@ void main() {
     expect(summary.name, 'AskUserQuestion');
     expect(summary.requiresUserInteraction, isTrue);
     expect(summary.propertyNames, contains('questions'));
+  });
+
+  test('PromptBuilder includes compact tool capability flags', () {
+    final dir = Directory.systemTemp.createTempSync(
+      'finagent_prompt_capability_summary_test_',
+    );
+    addTearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    final prompt = PromptBuilder(
+      basePath: dir.path,
+    ).build(tools: [_ExampleTool()]);
+
+    expect(prompt, contains('# Available Tools'));
+    expect(
+      prompt,
+      contains(
+        '- Example [write-or-side-effect, requires-user-input, serial, actions=help|run]: Example broad tool',
+      ),
+    );
   });
 }

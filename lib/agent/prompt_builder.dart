@@ -76,7 +76,12 @@ class PromptBuilder {
     if (tools.isNotEmpty) {
       final sorted = tools.toList()..sort((a, b) => a.name.compareTo(b.name));
       final toolDescriptions = sorted
-          .map((t) => '- ${t.name}: ${t.description}')
+          .map(
+            (tool) =>
+                '- ${tool.name} '
+                '[${_toolCapabilityFlags(summarizeToolCapability(tool)).join(', ')}]: '
+                '${tool.description}',
+          )
           .join('\n');
       sections.add('# Available Tools\n$toolDescriptions');
     }
@@ -130,6 +135,16 @@ class PromptBuilder {
     }
 
     return sections.join('\n\n');
+  }
+
+  List<String> _toolCapabilityFlags(ToolCapabilitySummary capability) {
+    return [
+      capability.permission,
+      if (capability.requiresUserInteraction) 'requires-user-input',
+      capability.canParallel ? 'parallel-ok' : 'serial',
+      if (capability.actionValues.isNotEmpty)
+        'actions=${capability.actionValues.join('|')}',
+    ];
   }
 
   /// Load a file relative to basePath, return trimmed content or null.
