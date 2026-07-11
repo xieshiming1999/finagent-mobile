@@ -146,6 +146,7 @@ void main() {
 
     expect(result['order'].first, 'eastmoneyDirect');
     expect(result['providerHealthSource']['runtimeRows'], 1);
+    expect(result['providerHealthSource']['contractRows'], 0);
     expect(result['providerHealthSource']['runtimeEnabled'], true);
     expect(
       result['providerHealth'],
@@ -155,6 +156,36 @@ void main() {
           'reason',
           contains('runtime_unavailable'),
         ),
+      ),
+    );
+  });
+
+  test('ProviderRouter merges data API contract probe health', () async {
+    final context = _tempContext();
+    addTearDown(() {
+      final dir = Directory(context.basePath);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    final result =
+        jsonDecode(
+              (await ProviderRouterTool(
+                    runtimeHealthProvider: () => const [],
+                  ).call('router-contract-health', {
+                    'action': 'route',
+                    'task': 'fund',
+                  }, context))
+                  .content,
+            )
+            as Map<String, dynamic>;
+
+    expect(result['providerHealthSource']['contractRows'], greaterThan(0));
+    expect(
+      result['providerHealth'],
+      contains(
+        isA<Map>()
+            .having((row) => row['provider'], 'provider', 'tushare')
+            .having((row) => row['reason'], 'reason', contains('contract')),
       ),
     );
   });

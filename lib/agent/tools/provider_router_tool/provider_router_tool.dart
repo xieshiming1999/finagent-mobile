@@ -1,7 +1,8 @@
 import 'dart:convert';
 
-import '../../data_fetcher/provider_policy.dart';
+import '../../../domain/market/providers/data_api_interface_contract.dart';
 import '../../data_fetcher/api_stats.dart';
+import '../../data_fetcher/provider_policy.dart';
 import '../../message.dart';
 import '../../tool.dart';
 import '../../tool_context.dart';
@@ -131,7 +132,7 @@ class ProviderRouterTool extends Tool {
   ) {
     const policy = ProviderPolicy();
     final gates = _gates(input);
-    final healthRows = _combinedHealthRows(input);
+    final healthRows = _combinedHealthRows(task, input);
     final healthBlocks = _healthBlocks(healthRows);
     final effectiveGates = ProviderGates(
       windConfigured: gates.windConfigured,
@@ -191,13 +192,17 @@ class ProviderRouterTool extends Tool {
     };
   }
 
-  List<Map<String, dynamic>> _combinedHealthRows(Map<String, dynamic> input) {
+  List<Map<String, dynamic>> _combinedHealthRows(
+    FinanceDataTask task,
+    Map<String, dynamic> input,
+  ) {
     final rows = <Map<String, dynamic>>[];
     final provided = input['providerHealth'];
     if (provided is List) {
       rows.addAll(provided.whereType<Map>().map(Map<String, dynamic>.from));
     }
     if (input['includeRuntimeHealth'] == false) return rows;
+    rows.addAll(contractProviderHealthRows(task));
     final runtime =
         _runtimeHealthProvider?.call() ?? runtimeProviderHealthRows();
     rows.addAll(runtime);
@@ -327,6 +332,60 @@ List<Map<String, dynamic>> runtimeProviderHealthRows({
       .toList(growable: false);
 }
 
+List<Map<String, dynamic>> contractProviderHealthRows(FinanceDataTask task) {
+  final interfaceIds = _taskInterfaceIds(task);
+  if (interfaceIds.isEmpty) return const [];
+  final rows = <Map<String, dynamic>>[];
+  for (final interfaceId in interfaceIds) {
+    final definition = dataApiInterfaceContract.getInterface(interfaceId);
+    if (definition == null) continue;
+    for (final capability in definition.capabilities) {
+      final status = _contractBlockingStatus(capability.status);
+      if (status == null) continue;
+      rows.add({
+        'provider': capability.provider.name,
+        'status': status,
+        'reason':
+            'contract $status: ${capability.id} for ${definition.id}${capability.probeId == null ? '' : ' probe=${capability.probeId}'}${capability.reason == null ? '' : ' (${capability.reason})'}',
+        'source': 'dataApiInterfaceContract',
+        'interfaceId': definition.id,
+        'capabilityId': capability.id,
+        'probeId': capability.probeId,
+      });
+    }
+  }
+  return rows;
+}
+
+String? _contractBlockingStatus(DataApiCapabilityStatus status) {
+  if (status == DataApiCapabilityStatus.disabled) return 'blocked';
+  if (status == DataApiCapabilityStatus.transportUnstable) {
+    return 'transport_unstable';
+  }
+  return null;
+}
+
+List<String> _taskInterfaceIds(FinanceDataTask task) => switch (task) {
+  FinanceDataTask.quote => const ['stock.quote'],
+  FinanceDataTask.indexQuote => const ['index.quote'],
+  FinanceDataTask.kline => const ['stock.daily_kline'],
+  FinanceDataTask.indexKline => const ['index.daily_kline'],
+  FinanceDataTask.intradayTick => const [
+    'stock.tick_chart_intraday',
+    'stock.transactions',
+  ],
+  FinanceDataTask.sector => const ['market.sector_ranking'],
+  FinanceDataTask.limitPool => const ['market.limit_pool'],
+  FinanceDataTask.dragonTiger => const ['market.dragon_tiger'],
+  FinanceDataTask.fundamental => const [
+    'stock.daily_valuation',
+    'stock.company_info',
+  ],
+  FinanceDataTask.macro => const ['wind.economic_series'],
+  FinanceDataTask.fund => const ['fund.identity_list', 'fund.nav_history'],
+  FinanceDataTask.moneyFlow => const ['stock.money_flow', 'market.flow_rank'],
+};
+
 String _runtimeHealthStatus(SourceSummary summary) {
   if (summary.failCount <= 0) return 'ready';
   if (summary.successCount <= 0) return 'runtime_unavailable';
@@ -347,6 +406,9 @@ Map<String, dynamic> _providerHealthSource(
             (input['providerHealth'] is List
                 ? (input['providerHealth'] as List).length
                 : 0),
+  'contractRows': rows
+      .where((row) => row['source'] == 'dataApiInterfaceContract')
+      .length,
   'runtimeEnabled': input['includeRuntimeHealth'] != false,
 };
 
