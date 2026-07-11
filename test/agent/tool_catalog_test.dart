@@ -71,7 +71,7 @@ void main() {
           'readOnly': true,
           'canParallel': true,
           'requiresUserInteraction': false,
-          'actions': ['detail', 'help', 'list'],
+          'actions': ['detail', 'help', 'list', 'module', 'modules'],
         },
       ]),
     );
@@ -86,5 +86,26 @@ void main() {
             as Map<String, dynamic>;
     expect(detail['tool']['name'], 'Example');
     expect(detail['tool']['schema']['actionValues'], ['help', 'run']);
+
+    final modules =
+        jsonDecode(
+              (await catalog.call('modules-1', {
+                'action': 'modules',
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+    expect(modules['contract'], 'capability-module-result-v1');
+    expect(modules['modules'], contains(containsPair('id', 'runtime-tool')));
+
+    final module =
+        jsonDecode(
+              (await catalog.call('module-1', {
+                'action': 'module',
+                'module': 'runtime-tool',
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+    expect(module['module']['schema'], 'provider-module-descriptor-v1');
+    expect(module['module']['tools'], isNotEmpty);
   });
 }
