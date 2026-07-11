@@ -71,6 +71,7 @@ import '../agent/tools/report_parse_tool/report_parse_tool.dart';
 import '../agent/tools/page_render_tool/page_render_tool.dart';
 import '../agent/tools/image_crop_tool/image_crop_tool.dart';
 import '../agent/tools/image_extract_tool/image_extract_tool.dart';
+import '../agent/tools/interaction_evidence_tool/interaction_evidence_tool.dart';
 import '../agent/tools/multimodal_agent_tool/multimodal_agent_tool.dart';
 import '../domain/market/services/market_data_resolve_service.dart';
 import 'api_config.dart';
@@ -230,6 +231,7 @@ AgentRuntime createAgentRuntime({
     LSTool(),
     SkillTool(),
     environmentTool,
+    InteractionEvidenceTool(),
     ...extraTools,
     uiQueryTool,
     uiControlTool,

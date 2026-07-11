@@ -85,10 +85,15 @@ void main() {
     final ask = runtime.agent.toolCapabilities.singleWhere(
       (capability) => capability.name == 'AskUserQuestion',
     );
+    final interactionEvidence = runtime.agent.toolCapabilities.singleWhere(
+      (capability) => capability.name == 'InteractionEvidence',
+    );
 
     expect(ask.requiresUserInteraction, isTrue);
     expect(ask.readOnly, isTrue);
     expect(ask.propertyNames, contains('questions'));
+    expect(interactionEvidence.requiresUserInteraction, isFalse);
+    expect(interactionEvidence.actionValues, ['help', 'recent', 'summary']);
   });
 
   test('AskUserQuestion summary is derived from tool contract', () {
