@@ -79,6 +79,31 @@ void main() {
           text:
               'I refreshed the App Started Workflow dashboard and verified the visible mobile UI state.',
         ),
+        ..._MockLLMResponse.multiToolThenText(
+          calls: [
+            _MockToolCall(
+              id: 'capability-status-summary',
+              name: 'CapabilityStatus',
+              arguments: {'action': 'summary'},
+            ),
+            _MockToolCall(
+              id: 'capability-status-evaluate',
+              name: 'CapabilityStatus',
+              arguments: {
+                'action': 'evaluate',
+                'workflow': 'harness_discovery',
+                'requiredEvidence': [
+                  'agent_discovery',
+                  'tool_calls',
+                  'no_tool_errors',
+                  'no_pending_interactions',
+                ],
+              },
+            ),
+          ],
+          text:
+              'CapabilityStatus summary and evaluate were checked before finalizing harness discovery evidence.',
+        ),
       ]),
     );
     addTearDown(() {
@@ -273,6 +298,47 @@ void main() {
     );
     expect(afterRefreshState?['activeDashboard']['filePath'], pageFile.path);
 
+    final capabilityScenario = await tester.runAsync(
+      () => bridge.scenario(
+        id: 'mobile-app-started-capability-status-smoke',
+        prompt:
+            'Use CapabilityStatus summary and evaluate before finalizing harness discovery evidence.',
+        expectTools: ['CapabilityStatus'],
+        expectToolResultContains: [
+          'capability-status-summary-v1',
+          'capability-status-evaluation-v1',
+        ],
+        expectFinalContains: ['CapabilityStatus summary and evaluate'],
+        expectNoToolErrors: true,
+        expectUiStateKeys: ['runtime', 'sessionId', 'messages'],
+        allowPendingUserQuestion: false,
+      ),
+    );
+    expect(capabilityScenario, isNotNull);
+    final capabilityResult = capabilityScenario!;
+    expect(
+      capabilityResult['ok'],
+      isTrue,
+      reason: '${capabilityResult['assertions']}',
+    );
+    final capabilityReport =
+        capabilityResult['run']['report'] as Map<String, dynamic>;
+    expect(
+      (capabilityReport['toolCalls'] as List<dynamic>)
+          .where((call) => call['toolName'] == 'CapabilityStatus')
+          .length,
+      2,
+    );
+    final capabilityActions = (capabilityReport['toolCalls'] as List<dynamic>)
+        .where((call) => call['toolName'] == 'CapabilityStatus')
+        .map((call) => (call['input'] as Map)['action'])
+        .toList();
+    expect(capabilityActions, containsAll(['summary', 'evaluate']));
+    expect(
+      File(capabilityResult['scenarioReportPath'] as String).existsSync(),
+      true,
+    );
+
     final reports = await tester.runAsync(() => bridge.reports(limit: 10));
     expect(reports, isNotNull);
     final reportSummaries = (reports!['reports'] as List<dynamic>)
@@ -289,6 +355,10 @@ void main() {
       (report) =>
           report['scenarioId'] == 'mobile-app-started-dashboard-refresh-smoke',
     );
+    final capabilitySummary = reportSummaries.firstWhere(
+      (report) =>
+          report['scenarioId'] == 'mobile-app-started-capability-status-smoke',
+    );
     expect(dashboardSummary['kind'], 'scenario');
     expect(dashboardSummary['assertionFailCount'], 0);
     expect(dataHealthSummary['kind'], 'scenario');
@@ -302,6 +372,10 @@ void main() {
     expect(refreshSummary['failedAssertions'], isEmpty);
     expect(refreshSummary['uiArtifactCount'], greaterThanOrEqualTo(1));
     expect(refreshSummary['uiEvidence']['semanticsAvailable'], isTrue);
+    expect(capabilitySummary['kind'], 'scenario');
+    expect(capabilitySummary['assertionCount'], greaterThan(0));
+    expect(capabilitySummary['assertionFailCount'], 0);
+    expect(capabilitySummary['failedAssertions'], isEmpty);
 
     runtime.agent.stopAutoProcessing();
     runtime.cronScheduler.stop();
@@ -1143,6 +1217,35 @@ class _MockLLMResponse {
     _MockLLMResponse.toolCall(id: id, name: name, arguments: arguments),
     _MockLLMResponse.text(text),
   ];
+
+  static List<_MockLLMResponse> multiToolThenText({
+    required List<_MockToolCall> calls,
+    required String text,
+  }) => [
+    _MockLLMResponse([
+      for (final call in calls)
+        SSEToolCall(
+          id: call.id,
+          name: call.name,
+          arguments: call.arguments,
+        ),
+      SSEUsage(promptTokens: 500, completionTokens: 120),
+      SSEDone(finishReason: 'tool_calls'),
+    ]),
+    _MockLLMResponse.text(text),
+  ];
+}
+
+class _MockToolCall {
+  final String id;
+  final String name;
+  final Map<String, dynamic> arguments;
+
+  const _MockToolCall({
+    required this.id,
+    required this.name,
+    required this.arguments,
+  });
 }
 
 class _MockLLMClient extends LLMClient {
