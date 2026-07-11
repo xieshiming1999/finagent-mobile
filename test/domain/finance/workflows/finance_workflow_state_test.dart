@@ -3,6 +3,58 @@ import 'package:finagent/domain/finance/workflows/finance_workflow_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('does not infer workflow state from natural-language prompt text', () {
+    expect(FinanceWorkflowState.fromUserContent('帮我设计一个策略并保存'), isNull);
+    expect(
+      FinanceWorkflowState.fromUserContent('如果可以买入贵州茅台，请帮我计算仓位并准备下单'),
+      isNull,
+    );
+    expect(FinanceWorkflowState.fromUserContent('请确认是否继续下一步回测并加入观察池'), isNull);
+  });
+
+  test('ignores JSON payloads without an explicit workflowState contract', () {
+    final state = FinanceWorkflowState.fromUserContent('''
+{"intent":"trade_prep","symbol":"600519","confirmationRequired":true}
+''');
+
+    expect(state, isNull);
+  });
+
+  test('accepts explicit whole-message workflowState JSON', () {
+    final state = FinanceWorkflowState.fromUserContent('''
+{
+  "workflowState": {
+    "contract": "finance-workflow-state-v1",
+    "workflowKind": "trade_prep",
+    "assetClass": "stock",
+    "intentMode": "size",
+    "executionMode": "requires_confirmation",
+    "safetyBoundary": "trade preparation only",
+    "evidenceRefs": ["trade-prep-v1"],
+    "confirmationState": "pending",
+    "subject": "600519",
+    "source": "agent-structured-intent"
+  }
+}
+''');
+
+    expect(state, isNotNull);
+    expect(state!.workflowKind, FinanceWorkflowKind.tradePrep);
+    expect(state.intentMode, FinanceIntentMode.size);
+    expect(state.confirmationState, FinanceConfirmationState.pending);
+    expect(state.subject, '600519');
+    expect(state.source, 'agent-structured-intent');
+  });
+
+  test('latest state scan does not classify ordinary user turns', () {
+    final state = FinanceWorkflowState.latestFromMessages([
+      Message(role: Role.user, content: '今天市场怎么样？请给我一个策略建议。'),
+      Message(role: Role.assistant, content: '我会先检查工具。'),
+    ]);
+
+    expect(state, isNull);
+  });
+
   test('derives strategy backtest state from governed tool result', () {
     final state = FinanceWorkflowState.latestFromMessages([
       Message(role: Role.user, content: 'any user wording'),
