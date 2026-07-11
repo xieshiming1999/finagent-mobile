@@ -76,6 +76,7 @@ import '../agent/tools/image_crop_tool/image_crop_tool.dart';
 import '../agent/tools/image_extract_tool/image_extract_tool.dart';
 import '../agent/tools/interaction_evidence_tool/interaction_evidence_tool.dart';
 import '../agent/tools/workflow_evidence_tool/workflow_evidence_tool.dart';
+import '../agent/tools/workflow_verifier_tool/workflow_verifier_tool.dart';
 import '../agent/tools/finance_workflow_state_tool/finance_workflow_state_tool.dart';
 import '../agent/tools/capability_status_tool/capability_status_tool.dart';
 import '../agent/tools/multimodal_agent_tool/multimodal_agent_tool.dart';
@@ -239,6 +240,7 @@ AgentRuntime createAgentRuntime({
     environmentTool,
     InteractionEvidenceTool(),
     WorkflowEvidenceTool(),
+    WorkflowVerifierTool(),
     RunbookTool(),
     ArtifactRegistryTool(),
     FinanceWorkflowStateTool(),
