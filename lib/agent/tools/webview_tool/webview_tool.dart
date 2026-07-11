@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import '../../message.dart';
@@ -55,6 +56,7 @@ class WebViewTool extends Tool {
       'action': {
         'type': 'string',
         'enum': [
+          'help',
           'query',
           'click',
           'input',
@@ -118,6 +120,7 @@ class WebViewTool extends Tool {
   ) async {
     final action = _actionFromInput(input);
     if (action.isEmpty) return 'action is required';
+    if (action == 'help') return null;
 
     switch (action) {
       case 'query':
@@ -142,6 +145,9 @@ class WebViewTool extends Tool {
     ToolContext context,
   ) async {
     final action = _actionFromInput(input);
+    if (action == 'help') {
+      return ToolResult(toolUseId: toolUseId, content: _help());
+    }
     final target = input['target'] as String? ?? _activeTarget;
 
     if (target == null || !_handlers.containsKey(target)) {
@@ -174,6 +180,29 @@ class WebViewTool extends Tool {
       );
     }
   }
+
+  String _help() => const JsonEncoder.withIndent('  ').convert({
+    'contract': 'webview-help-v1',
+    'actions': {
+      'discovery': ['help', 'get_info', 'get_html'],
+      'navigation': ['navigate', 'back', 'forward', 'reload', 'refresh'],
+      'interaction': ['click', 'input', 'scroll', 'wait_for'],
+      'extraction': ['query', 'screenshot'],
+    },
+    'requiredFields': {
+      'query': ['javascript or selector'],
+      'navigate': ['url'],
+      'click': ['selector'],
+      'input': ['selector', 'text'],
+      'wait_for': ['selector'],
+    },
+    'guidance': [
+      'Omit target to use the active mobile WebView.',
+      'Use get_info before assuming a page is ready.',
+      'Use screenshot when visual verification is needed.',
+      'Use refresh only for active file-backed pages; reload is native WebView reload.',
+    ],
+  });
 
   String _actionFromInput(Map<String, dynamic> input) {
     final action = input['action'] as String?;

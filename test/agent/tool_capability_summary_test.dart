@@ -5,6 +5,7 @@ import 'package:finagent/agent/prompt_builder.dart';
 import 'package:finagent/agent/tool.dart';
 import 'package:finagent/agent/tool_context.dart';
 import 'package:finagent/agent/tools/ask_user_question_tool/ask_user_question_tool.dart';
+import 'package:finagent/agent/tools/webview_tool/webview_tool.dart';
 import 'package:finagent/shared/agent_factory.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -106,6 +107,25 @@ void main() {
     expect(summary.name, 'AskUserQuestion');
     expect(summary.requiresUserInteraction, isTrue);
     expect(summary.propertyNames, contains('questions'));
+  });
+
+  test('WebView help is available without an active target', () async {
+    final dir = Directory.systemTemp.createTempSync(
+      'finagent_webview_help_test_',
+    );
+    addTearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+    final tool = WebViewTool();
+    final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
+
+    final result = await tool.call('wv-help', {'action': 'help'}, context);
+    final decoded = result.content;
+
+    expect(result.isError, isFalse);
+    expect(decoded, contains('"contract": "webview-help-v1"'));
+    expect(decoded, contains('"navigate"'));
+    expect(decoded, contains('"screenshot"'));
   });
 
   test('PromptBuilder includes compact tool capability flags', () {
