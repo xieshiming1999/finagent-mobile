@@ -48,6 +48,7 @@ import '../agent/tools/monitor_update_tool/monitor_update_tool.dart';
 import '../agent/tools/send_message_tool/send_message_tool.dart';
 import '../agent/tools/session_search_tool/session_search_tool.dart';
 import '../agent/tools/skill_tool/skill_tool.dart';
+import '../agent/tools/source_reader_tool/source_reader_tool.dart';
 import '../agent/tools/task_create_tool/task_create_tool.dart';
 import '../agent/tools/task_get_tool/task_get_tool.dart';
 import '../agent/tools/task_list_tool/task_list_tool.dart';
@@ -248,6 +249,7 @@ AgentRuntime createAgentRuntime({
     ProviderRouterTool(),
     RecoveryPlannerTool(),
     BudgetGovernorTool(),
+    SourceReaderTool(),
     RunbookTool(),
     ArtifactRegistryTool(),
     FinanceWorkflowStateTool(),
