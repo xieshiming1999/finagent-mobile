@@ -55,6 +55,12 @@ class AgentTool extends Tool {
   Map<String, dynamic> get inputSchema => {
     'type': 'object',
     'properties': {
+      'action': {
+        'type': 'string',
+        'enum': ['help', 'run'],
+        'description':
+            'Use "help" to inspect sub-agent delegation rules before launching; omit or use "run" to launch.',
+      },
       'description': {
         'type': 'string',
         'description': 'A short (3-5 word) description of the task',
@@ -100,6 +106,9 @@ class AgentTool extends Tool {
     Map<String, dynamic> input,
     ToolContext context,
   ) async {
+    if ((input['action'] as String? ?? 'run') == 'help') {
+      return null;
+    }
     final desc = input['description'] as String?;
     if (desc == null || desc.trim().isEmpty) {
       return 'description is required.';
@@ -128,6 +137,9 @@ class AgentTool extends Tool {
     Map<String, dynamic> input,
     ToolContext context,
   ) async {
+    if ((input['action'] as String? ?? 'run') == 'help') {
+      return ToolResult(toolUseId: toolUseId, content: _agentToolHelp());
+    }
     final description = input['description'] as String;
     final prompt = input['prompt'] as String;
     final runInBackground = input['run_in_background'] as bool? ?? false;
@@ -249,6 +261,45 @@ class AgentTool extends Tool {
           'You will receive a <task-notification> when it completes.\n'
           'Use TaskOutput to check status, or TaskStop to cancel.',
     );
+  }
+
+  String _agentToolHelp() {
+    return '''
+{
+  "tool": "Agent",
+  "purpose": "Launch a sub-agent for bounded, inspectable work that should be separated from the current turn.",
+  "actions": {
+    "help": "Return this contract without launching a sub-agent.",
+    "run": "Launch a sub-agent. This is the default when action is omitted."
+  },
+  "requiredForRun": ["description", "prompt"],
+  "modes": {
+    "foreground": {
+      "input": {"run_in_background": false},
+      "result": "Waits for the sub-agent and returns the final text."
+    },
+    "background": {
+      "input": {"run_in_background": true},
+      "result": "Returns a Task ID. Use TaskOutput before relying on the result.",
+      "limit": $maxConcurrentBackgroundAgents
+    },
+    "isolation": {
+      "fork": "Inherits parent conversation context.",
+      "independent": "Starts with fresh sub-agent context."
+    },
+    "team": "Use team_name only after TeamCreate."
+  },
+  "constraints": [
+    "Sub-agents use a restricted tool set.",
+    "Sub-agents should not be used to hide user-question or approval handling.",
+    "If the current answer depends on a background sub-agent, inspect TaskOutput before finalizing."
+  ],
+  "errorFeedback": [
+    "Missing description or prompt returns a validation error.",
+    "Background concurrency over the limit returns a validation error."
+  ]
+}
+''';
   }
 
   /// Create a sub-agent with isolated context and restricted tools.
