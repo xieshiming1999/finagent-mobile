@@ -223,6 +223,9 @@ void main() {
       expect(answer, contains('strategyId：custom_ema_v1'));
       expect(answer, contains('标的：000858'));
       expect(answer, contains('数据覆盖'));
+      expect(answer, contains('总收益率：4%'));
+      expect(answer, contains('最大回撤：8%'));
+      expect(answer, contains('胜率：50%'));
     });
 
     test('builds rerun answer from custom_strategy_run evidence without same-turn save', () {
@@ -257,6 +260,8 @@ void main() {
       expect(answer, contains('策略保存与重跑完成'));
       expect(answer, contains('strategyId：custom_ema_v1'));
       expect(answer, contains('标的：000858'));
+      expect(answer, contains('保存状态：saved strategy readback'));
+      expect(answer, contains('总收益率：4%'));
     });
 
     test('does not close natural-language save-rerun turn after save only', () {

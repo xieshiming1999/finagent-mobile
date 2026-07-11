@@ -369,20 +369,22 @@ class FinanceCustomStrategyEvidence {
     if (latestRun != null && latestRun['status'] == 'backtested') {
       final metrics = latestRun['metrics'];
       final metricsMap = metrics is Map ? metrics : const {};
+      final resolvedSaveStatus =
+          saveStatus ?? (latestRun['strategyId'] != null ? 'saved strategy readback' : '-');
       return [
         '## 策略保存与重跑完成',
         '',
         '已通过结构化策略记录完成保存，并使用 `custom_strategy_run` 按 strategyId 重新执行。系统已停止追加 provider、脚本、文件、监控或交易工具调用。',
         '',
         '- strategyId：${latestRun['strategyId'] ?? latestSave?['strategyId'] ?? _strategyIdFromSpec(latestSave?['spec']) ?? '-'}。',
-        '- 保存状态：${saveStatus ?? '-'}。',
+        '- 保存状态：$resolvedSaveStatus。',
         '- 重跑状态：${latestRun['status'] ?? '-'}。',
         '- 标的：${latestRun['code'] ?? latestRun['symbol'] ?? '-'}。',
         '- 数据覆盖：${_coverageText(latestRun)}。',
         '- 交易次数：${metricsMap['tradeCount'] ?? latestRun['tradeCount'] ?? '-'}。',
-        '- 总收益：${metricsMap['totalReturn'] ?? metricsMap['totalReturnPct'] ?? '-'}。',
-        '- 最大回撤：${metricsMap['maxDrawdown'] ?? metricsMap['maxDrawdownPct'] ?? '-'}。',
-        '- 胜率：${metricsMap['winRate'] ?? metricsMap['winRatePct'] ?? '-'}。',
+        '- 总收益率：${metricsMap['totalReturnPct'] ?? metricsMap['totalReturn'] ?? latestRun['totalReturn'] ?? '-'}%。',
+        '- 最大回撤：${metricsMap['maxDrawdownPct'] ?? metricsMap['maxDrawdown'] ?? latestRun['maxDrawdown'] ?? '-'}%。',
+        '- 胜率：${metricsMap['winRatePct'] ?? metricsMap['winRate'] ?? latestRun['winRate'] ?? '-'}%。',
         '',
         '结论：该策略已经具备可复用策略记录、验证/回测证据和按 strategyId 重跑路径。后续可在 Strategy Library 中查看，或在新的用户请求中用于更多标的比较、观察池和监控工作流。',
       ].join('\n');
