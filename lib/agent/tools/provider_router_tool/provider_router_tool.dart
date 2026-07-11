@@ -37,6 +37,12 @@ class ProviderRouterTool extends Tool {
         'type': 'array',
         'items': {'type': 'string'},
       },
+      'providerHealth': {
+        'type': 'array',
+        'items': {'type': 'object'},
+        'description':
+            'Optional health rows: provider, status, reason. unhealthy/blocked/quota_exhausted/credential_missing statuses are skipped.',
+      },
       'gates': {
         'type': 'object',
         'description':
@@ -112,10 +118,23 @@ class ProviderRouterTool extends Tool {
   ) {
     const policy = ProviderPolicy();
     final gates = _gates(input);
+    final healthBlocks = _healthBlocks(input);
+    final effectiveGates = ProviderGates(
+      windConfigured: gates.windConfigured,
+      windQuotaAvailable: gates.windQuotaAvailable,
+      tushareConfigured: gates.tushareConfigured,
+      tusharePermissionLikely: gates.tusharePermissionLikely,
+      allowAkshareCompatibility: gates.allowAkshareCompatibility,
+      allowBroadAkshare: gates.allowBroadAkshare,
+      temporarilyBlockedProviders: {
+        ...gates.temporarilyBlockedProviders,
+        ...healthBlocks.keys,
+      },
+    );
     final preferred = policy.normalizeProviders(input['preferredProviders']);
     final allowed = policy.orderFor(
       task,
-      gates: gates,
+      gates: effectiveGates,
       preferredProviders: preferred,
     );
     final base = _baseOrder(task);
@@ -124,7 +143,9 @@ class ProviderRouterTool extends Tool {
         .map(
           (provider) => {
             'provider': _providerName(provider),
-            'reason': _skipReason(provider, gates, preferred),
+            'reason':
+                healthBlocks[provider] ??
+                _skipReason(provider, effectiveGates, preferred),
           },
         )
         .toList();
@@ -139,7 +160,16 @@ class ProviderRouterTool extends Tool {
           .where(policy.requiresSerialCalls)
           .map(_providerName)
           .toList(),
-      'gates': _gatesJson(gates),
+      'gates': _gatesJson(effectiveGates),
+      'providerHealth': healthBlocks.entries
+          .map(
+            (entry) => {
+              'provider': _providerName(entry.key),
+              'routeEffect': 'skipped',
+              'reason': entry.value,
+            },
+          )
+          .toList(),
       'nextAction': allowed.isEmpty
           ? 'No provider is currently allowed. Use cache/readback, configure credentials, or clear temporary provider blocks before retrying.'
           : 'Use providers in returned order; do not override order from prompt knowledge.',
@@ -218,6 +248,32 @@ ProviderGates _gates(Map<String, dynamic> input) {
         .normalizeProviders(input['temporarilyBlockedProviders'])
         .toSet(),
   );
+}
+
+Map<FinanceProvider, String> _healthBlocks(Map<String, dynamic> input) {
+  final rows = input['providerHealth'];
+  if (rows is! List) return const {};
+  const policy = ProviderPolicy();
+  final out = <FinanceProvider, String>{};
+  for (final row in rows.whereType<Map>()) {
+    final providers = policy.normalizeProviders([row['provider']]);
+    if (providers.isEmpty) continue;
+    final provider = providers.first;
+    final status = '${row['status'] ?? ''}'.trim();
+    const blocked = {
+      'unhealthy',
+      'blocked',
+      'runtime_unavailable',
+      'transport_unstable',
+      'quota_exhausted',
+      'credential_missing',
+    };
+    if (blocked.contains(status)) {
+      out[provider] =
+          'health_$status:${row['reason'] ?? 'provider health blocked routing'}';
+    }
+  }
+  return out;
 }
 
 String _skipReason(

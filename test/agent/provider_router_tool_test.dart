@@ -78,6 +78,45 @@ void main() {
     );
   });
 
+  test(
+    'ProviderRouter uses provider health to skip unhealthy provider',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+
+      final result =
+          jsonDecode(
+                (await ProviderRouterTool().call('router-health', {
+                  'action': 'route',
+                  'task': 'quote',
+                  'providerHealth': [
+                    {
+                      'provider': 'tdx',
+                      'status': 'runtime_unavailable',
+                      'reason': 'native socket unavailable',
+                    },
+                  ],
+                }, context)).content,
+              )
+              as Map<String, dynamic>;
+
+      expect(result['order'].first, 'eastmoneyDirect');
+      expect(
+        result['providerHealth'],
+        contains(
+          isA<Map>().having(
+            (row) => row['reason'],
+            'reason',
+            contains('runtime_unavailable'),
+          ),
+        ),
+      );
+    },
+  );
+
   test('ProviderRouter rejects unsupported task through tool error', () async {
     final context = _tempContext();
     addTearDown(() {
