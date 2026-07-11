@@ -36,6 +36,17 @@ class TaskOutputTool extends Tool {
         'type': 'integer',
         'description': 'Max wait time in ms (default 30000, max 600000)',
       },
+      'expectedContract': {
+        'type': 'string',
+        'description':
+            'Optional JSON contract value required in completed task output.',
+      },
+      'requiredEvidence': {
+        'type': 'array',
+        'items': {'type': 'string'},
+        'description':
+            'Optional evidence keys that must appear in structured completed task output.',
+      },
     },
     'required': ['task_id'],
   };
@@ -152,6 +163,31 @@ class TaskOutputTool extends Tool {
       );
     }
 
+    final output = context.taskRegistry.readOutput(taskId) ?? task.result;
+    final validation = _validateOutput(
+      output,
+      expectedContract: _optionalString(input['expectedContract']),
+      requiredEvidence: _stringList(input['requiredEvidence']),
+    );
+    if (validation != null) {
+      return ToolResult(
+        toolUseId: toolUseId,
+        content: jsonEncode({
+          'retrieval_status': 'validation_failed',
+          'task_id': taskId,
+          'status': task.status.name,
+          'outputValidation': validation,
+          'ownership': {
+            'parentSessionId': task.parentSessionId,
+            'toolUseId': task.toolUseId,
+            'isBackgrounded': task.isBackgrounded,
+            'sidechainPath': task.sidechainPath,
+          },
+        }),
+        isError: true,
+      );
+    }
+
     // Task completed
     return ToolResult(
       toolUseId: toolUseId,
@@ -159,12 +195,80 @@ class TaskOutputTool extends Tool {
         'retrieval_status': 'success',
         'task_id': taskId,
         'status': task.status.name,
-        if (task.result != null)
-          'result': context.taskRegistry.readOutput(taskId) ?? task.result,
+        if (output != null) 'result': output,
         if (task.error != null) 'error': task.error,
         'toolUseCount': task.toolUseCount,
         'estimatedTokens': task.estimatedTokens,
       }),
     );
+  }
+
+  Map<String, dynamic>? _validateOutput(
+    Object? output, {
+    required String? expectedContract,
+    required List<String> requiredEvidence,
+  }) {
+    if (expectedContract == null && requiredEvidence.isEmpty) return null;
+    final decoded = _jsonObject(output);
+    if (decoded == null) {
+      return {
+        'ok': false,
+        'reason':
+            'Task output is not structured JSON; cannot validate expectedContract or requiredEvidence.',
+        if (expectedContract != null) 'expectedContract': expectedContract,
+        if (requiredEvidence.isNotEmpty) 'requiredEvidence': requiredEvidence,
+      };
+    }
+    if (expectedContract != null && decoded['contract'] != expectedContract) {
+      return {
+        'ok': false,
+        'reason': 'Task output contract did not match expectedContract.',
+        'expectedContract': expectedContract,
+        'actualContract': decoded['contract'],
+      };
+    }
+    final missing = requiredEvidence
+        .where((key) => !_containsEvidence(decoded, key))
+        .toList();
+    if (missing.isNotEmpty) {
+      return {
+        'ok': false,
+        'reason': 'Task output is missing required evidence.',
+        'missingEvidence': missing,
+      };
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _jsonObject(Object? output) {
+    try {
+      final decoded = output is String ? jsonDecode(output) : output;
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    return null;
+  }
+
+  bool _containsEvidence(Map<String, dynamic> output, String key) {
+    final refs = output['evidenceRefs'];
+    if (refs is List && refs.map((item) => '$item').contains(key)) return true;
+    final evidence = output['evidence'];
+    if (evidence is Map && evidence.containsKey(key)) return true;
+    final provenance = output['provenance'];
+    if (provenance is Map && provenance.containsKey(key)) return true;
+    return false;
+  }
+
+  String? _optionalString(Object? value) {
+    final text = '${value ?? ''}'.trim();
+    return text.isEmpty ? null : text;
+  }
+
+  List<String> _stringList(Object? value) {
+    if (value is! List) return const [];
+    return value
+        .map((item) => '$item'.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
   }
 }

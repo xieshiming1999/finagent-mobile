@@ -47,7 +47,40 @@ void main() {
     expect(decoded['result'], 'done');
   });
 
-  test('TaskOutput reports failed background tasks through error channel', () async {
+  test(
+    'TaskOutput reports failed background tasks through error channel',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+
+      final task = context.taskRegistry.register(
+        description: 'research',
+        prompt: 'inspect',
+        isBackgrounded: true,
+      );
+      context.taskRegistry.updateStatus(
+        task.id,
+        BackgroundTaskStatus.failed,
+        error: 'sub-agent crashed',
+      );
+
+      final result = await TaskOutputTool().call('task-output', {
+        'task_id': task.id,
+        'block': false,
+      }, context);
+      final decoded = jsonDecode(result.content) as Map<String, dynamic>;
+
+      expect(result.isError, isTrue);
+      expect(decoded['retrieval_status'], 'failed');
+      expect(decoded['status'], 'failed');
+      expect(decoded['error'], 'sub-agent crashed');
+    },
+  );
+
+  test('TaskOutput validates expected output contract and evidence', () async {
     final context = _tempContext();
     addTearDown(() {
       final dir = Directory(context.basePath);
@@ -61,24 +94,63 @@ void main() {
     );
     context.taskRegistry.updateStatus(
       task.id,
-      BackgroundTaskStatus.failed,
-      error: 'sub-agent crashed',
+      BackgroundTaskStatus.completed,
+      result: jsonEncode({
+        'contract': 'task-analysis-v1',
+        'evidenceRefs': ['quote', 'macro'],
+        'summary': 'done',
+      }),
     );
 
     final result = await TaskOutputTool().call('task-output', {
       'task_id': task.id,
       'block': false,
+      'expectedContract': 'task-analysis-v1',
+      'requiredEvidence': ['quote', 'macro'],
+    }, context);
+
+    expect(result.isError, isFalse);
+    expect(jsonDecode(result.content)['retrieval_status'], 'success');
+  });
+
+  test('TaskOutput fails validation for missing required evidence', () async {
+    final context = _tempContext();
+    addTearDown(() {
+      final dir = Directory(context.basePath);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    final task = context.taskRegistry.register(
+      description: 'research',
+      prompt: 'inspect',
+      isBackgrounded: true,
+    );
+    context.taskRegistry.updateStatus(
+      task.id,
+      BackgroundTaskStatus.completed,
+      result: jsonEncode({
+        'contract': 'task-analysis-v1',
+        'evidenceRefs': ['quote'],
+      }),
+    );
+
+    final result = await TaskOutputTool().call('task-output', {
+      'task_id': task.id,
+      'block': false,
+      'expectedContract': 'task-analysis-v1',
+      'requiredEvidence': ['quote', 'macro'],
     }, context);
     final decoded = jsonDecode(result.content) as Map<String, dynamic>;
 
     expect(result.isError, isTrue);
-    expect(decoded['retrieval_status'], 'failed');
-    expect(decoded['status'], 'failed');
-    expect(decoded['error'], 'sub-agent crashed');
+    expect(decoded['retrieval_status'], 'validation_failed');
+    expect(decoded['outputValidation']['missingEvidence'], ['macro']);
   });
 
   test('Agent help teaches TaskOutput requirement before delegation', () async {
-    final dir = Directory.systemTemp.createTempSync('finagent_agent_help_test_');
+    final dir = Directory.systemTemp.createTempSync(
+      'finagent_agent_help_test_',
+    );
     addTearDown(() {
       if (dir.existsSync()) dir.deleteSync(recursive: true);
     });
@@ -87,9 +159,8 @@ void main() {
       serviceBaseUrl: '',
       skipPermissions: true,
     );
-    final sessionManager = SessionManager(
-      sessionsDir: '${dir.path}/sessions',
-    )..loadOrCreate(feature: 'test');
+    final sessionManager = SessionManager(sessionsDir: '${dir.path}/sessions')
+      ..loadOrCreate(feature: 'test');
     final parentAgent = Agent(
       client: _FakeLLMClient(),
       tools: const [],
