@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../../interaction_evidence.dart';
 import '../../message.dart';
 import '../../tool.dart';
 import '../../tool_context.dart';
@@ -96,7 +97,7 @@ class InteractionEvidenceTool extends Tool {
         'action': action,
         'count': filtered.length,
         'byType': _countByType(filtered),
-        'pending': _latestPending(rows),
+        'pending': _pendingState(context, rows),
         'latest': rows.isEmpty ? null : rows.last,
       }),
     );
@@ -158,5 +159,13 @@ class InteractionEvidenceTool extends Tool {
       final type = row['type'];
       return type == 'user_question_pending' || type == 'permission_request';
     }).toList();
+  }
+
+  List<Map<String, dynamic>> _pendingState(
+    ToolContext context,
+    List<Map<String, dynamic>> rows,
+  ) {
+    final state = readPendingInteractionState(context);
+    return state.isNotEmpty ? state : _latestPending(rows);
   }
 }

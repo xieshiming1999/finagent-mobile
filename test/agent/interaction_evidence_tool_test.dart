@@ -35,6 +35,19 @@ void main() {
         }),
       ].join('\n'),
     );
+    File('${context.memoryDir}/interaction_pending.json').writeAsStringSync(
+      jsonEncode({
+        'contract': 'interaction-pending-state-v1',
+        'updatedAt': '2026-07-11T00:00:00.000Z',
+        'pending': [
+          {
+            'type': 'user_question_pending',
+            'requestId': 'ask-snapshot',
+            'toolName': 'AskUserQuestion',
+          },
+        ],
+      }),
+    );
 
     final tool = InteractionEvidenceTool();
     final summary =
@@ -55,7 +68,7 @@ void main() {
     expect(summary['pending'], [
       {
         'type': 'user_question_pending',
-        'requestId': 'ask-1',
+        'requestId': 'ask-snapshot',
         'toolName': 'AskUserQuestion',
       },
     ]);

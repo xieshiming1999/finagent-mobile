@@ -71,5 +71,15 @@ void main() {
         },
       },
     ]);
+
+    final pendingState =
+        jsonDecode(
+              File(
+                '${context.memoryDir}/interaction_pending.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    expect(pendingState['contract'], 'interaction-pending-state-v1');
+    expect(pendingState['pending'], isEmpty);
   });
 }
