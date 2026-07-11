@@ -104,6 +104,67 @@ void main() {
           text:
               'CapabilityStatus summary and evaluate were checked before finalizing harness discovery evidence.',
         ),
+        _MockLLMResponse.toolCall(
+          id: 'catalog-strategy-modules',
+          name: 'ToolCatalog',
+          arguments: {'action': 'module', 'module': 'strategy-runtime'},
+        ),
+        _MockLLMResponse.toolCall(
+          id: 'strategy-runbook',
+          name: 'Runbook',
+          arguments: {'action': 'get', 'workflow': 'strategy_backtest'},
+        ),
+        _MockLLMResponse.toolCall(
+          id: 'strategy-workflow-state',
+          name: 'FinanceWorkflowState',
+          arguments: {
+            'action': 'save',
+            'id': 'mobile-strategy-workflow-state',
+            'status': 'active',
+            'workflowState': {
+              'workflowKind': 'strategy_review',
+              'assetClass': 'stock',
+              'intentMode': 'backtest',
+              'executionMode': 'preview_only',
+              'confirmationState': 'none',
+              'safetyBoundary': 'read-only strategy validation',
+              'evidenceRefs': ['StrategySpec', 'validation_report'],
+              'subject': '600519',
+            },
+            'requiredEvidence': ['StrategySpec', 'validation_report'],
+            'completedSteps': ['runbook', 'capability_discovery'],
+          },
+        ),
+        _MockLLMResponse.toolCall(
+          id: 'strategy-artifact',
+          name: 'ArtifactRegistry',
+          arguments: {
+            'action': 'register',
+            'kind': 'strategy',
+            'path': 'memory/strategies/mobile_strategy_runtime.json',
+            'title': 'Mobile strategy runtime smoke',
+            'source': 'workflow-automation',
+            'verificationStatus': 'verified',
+            'provenance': {
+              'contract': 'StrategySpec',
+              'evidence': 'custom_strategy_help',
+            },
+          },
+        ),
+        ..._MockLLMResponse.toolThenText(
+          id: 'strategy-workflow-verifier',
+          name: 'WorkflowVerifier',
+          arguments: {
+            'action': 'check',
+            'workflow': 'strategy_backtest',
+            'requireWorkflowState': true,
+            'providerHealth': [
+              {'provider': 'local', 'status': 'healthy'},
+            ],
+          },
+          text:
+              'Strategy runtime discovery, typed workflow state, artifact registration, and WorkflowVerifier all passed before finalizing.',
+        ),
       ]),
     );
     addTearDown(() {
@@ -339,6 +400,44 @@ void main() {
       true,
     );
 
+    final strategyRuntimeScenario = await tester.runAsync(
+      () => bridge.scenario(
+        id: 'mobile-app-started-strategy-runtime-contract-smoke',
+        prompt:
+            'Discover the strategy runtime contract, save typed workflow state, register the strategy artifact, and verify before final answer.',
+        expectTools: [
+          'ToolCatalog',
+          'Runbook',
+          'FinanceWorkflowState',
+          'ArtifactRegistry',
+          'WorkflowVerifier',
+        ],
+        expectToolResultContains: [
+          'strategy-runtime',
+          'strategy_backtest',
+          'workflow-state-record-v1',
+          'artifact-registry-record-v1',
+          'workflow-verifier-check-v1',
+        ],
+        expectFinalContains: ['Strategy runtime discovery', 'WorkflowVerifier'],
+        expectNoToolErrors: true,
+        expectUiStateKeys: ['runtime', 'sessionId', 'messages'],
+        expectUiArtifactKinds: ['mobile-semantic-snapshot'],
+        allowPendingUserQuestion: false,
+      ),
+    );
+    expect(strategyRuntimeScenario, isNotNull);
+    final strategyRuntimeResult = strategyRuntimeScenario!;
+    expect(
+      strategyRuntimeResult['ok'],
+      isTrue,
+      reason: '${strategyRuntimeResult['assertions']}',
+    );
+    expect(
+      File(strategyRuntimeResult['scenarioReportPath'] as String).existsSync(),
+      true,
+    );
+
     final reports = await tester.runAsync(() => bridge.reports(limit: 10));
     expect(reports, isNotNull);
     final reportSummaries = (reports!['reports'] as List<dynamic>)
@@ -359,6 +458,11 @@ void main() {
       (report) =>
           report['scenarioId'] == 'mobile-app-started-capability-status-smoke',
     );
+    final strategyRuntimeSummary = reportSummaries.firstWhere(
+      (report) =>
+          report['scenarioId'] ==
+          'mobile-app-started-strategy-runtime-contract-smoke',
+    );
     expect(dashboardSummary['kind'], 'scenario');
     expect(dashboardSummary['assertionFailCount'], 0);
     expect(dataHealthSummary['kind'], 'scenario');
@@ -376,6 +480,10 @@ void main() {
     expect(capabilitySummary['assertionCount'], greaterThan(0));
     expect(capabilitySummary['assertionFailCount'], 0);
     expect(capabilitySummary['failedAssertions'], isEmpty);
+    expect(strategyRuntimeSummary['kind'], 'scenario');
+    expect(strategyRuntimeSummary['assertionCount'], greaterThan(0));
+    expect(strategyRuntimeSummary['assertionFailCount'], 0);
+    expect(strategyRuntimeSummary['failedAssertions'], isEmpty);
 
     runtime.agent.stopAutoProcessing();
     runtime.cronScheduler.stop();
@@ -1224,11 +1332,7 @@ class _MockLLMResponse {
   }) => [
     _MockLLMResponse([
       for (final call in calls)
-        SSEToolCall(
-          id: call.id,
-          name: call.name,
-          arguments: call.arguments,
-        ),
+        SSEToolCall(id: call.id, name: call.name, arguments: call.arguments),
       SSEUsage(promptTokens: 500, completionTokens: 120),
       SSEDone(finishReason: 'tool_calls'),
     ]),
