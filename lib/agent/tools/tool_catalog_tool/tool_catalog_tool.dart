@@ -185,14 +185,23 @@ class ToolCatalogTool extends Tool {
     for (final capability in capabilities) {
       groups.putIfAbsent(_moduleId(capability.name), () => []).add(capability);
     }
-    return groups.entries.map((entry) {
+    final modules = groups.entries.map((entry) {
       final descriptor = _moduleTemplate(entry.key);
       return {
         ...descriptor,
         'runtime': 'finagent-mobile',
         'tools': entry.value.map((capability) => capability.toJson()).toList(),
       };
-    }).toList()..sort((a, b) => '${a['id']}'.compareTo('${b['id']}'));
+    }).toList();
+    final marketData = capabilities.where((item) => item.name == 'MarketData');
+    if (marketData.isNotEmpty) {
+      modules.add({
+        ..._moduleTemplate('strategy-runtime'),
+        'runtime': 'finagent-mobile',
+        'tools': marketData.map((capability) => capability.toJson()).toList(),
+      });
+    }
+    return modules..sort((a, b) => '${a['id']}'.compareTo('${b['id']}'));
   }
 
   String _moduleId(String toolName) {
@@ -306,6 +315,21 @@ class ToolCatalogTool extends Tool {
         'limitations':
             'Real side effects require explicit approval and configured provider state.',
         'discovery': 'Use Runbook and FinanceWorkflowState before trade tools.',
+      },
+      'strategy-runtime': {
+        'id': 'strategy-runtime',
+        'title': 'StrategySpec validation, backtest, save, read, and rerun',
+        'schema': 'provider-module-descriptor-v1',
+        'permissionClass':
+            'read-only computation plus strategy artifact writes',
+        'cacheDataContract':
+            'Agent-created strategies must flow through StrategySpec, validation report, data coverage, backtest or fund observation evidence, saved artifact, and readback/run evidence before reuse.',
+        'healthEvidence':
+            'WorkflowVerifier(strategy_backtest), ArtifactRegistry, FinanceWorkflowState, and MarketData custom_strategy_* results expose lifecycle status, unsupported parts, assumptions, and data coverage.',
+        'limitations':
+            'Mobile strategy execution is sandboxed and data-dependent. Unsupported indicators, macro prose, news sentiment, arbitrary code, or broker actions must remain rejected unless the StrategySpec contract explicitly supports them.',
+        'discovery':
+            'Call Runbook(action:"get", workflow:"strategy_backtest"), ToolCatalog(action:"detail", tool:"MarketData"), then MarketData(action:"custom_strategy_help") before validate/backtest/save/run.',
       },
       'sub-agent': {
         'id': 'sub-agent',
