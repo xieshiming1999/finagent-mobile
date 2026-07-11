@@ -108,10 +108,15 @@ class ScriptTool extends Tool {
         }
       }
 
-      final isScriptError = parsed['ok'] != true;
+      var isScriptError = parsed['ok'] != true;
       if (!isScriptError) {
         final result = parsed['result'];
-        buf.writeln(result is String ? result : jsonEncode(result));
+        if (result is String && _looksLikeBridgeChannelError(result)) {
+          isScriptError = true;
+          buf.writeln('Bridge channel failed: $result');
+        } else {
+          buf.writeln(result is String ? result : jsonEncode(result));
+        }
       } else {
         buf.writeln('Script execution failed: ${parsed['error']}');
       }
@@ -136,6 +141,13 @@ class ScriptTool extends Tool {
     } finally {
       js.dispose();
     }
+  }
+
+  bool _looksLikeBridgeChannelError(String value) {
+    final text = value.trimLeft();
+    return text.startsWith('Error:') ||
+        text.startsWith('Unsupported algorithm:') ||
+        text.startsWith('Invalid ');
   }
 
   void _registerFileChannels(JavascriptRuntime js, String basePath) {

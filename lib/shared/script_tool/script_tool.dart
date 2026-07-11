@@ -130,7 +130,13 @@ class ScriptTool extends Tool {
         }
         output.writeln();
       }
-      output.writeln('Result: ${result.stringResult}');
+      final resultText = result.stringResult;
+      final isBridgeError = _looksLikeBridgeChannelError(resultText);
+      output.writeln(
+        isBridgeError
+            ? 'Bridge channel failed: $resultText'
+            : 'Result: $resultText',
+      );
       sw.stop();
       output.writeln(
         '\n(executed in ${sw.elapsedMilliseconds}ms, ${fetchResults.length} HTTP pre-fetched)',
@@ -138,10 +144,14 @@ class ScriptTool extends Tool {
 
       log(
         'Script',
-        'Executed ${code.length} chars, result: ${result.stringResult.length} chars',
+        'Executed ${code.length} chars, result: ${resultText.length} chars',
       );
 
-      return ToolResult(toolUseId: toolUseId, content: output.toString());
+      return ToolResult(
+        toolUseId: toolUseId,
+        content: output.toString(),
+        isError: isBridgeError,
+      );
     } catch (e) {
       log('Script', 'Error: $e');
       final output = StringBuffer();
@@ -161,6 +171,13 @@ class ScriptTool extends Tool {
     } finally {
       jsRuntime?.dispose();
     }
+  }
+
+  bool _looksLikeBridgeChannelError(String value) {
+    final text = value.trimLeft();
+    return text.startsWith('Error:') ||
+        text.startsWith('Unsupported algorithm:') ||
+        text.startsWith('Invalid ');
   }
 
   void _registerFileChannels(JavascriptRuntime js, String basePath) {
