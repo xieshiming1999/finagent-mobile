@@ -79,6 +79,13 @@ Map<String, dynamic> validateStockStrategySpec(Map<String, dynamic> spec) {
     unsupportedDetails,
     validationIssues,
   );
+  _validateConditionDslIssues(
+    spec,
+    errors,
+    unsupported,
+    unsupportedDetails,
+    validationIssues,
+  );
 
   if ('${spec['name']}'.trim().isEmpty) {
     const message = 'name is required';
@@ -456,6 +463,50 @@ Map<String, dynamic> validateStockStrategySpec(Map<String, dynamic> spec) {
         ? 'If the user asked to validate only or not save, answer now from this validation result. Do not call custom_strategy_backtest, custom_strategy_save, query_kline, query_technical_indicator, Script, or other tools unless the user explicitly asks for backtest, save, or extra market evidence.'
         : 'This validation failed. Report the unsupported executable parts directly. Do not replace them with proxy indicators, and do not call custom_strategy_backtest or custom_strategy_save unless the user explicitly asks for a separate proxy redesign.',
   };
+}
+
+void _validateConditionDslIssues(
+  Map<String, dynamic> spec,
+  List<String> errors,
+  List<String> unsupported,
+  List<Map<String, Object>> unsupportedDetails,
+  List<Map<String, Object>> validationIssues,
+) {
+  final issues = spec['conditionDslIssues'];
+  if (issues is! List) return;
+  for (final raw in issues.whereType<Map>()) {
+    final index = raw['index'] is num ? (raw['index'] as num).toInt() : 0;
+    final field = '${raw['field'] ?? 'condition'}';
+    final value = '${raw['value'] ?? ''}';
+    final message = '${raw['message'] ?? 'invalid conditionDslV1 rule'}';
+    errors.add(message);
+    unsupported.add(message);
+    validationIssues.add(
+      _validationIssue(
+        category: 'condition_dsl',
+        path: 'rules[$index].$field',
+        field: field,
+        value: value,
+        message: message,
+        suggestion:
+            'Use canonical entry/exit groups, or request custom_strategy_help detail:"catalog" fields:["executableV1.conditionDslV1"] and revise rules[] to the supported mini-contract.',
+        metadata: const {
+          'allowedActions': ['entry', 'exit', 'buy', 'sell', 'long', 'close'],
+          'grammar':
+              '<series-or-indicator-id> (< | <= | > | >= | crosses_above | crosses_below) (<series-or-indicator-id> | number)',
+        },
+      ),
+    );
+    unsupportedDetails.add(
+      _unsupportedDetail(
+        category: 'condition_dsl',
+        path: 'rules[$index].$field',
+        field: field,
+        value: value,
+        message: message,
+      ),
+    );
+  }
 }
 
 List<String> _strategySpecSymbols(Map<String, dynamic> spec) {
@@ -1331,6 +1382,8 @@ String _repairActionForCategory(String category) {
       return 'fix_indicator_parameter';
     case 'rule_shape':
       return 'fix_rule_shape';
+    case 'condition_dsl':
+      return 'fix_condition_dsl';
     case 'dataRequirements':
       return 'fix_data_requirements';
     case 'risk':
@@ -1353,6 +1406,7 @@ String _repairTargetForCategory(String category) {
     case 'rule_source':
     case 'operator':
     case 'rule_shape':
+    case 'condition_dsl':
       return 'strategySpec.entry_or_exit';
     case 'exit_type':
     case 'exit_value':
@@ -1431,6 +1485,14 @@ Map<String, Object> _repairPatchHintForCategory(String category) {
       return const {
         'operation': 'provide_rule_group',
         'allowedGroups': ['all', 'any'],
+      };
+    case 'condition_dsl':
+      return const {
+        'operation': 'revise_condition_dsl_or_use_canonical_rule_group',
+        'catalog': 'custom_strategy_help.executableV1.conditionDslV1',
+        'allowedActions': ['entry', 'exit', 'buy', 'sell', 'long', 'close'],
+        'grammar':
+            '<series-or-indicator-id> (< | <= | > | >= | crosses_above | crosses_below) (<series-or-indicator-id> | number)',
       };
     case 'dataRequirements':
       return const {
@@ -1667,6 +1729,8 @@ String _unsupportedSuggestion(String category) {
       return 'Use full_capital, fixed_fraction, risk_per_trade, or kelly_fraction.';
     case 'proxy_strategy':
       return 'A proxy StrategySpec is a separate strategy. Validate/backtest/save it only after explicit structured approval.';
+    case 'condition_dsl':
+      return 'Use canonical entry/exit rule groups, or request custom_strategy_help detail:"catalog" fields:["executableV1.conditionDslV1"] and revise the structured DSL fields.';
     default:
       return 'Revise this StrategySpec field according to custom_strategy_help before validating again.';
   }

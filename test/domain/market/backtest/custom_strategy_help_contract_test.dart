@@ -104,6 +104,478 @@ void main() {
     expect((spec['exit'] as Map)['any'], contains(isA<Map>()));
   });
 
+  test('custom strategy accepts agent-authored entrySignals and exitSignals lists', () async {
+    final service = BacktestMarketDataService(
+      candleLoader: (symbol, period, context) async =>
+          _relativeStrengthCandles(symbol),
+    );
+
+    final validation = await service.customStrategyValidate({
+      'strategySpec': {
+        'name': 'Simple SMA Trend',
+        'market': 'cn',
+        'assetClass': 'stock',
+        'dataRequirements': {'minBars': 120},
+        'entrySignals': [
+          {
+            'indicator': 'sma',
+            'params': {'period': 20},
+            'operator': '>',
+            'left': {'field': 'close'},
+            'right': {
+              'indicator': 'sma',
+              'params': {'period': 20},
+            },
+          },
+        ],
+        'exitSignals': [
+          {
+            'indicator': 'sma',
+            'params': {'period': 20},
+            'operator': '<',
+            'left': {'field': 'close'},
+            'right': {
+              'indicator': 'sma',
+              'params': {'period': 20},
+            },
+          },
+        ],
+        'stopLossPct': 8,
+        'positionSizing': {'type': 'full_capital'},
+      },
+    });
+
+    expect(validation.isError, isFalse);
+    final content = validation.content as Map<String, dynamic>;
+    expect(content['status'], 'validated');
+    final spec = content['spec'] as Map<String, dynamic>;
+    final indicators = (spec['indicators'] as List).cast<Map>();
+    expect(indicators.any((row) => row['id'] == 'sma20'), isTrue);
+    expect(
+      (spec['entry'] as Map)['all'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'close')
+            .having((row) => row['op'], 'op', '>')
+            .having((row) => row['right'], 'right', {'mul': ['sma20', 1]}),
+      ),
+    );
+    expect(
+      (spec['exit'] as Map)['any'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'close')
+            .having((row) => row['op'], 'op', '<')
+            .having((row) => row['right'], 'right', {'mul': ['sma20', 1]}),
+      ),
+    );
+  });
+
+  test('custom strategy accepts top-level signals as indicator declarations', () async {
+    final service = BacktestMarketDataService(
+      candleLoader: (symbol, period, context) async =>
+          _relativeStrengthCandles(symbol),
+    );
+
+    final validation = await service.customStrategyValidate({
+      'strategySpec': {
+        'name': 'Moutai EMA Trend',
+        'market': 'cn',
+        'assetClass': 'stock',
+        'signals': [
+          {'indicator': 'ema', 'period': 12, 'input': 'close', 'output': 'ema12'},
+          {'indicator': 'ema', 'period': 26, 'input': 'close', 'output': 'ema26'},
+        ],
+        'entryRules': [
+          {'lhs': 'ema12', 'op': 'crosses_above', 'rhs': 'ema26'},
+        ],
+        'exitRules': [
+          {'lhs': 'ema12', 'op': 'crosses_below', 'rhs': 'ema26'},
+        ],
+      },
+    });
+
+    expect(validation.isError, isFalse);
+    final content = validation.content as Map<String, dynamic>;
+    expect(content['status'], 'validated');
+    final spec = content['spec'] as Map<String, dynamic>;
+    final indicators = (spec['indicators'] as List).cast<Map>();
+    expect(indicators.any((row) => row['id'] == 'ema12'), isTrue);
+    expect(indicators.any((row) => row['id'] == 'ema26'), isTrue);
+    expect(
+      (spec['entry'] as Map)['all'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'ema12')
+            .having((row) => row['op'], 'op', 'crosses_above')
+            .having((row) => row['right'], 'right', 'ema26'),
+      ),
+    );
+    expect(
+      (spec['exit'] as Map)['any'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'ema12')
+            .having((row) => row['op'], 'op', 'crosses_below')
+            .having((row) => row['right'], 'right', 'ema26'),
+      ),
+    );
+  });
+
+  test('custom strategy normalizes explicit buy/sell rule condition DSL', () async {
+    final service = BacktestMarketDataService(
+      candleLoader: (symbol, period, context) async =>
+          _relativeStrengthCandles(symbol),
+    );
+
+    final validation = await service.customStrategyValidate({
+      'strategySpec': {
+        'name': 'SMA Trend DSL',
+        'market': 'cn',
+        'assetClass': 'stock',
+        'indicators': [
+          {
+            'id': 'sma20',
+            'type': 'sma',
+            'params': {'period': 20},
+          },
+          {
+            'id': 'sma60',
+            'type': 'sma',
+            'params': {'period': 60},
+          },
+        ],
+        'rules': [
+          {
+            'name': 'buy',
+            'action': 'buy',
+            'condition': 'close > sma20 and sma20 > sma60',
+          },
+          {'name': 'sell', 'action': 'sell', 'condition': 'close < sma20'},
+        ],
+        'exits': {'stop_loss_pct': 8},
+        'positionSizing': {'type': 'full_capital'},
+      },
+    });
+
+    expect(validation.isError, isFalse);
+    final content = validation.content as Map<String, dynamic>;
+    expect(content['status'], 'validated');
+    final spec = content['spec'] as Map<String, dynamic>;
+    expect(
+      (spec['entry'] as Map)['all'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'close')
+            .having((row) => row['op'], 'op', '>')
+            .having((row) => row['right'], 'right', 'sma20'),
+      ),
+    );
+    expect(
+      (spec['entry'] as Map)['all'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'sma20')
+            .having((row) => row['op'], 'op', '>')
+            .having((row) => row['right'], 'right', 'sma60'),
+      ),
+    );
+    expect(
+      (spec['exit'] as Map)['any'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'close')
+            .having((row) => row['op'], 'op', '<')
+            .having((row) => row['right'], 'right', 'sma20'),
+      ),
+    );
+  });
+
+  test('custom strategy returns structured repair feedback for invalid condition DSL', () async {
+    final service = BacktestMarketDataService(
+      candleLoader: (symbol, period, context) async =>
+          _relativeStrengthCandles(symbol),
+    );
+
+    final validation = await service.customStrategyValidate({
+      'strategySpec': {
+        'name': 'Invalid DSL',
+        'market': 'cn',
+        'assetClass': 'stock',
+        'indicators': [
+          {
+            'id': 'sma20',
+            'type': 'sma',
+            'params': {'period': 20},
+          },
+        ],
+        'rules': [
+          {
+            'action': '买入',
+            'condition': 'close rises above sma20 with strong mood',
+          },
+        ],
+        'exit': {
+          'any': [
+            {'type': 'stop_loss_pct', 'value': 8},
+          ],
+        },
+      },
+    });
+
+    expect(validation.isError, isFalse);
+    final content = validation.content as Map<String, dynamic>;
+    expect(content['status'], 'rejected');
+    final issues = (content['validationIssues'] as List).cast<Map>();
+    expect(
+      issues,
+      contains(
+        isA<Map>()
+            .having((row) => row['category'], 'category', 'condition_dsl')
+            .having((row) => row['path'], 'path', 'rules[0].action')
+            .having(
+              (row) => row['allowedActions'],
+              'allowedActions',
+              ['entry', 'exit', 'buy', 'sell', 'long', 'close'],
+            ),
+      ),
+    );
+    expect(
+      issues,
+      contains(
+        isA<Map>()
+            .having((row) => row['category'], 'category', 'condition_dsl')
+            .having((row) => row['path'], 'path', 'rules[0].condition')
+            .having(
+              (row) => '${row['grammar']}',
+              'grammar',
+              contains('<series-or-indicator-id>'),
+            ),
+      ),
+    );
+    final repairPlan = (content['repairPlan'] as List).cast<Map>();
+    expect(
+      repairPlan,
+      contains(
+        isA<Map>()
+            .having((row) => row['category'], 'category', 'condition_dsl')
+            .having((row) => row['repairAction'], 'repairAction', 'fix_condition_dsl'),
+      ),
+    );
+  });
+
+  test('custom strategy normalizes compact indicator-pair rules', () async {
+    final service = BacktestMarketDataService(
+      candleLoader: (symbol, period, context) async =>
+          _relativeStrengthCandles(symbol),
+    );
+
+    final validation = await service.customStrategyValidate({
+      'strategySpec': {
+        'name': 'Compact EMA Cross Trend',
+        'market': 'cn',
+        'assetClass': 'stock',
+        'indicators': [
+          {
+            'type': 'ema',
+            'params': {'period': 12},
+          },
+          {
+            'type': 'ema',
+            'params': {'period': 26},
+          },
+          {
+            'type': 'atr_pct',
+            'params': {'period': 14},
+          },
+        ],
+        'entry': {
+          'all': [
+            {
+              'indicator': 'ema',
+              'params': {'period': 12},
+              'operator': 'crosses_above',
+              'indicator2': 'ema',
+              'params2': {'period': 26},
+            },
+          ],
+        },
+        'exit': {
+          'any': [
+            {'type': 'atr_stop_loss', 'value': 8},
+            {'type': 'take_profit_pct', 'value': 15},
+            {
+              'indicator': 'ema',
+              'params': {'period': 12},
+              'operator': 'crosses_below',
+              'indicator2': 'ema',
+              'params2': {'period': 26},
+            },
+          ],
+        },
+        'positionSizing': 'full_capital',
+        'dataRequirements': {'minBars': 120},
+      },
+    });
+
+    expect(validation.isError, isFalse);
+    final content = validation.content as Map<String, dynamic>;
+    expect(content['status'], 'validated');
+    final spec = content['spec'] as Map<String, dynamic>;
+    final indicators = (spec['indicators'] as List).cast<Map>();
+    expect(indicators.any((row) => row['id'] == 'ema12'), isTrue);
+    expect(indicators.any((row) => row['id'] == 'ema26'), isTrue);
+    expect(
+      (spec['entry'] as Map)['all'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'ema12')
+            .having((row) => row['op'], 'op', 'crosses_above')
+            .having((row) => row['right'], 'right', 'ema26'),
+      ),
+    );
+    expect(
+      (spec['exit'] as Map)['any'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'ema12')
+            .having((row) => row['op'], 'op', 'crosses_below')
+            .having((row) => row['right'], 'right', 'ema26'),
+      ),
+    );
+  });
+
+  test('custom strategy normalizes type-as-operator explicit rules', () async {
+    final service = BacktestMarketDataService(
+      candleLoader: (symbol, period, context) async =>
+          _relativeStrengthCandles(symbol),
+    );
+
+    final validation = await service.customStrategyValidate({
+      'strategySpec': {
+        'name': 'Type Operator EMA Cross',
+        'market': 'cn',
+        'assetClass': 'stock',
+        'entryRules': [
+          {
+            'type': 'crosses_above',
+            'left': {
+              'indicator': 'ema',
+              'params': {'period': 12},
+            },
+            'right': {
+              'indicator': 'ema',
+              'params': {'period': 26},
+            },
+          },
+        ],
+        'exitRules': [
+          {
+            'type': '>',
+            'left': {
+              'indicator': 'ema_slope',
+              'params': {'period': 12},
+            },
+            'right': 0,
+          },
+          {'type': 'stop_loss_pct', 'value': 5},
+        ],
+      },
+    });
+
+    expect(validation.isError, isFalse);
+    final content = validation.content as Map<String, dynamic>;
+    expect(content['status'], 'validated');
+    final spec = content['spec'] as Map<String, dynamic>;
+    expect(
+      (spec['entry'] as Map)['all'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'ema12')
+            .having((row) => row['op'], 'op', 'crosses_above'),
+      ),
+    );
+    expect(
+      (spec['exit'] as Map)['any'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'ema_slope12')
+            .having((row) => row['op'], 'op', '>'),
+      ),
+    );
+  });
+
+  test('custom strategy normalizes indicator names and string rule values', () async {
+    final service = BacktestMarketDataService(
+      candleLoader: (symbol, period, context) async =>
+          _relativeStrengthCandles(symbol),
+    );
+
+    final validation = await service.customStrategyValidate({
+      'strategySpec': {
+        'name': 'Named Indicator Alias Trend',
+        'market': 'cn',
+        'assetClass': 'stock',
+        'indicators': [
+          {
+            'name': 'ema',
+            'params': {'period': 12},
+          },
+          {
+            'name': 'ema',
+            'params': {'period': 26},
+          },
+          {
+            'name': 'sma',
+            'params': {'period': 60},
+          },
+        ],
+        'entry': {
+          'conditions': [
+            {
+              'indicator': 'ema_12',
+              'operator': 'crosses_above',
+              'value': 'ema_26',
+            },
+            {'indicator': 'close', 'operator': '>', 'value': 'sma_60'},
+          ],
+        },
+        'exit': {'stop_loss_pct': 8, 'take_profit_pct': 20},
+        'positionSizing': 'fixed_fraction',
+        'positionFraction': 0.2,
+      },
+    });
+
+    expect(validation.isError, isFalse);
+    final content = validation.content as Map<String, dynamic>;
+    expect(content['status'], 'validated');
+    final spec = content['spec'] as Map<String, dynamic>;
+    final indicators = (spec['indicators'] as List).cast<Map>();
+    expect(indicators.any((row) => row['id'] == 'ema12'), isTrue);
+    expect(indicators.any((row) => row['id'] == 'ema26'), isTrue);
+    expect(indicators.any((row) => row['id'] == 'sma60'), isTrue);
+    expect(
+      (spec['entry'] as Map)['all'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'ema12')
+            .having((row) => row['right'], 'right', 'ema26'),
+      ),
+    );
+    expect(
+      (spec['entry'] as Map)['all'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'close')
+            .having((row) => row['right'], 'right', 'sma60'),
+      ),
+    );
+    expect(
+      spec['positionSizing'],
+      containsPair('value', 0.2),
+    );
+  });
+
   test(
     'preset backtest exposes cost assumptions when no trades occur',
     () async {

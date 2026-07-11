@@ -178,7 +178,7 @@ void main() {
       expect(answer, contains('backtested evidence'));
     });
 
-    test('does not build save-rerun boundary from prompt text alone', () {
+    test('builds save-rerun boundary from structured save and run evidence without prompt parsing', () {
       final evidence = FinanceCustomStrategyEvidence();
       final messages = [
         _user('把刚才验证通过的策略保存下来，然后重新按策略 ID 跑一次，确认结果一致。'),
@@ -186,29 +186,98 @@ void main() {
         _tool('save', '''
 {
   "action": "custom_strategy_save",
-  "strategyId": "custom_fund_watch_v1",
+  "strategyId": "custom_ema_v1",
   "version": 1,
-  "status": "validated",
-  "spec": {"id": "custom_fund_watch_v1", "name": "基金定投观察策略"},
+  "status": "backtested",
+  "spec": {"id": "custom_ema_v1", "name": "贵州茅台_EMA趋势"},
   "validation": {"status": "validated"},
-  "evidence": null
+  "evidence": {"status": "backtested", "bars": 240}
 }
 '''),
         _assistantTool('run', {
           'action': 'custom_strategy_run',
-          'strategyId': 'custom_fund_watch_v1',
+          'strategyId': 'custom_ema_v1',
+          'code': '000858',
         }),
-        _tool(
-          'run',
-          'custom strategy custom_fund_watch_v1 is not runnable; status=validated. Run custom_strategy_backtest and save backtested evidence first.',
-          isError: true,
-        ),
+        _tool('run', '''
+{
+  "action": "custom_strategy_run",
+  "code": "000858",
+  "strategyId": "custom_ema_v1",
+  "status": "backtested",
+  "actualStartDate": "2025-07-01",
+  "actualEndDate": "2026-06-30",
+  "bars": 240,
+  "metrics": {"tradeCount": 1, "totalReturnPct": 4, "maxDrawdownPct": 8, "winRatePct": 50},
+  "dataCoverage": {"symbol": "000858", "rows": 240, "requiredBars": 120, "sufficient": true, "source": "local kline_daily", "cacheStatus": "local-hit"}
+}
+'''),
       ];
 
       final answer = evidence.saveRunBoundary(
         messages: messages,
         turnStartIndex: 1,
       );
+
+      expect(answer, contains('策略保存与重跑完成'));
+      expect(answer, contains('strategyId：custom_ema_v1'));
+      expect(answer, contains('标的：000858'));
+      expect(answer, contains('数据覆盖'));
+    });
+
+    test('builds rerun answer from custom_strategy_run evidence without same-turn save', () {
+      final evidence = FinanceCustomStrategyEvidence();
+      final messages = [
+        _user('换成五粮液000858重跑已保存策略。'),
+        _assistantTool('run', {
+          'action': 'custom_strategy_run',
+          'strategyId': 'custom_ema_v1',
+          'code': '000858',
+        }),
+        _tool('run', '''
+{
+  "action": "custom_strategy_run",
+  "code": "000858",
+  "strategyId": "custom_ema_v1",
+  "status": "backtested",
+  "actualStartDate": "2025-07-01",
+  "actualEndDate": "2026-06-30",
+  "bars": 240,
+  "metrics": {"tradeCount": 1, "totalReturnPct": 4, "maxDrawdownPct": 8, "winRatePct": 50},
+  "dataCoverage": {"symbol": "000858", "rows": 240, "requiredBars": 120, "sufficient": true, "source": "local kline_daily", "cacheStatus": "local-hit"}
+}
+'''),
+      ];
+
+      final answer = evidence.saveRunBoundary(
+        messages: messages,
+        turnStartIndex: 1,
+      );
+
+      expect(answer, contains('策略保存与重跑完成'));
+      expect(answer, contains('strategyId：custom_ema_v1'));
+      expect(answer, contains('标的：000858'));
+    });
+
+    test('does not close natural-language save-rerun turn after save only', () {
+      final evidence = FinanceCustomStrategyEvidence();
+      final messages = [
+        _user('保存刚才验证通过的策略，然后换一只股票重跑。'),
+        _assistantTool('save', {'action': 'custom_strategy_save'}),
+        _tool('save', '''
+{
+  "action": "custom_strategy_save",
+  "strategyId": "custom_ema_v1",
+  "version": 1,
+  "status": "backtested",
+  "spec": {"id": "custom_ema_v1", "name": "贵州茅台_EMA趋势"},
+  "validation": {"status": "validated"},
+  "evidence": {"status": "backtested", "bars": 240}
+}
+'''),
+      ];
+
+      final answer = evidence.save(messages, 0);
 
       expect(answer, isNull);
     });

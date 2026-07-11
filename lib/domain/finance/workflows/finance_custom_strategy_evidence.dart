@@ -331,11 +331,10 @@ class FinanceCustomStrategyEvidence {
     required List<Message> messages,
     required int turnStartIndex,
   }) {
-    final workflowState = _workflowStateForTurn(messages, turnStartIndex);
-    if (!_isStrategyRerunWorkflow(workflowState)) return null;
     final calls = _toolCalls(messages.skip(turnStartIndex));
     final results = _toolResults(messages.skip(turnStartIndex));
     Map<String, dynamic>? latestSave;
+    Map<String, dynamic>? latestRun;
     String? latestRunError;
     for (final call in calls) {
       final result = results[call.id];
@@ -354,8 +353,40 @@ class FinanceCustomStrategyEvidence {
       if (call.input['action'] == 'custom_strategy_run' && result.isError) {
         latestRunError = result.content;
       }
+      if (call.input['action'] == 'custom_strategy_run' && !result.isError) {
+        try {
+          final decoded = jsonDecode(result.content);
+          if (decoded is Map<String, dynamic> &&
+              decoded['action'] == 'custom_strategy_run') {
+            latestRun = decoded;
+          }
+        } catch (_) {
+          continue;
+        }
+      }
     }
     final saveStatus = latestSave?['status']?.toString();
+    if (latestRun != null && latestRun['status'] == 'backtested') {
+      final metrics = latestRun['metrics'];
+      final metricsMap = metrics is Map ? metrics : const {};
+      return [
+        '## 策略保存与重跑完成',
+        '',
+        '已通过结构化策略记录完成保存，并使用 `custom_strategy_run` 按 strategyId 重新执行。系统已停止追加 provider、脚本、文件、监控或交易工具调用。',
+        '',
+        '- strategyId：${latestRun['strategyId'] ?? latestSave?['strategyId'] ?? _strategyIdFromSpec(latestSave?['spec']) ?? '-'}。',
+        '- 保存状态：${saveStatus ?? '-'}。',
+        '- 重跑状态：${latestRun['status'] ?? '-'}。',
+        '- 标的：${latestRun['code'] ?? latestRun['symbol'] ?? '-'}。',
+        '- 数据覆盖：${_coverageText(latestRun)}。',
+        '- 交易次数：${metricsMap['tradeCount'] ?? latestRun['tradeCount'] ?? '-'}。',
+        '- 总收益：${metricsMap['totalReturn'] ?? metricsMap['totalReturnPct'] ?? '-'}。',
+        '- 最大回撤：${metricsMap['maxDrawdown'] ?? metricsMap['maxDrawdownPct'] ?? '-'}。',
+        '- 胜率：${metricsMap['winRate'] ?? metricsMap['winRatePct'] ?? '-'}。',
+        '',
+        '结论：该策略已经具备可复用策略记录、验证/回测证据和按 strategyId 重跑路径。后续可在 Strategy Library 中查看，或在新的用户请求中用于更多标的比较、观察池和监控工作流。',
+      ].join('\n');
+    }
     final isNotRunnable = saveStatus == 'validated';
     if (latestSave == null || !isNotRunnable) return null;
     final spec = latestSave['spec'];
@@ -641,6 +672,16 @@ class FinanceCustomStrategyEvidence {
   }
 
   String? save(List<Message> messages, int turnStartIndex) {
+    final commandState =
+        turnStartIndex >= 0 && turnStartIndex < messages.length
+            ? FinanceWorkflowState.fromUserContent(
+                messages[turnStartIndex].content,
+              )
+            : null;
+    if (commandState?.isStrategy != true ||
+        commandState?.intentMode != FinanceIntentMode.save) {
+      return null;
+    }
     for (final message in messages.skip(turnStartIndex).toList().reversed) {
       final result = message.toolResult;
       if (result == null || result.isError) continue;

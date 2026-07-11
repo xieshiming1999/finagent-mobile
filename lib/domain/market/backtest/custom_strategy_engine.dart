@@ -173,6 +173,16 @@ class CustomStrategyEngine {
           'minScore',
           'maxPairwiseCorrelation',
         ],
+        'conditionDsl': {
+          'available': true,
+          'boundary':
+              'Optional structured shorthand only; prefer canonical entry/exit rule groups.',
+          'catalogRequest': {
+            'action': 'custom_strategy_help',
+            'detail': 'catalog',
+            'fields': ['executableV1.conditionDslV1'],
+          },
+        },
         'ruleCompositionExamples': {
           'volumeGreaterThanMovingAverageMultiple': {
             'description':
@@ -806,6 +816,34 @@ class CustomStrategyEngine {
             'A proxy StrategySpec is a separate redesigned strategy. Do not validate, backtest, or save it as the original unsupported strategy without explicit user approval.',
       },
     };
+
+    if (includeCatalog) {
+      final executable = Map<String, dynamic>.from(payload['executableV1'] as Map);
+      executable['conditionDslV1'] = {
+        'boundary':
+            'Optional structured StrategySpec shorthand only. Prefer canonical entry/exit rule groups. Do not use natural-language strategy prose here.',
+        'fields': {
+          'rules': 'Array of objects with action and condition.',
+          'action': ['entry', 'exit', 'buy', 'sell', 'long', 'close'],
+          'condition': 'Simple comparisons joined by and/or.',
+        },
+        'grammar':
+            '<series-or-indicator-id> (< | <= | > | >= | crosses_above | crosses_below) (<series-or-indicator-id> | number)',
+        'builtInSeries': ['close', 'volume'],
+        'examples': [
+          {'action': 'entry', 'condition': 'close > sma20 and sma20 > sma60'},
+          {'action': 'exit', 'condition': 'close < sma20'},
+        ],
+        'unsupported': [
+          'Chinese action labels',
+          'free-form sentences',
+          'parentheses',
+          'arithmetic expressions except canonical right.mul rule objects',
+          'news/sentiment/fund-flow prose',
+        ],
+      };
+      payload['executableV1'] = executable;
+    }
 
     if (!includeCatalog) {
       final executable =

@@ -9,7 +9,8 @@ Map<String, dynamic> normalizeStrategySpec(Map<String, dynamic> input) {
   final name = '${input['name'] ?? 'custom strategy'}'.trim();
   final version = _intOf(input['version'], fallback: 1);
   final id = input['id'] ?? 'custom_${_slug(name)}_v$version';
-  final rawIndicators = input['indicators'];
+  final conditionDslIssues = _collectConditionDslIssues(input);
+  final rawIndicators = input['indicators'] ?? input['observation'] ?? input['signals'];
   final indicatorList = rawIndicators is List
       ? rawIndicators
       : rawIndicators is Map
@@ -28,7 +29,6 @@ Map<String, dynamic> normalizeStrategySpec(Map<String, dynamic> input) {
     final rawType =
         '${indicator['type'] ?? indicator['indicator'] ?? indicator['name'] ?? indicator['id']}';
     final ref = parseStrategyIndicatorRef(rawType);
-    final id = '${indicator['id'] ?? indicator['name'] ?? ref.id}';
     final params = {
       ...(_mapOf(indicator['params']) ?? <String, dynamic>{}),
       if (indicator['length'] != null || indicator['period'] != null)
@@ -37,6 +37,14 @@ Map<String, dynamic> normalizeStrategySpec(Map<String, dynamic> input) {
           fallback: ref.period,
         ),
     };
+    final period = _intOf(params['period'], fallback: ref.period) ?? ref.period;
+    final rawName = '${indicator['name'] ?? ''}'.trim();
+    final explicitNameId = rawName.isNotEmpty &&
+            parseRegisteredStrategyIndicator(rawName) == null
+        ? rawName
+        : null;
+    final id =
+        '${indicator['id'] ?? indicator['output'] ?? indicator['alias'] ?? explicitNameId ?? StrategyIndicatorRef(ref.type, period).id}';
     if (ref.type == 'bollinger') {
       params.remove('stdDev');
       params.remove('std_dev');
@@ -131,6 +139,7 @@ Map<String, dynamic> normalizeStrategySpec(Map<String, dynamic> input) {
     'positionSizing': _normalizeSizing(_sizingSource(input)),
     'cost': input['cost'] ?? {'commissionPct': 0.1, 'slippagePct': 0.05},
     'notes': input['notes'] ?? [],
+    if (conditionDslIssues.isNotEmpty) 'conditionDslIssues': conditionDslIssues,
   };
 }
 
@@ -533,9 +542,129 @@ Map<String, dynamic>? _normalizeRuleGroup(
 Object? _entrySource(Map<String, dynamic> input) =>
     input['entry'] ??
     (_mapOf(input['signals'])?['entry']) ??
+    input['entrySignals'] ??
     input['entryRules'] ??
     input['entryRule'] ??
-    input['entryConditions'];
+    input['entryConditions'] ??
+    _rulesDslSource(input, 'entry');
+
+Object? _rulesDslSource(Map<String, dynamic> input, String mode) {
+  final rules = _listOf(input['rules']);
+  if (rules == null) return null;
+  final selected = <Map<String, dynamic>>[];
+  var hasAny = false;
+  for (final item in rules.whereType<Map>()) {
+    final rule = Map<String, dynamic>.from(item);
+    if (_ruleActionMode(rule) != mode) continue;
+    final parsed = _conditionRulesFromDsl('${rule['condition'] ?? rule['expression'] ?? ''}');
+    if (parsed.isEmpty) continue;
+    selected.addAll(parsed);
+  }
+  if (selected.isEmpty) return null;
+  for (final rule in selected) {
+    if (rule.remove('_logic') == 'or') hasAny = true;
+  }
+  final firstRule = rules.whereType<Map>().isNotEmpty
+      ? Map<String, dynamic>.from(rules.whereType<Map>().first)
+      : const <String, dynamic>{};
+  final rawLogic = '${firstRule['logic'] ?? ''}'.toLowerCase();
+  if (mode == 'exit' || rawLogic == 'or' || rawLogic == 'any') hasAny = true;
+  return hasAny ? {'any': selected} : {'all': selected};
+}
+
+List<Map<String, dynamic>> _collectConditionDslIssues(Map<String, dynamic> input) {
+  final rules = _listOf(input['rules']);
+  if (rules == null) return const [];
+  final issues = <Map<String, dynamic>>[];
+  for (var index = 0; index < rules.length; index++) {
+    final raw = rules[index];
+    if (raw is! Map) {
+      issues.add({
+        'index': index,
+        'field': 'rules',
+        'message': 'conditionDslV1 rule must be an object.',
+      });
+      continue;
+    }
+    final rule = Map<String, dynamic>.from(raw);
+    if (_ruleActionMode(rule).isEmpty) {
+      issues.add({
+        'index': index,
+        'field': 'action',
+        'value': rule['action'] ?? rule['side'] ?? rule['type'],
+        'message':
+            'conditionDslV1 action must be one of entry, exit, buy, sell, long, or close.',
+      });
+    }
+    final condition = '${rule['condition'] ?? rule['expression'] ?? ''}';
+    if (condition.trim().isEmpty) {
+      issues.add({
+        'index': index,
+        'field': 'condition',
+        'value': condition,
+        'message': 'conditionDslV1 condition is required.',
+      });
+      continue;
+    }
+    if (_conditionRulesFromDsl(condition).isEmpty) {
+      issues.add({
+        'index': index,
+        'field': 'condition',
+        'value': condition,
+        'message':
+            'conditionDslV1 condition must be simple comparisons joined only by and/or.',
+      });
+    }
+  }
+  return issues;
+}
+
+String _ruleActionMode(Map<String, dynamic> rule) {
+  final action = '${rule['action'] ?? rule['side'] ?? rule['type'] ?? ''}'
+      .trim()
+      .toLowerCase();
+  if (action == 'entry' || action == 'exit') return action;
+  if (action == 'buy' || action == 'long') return 'entry';
+  if (action == 'sell' || action == 'close') return 'exit';
+  return '';
+}
+
+List<Map<String, dynamic>> _conditionRulesFromDsl(String raw) {
+  if (raw.trim().isEmpty) return const [];
+  final tokens = raw
+      .split(RegExp(r'\s+(and|or|&&|\|\|)\s+', caseSensitive: false))
+      .where((part) => part.trim().isNotEmpty);
+  final out = <Map<String, dynamic>>[];
+  var nextLogic = 'and';
+  for (final part in tokens) {
+    final token = part.trim();
+    if (RegExp(r'^(and|&&)$', caseSensitive: false).hasMatch(token)) {
+      nextLogic = 'and';
+      continue;
+    }
+    if (RegExp(r'^(or|\|\|)$', caseSensitive: false).hasMatch(token)) {
+      nextLogic = 'or';
+      continue;
+    }
+    final parsed = _parseDslComparison(token);
+    if (parsed == null) return const [];
+    out.add({...parsed, '_logic': nextLogic});
+  }
+  return out;
+}
+
+Map<String, dynamic>? _parseDslComparison(String raw) {
+  final match = RegExp(
+    r'^([a-zA-Z_][a-zA-Z0-9_]*|close|volume)\s*(crosses_above|crosses_below|>=|<=|>|<)\s*([a-zA-Z_][a-zA-Z0-9_]*|[0-9]+(?:\.[0-9]+)?)$',
+  ).firstMatch(raw.trim());
+  if (match == null) return null;
+  final right = match.group(3)!;
+  return {
+    'left': match.group(1)!,
+    'operator': match.group(2)!,
+    'value': _numOf(right) ?? right,
+  };
+}
 
 bool _isAnyRuleGroup(Map<String, dynamic> source) {
   if (source.containsKey('any') || source.containsKey('or')) return true;
@@ -549,7 +678,7 @@ Map<String, dynamic> _normalizeExplicitRule(
   Map<String, dynamic> rule, {
   Set<String> indicatorIds = const {},
 }) {
-  if (rule.containsKey('type')) return rule;
+  if (_isStopRuleType(rule['type'])) return rule;
   for (final key in [
     'stop_loss_pct',
     'take_profit_pct',
@@ -564,8 +693,10 @@ Map<String, dynamic> _normalizeExplicitRule(
   final leftRef = _leftRef(rule);
   final indicator = leftRef.type;
   final op = _operatorFromRule(rule);
+  final comparisonRule = {...rule};
+  comparisonRule.remove('type');
   return {
-    ...rule,
+    ...comparisonRule,
     'left': _normalizedRuleLeft(rule, leftRef, indicatorIds),
     'op': op,
     'right': indicator == 'volume_sma'
@@ -575,7 +706,8 @@ Map<String, dynamic> _normalizeExplicitRule(
 }
 
 String _operatorFromRule(Map<String, dynamic> rule) {
-  final direct = '${rule['operator'] ?? rule['op'] ?? ''}'.trim();
+  final typeOperator = _isStopRuleType(rule['type']) ? null : rule['type'];
+  final direct = '${rule['operator'] ?? rule['op'] ?? typeOperator ?? ''}'.trim();
   if (direct.isNotEmpty) return direct;
   for (final key in rule.keys) {
     final normalized = _normalizeOperatorKey(key);
@@ -583,6 +715,15 @@ String _operatorFromRule(Map<String, dynamic> rule) {
   }
   return '';
 }
+
+bool _isStopRuleType(Object? raw) => const {
+  'stop_loss_pct',
+  'take_profit_pct',
+  'trailing_stop_pct',
+  'max_drawdown_stop_pct',
+  'atr_stop_loss',
+  'time_stop_bars',
+}.contains('$raw');
 
 String _normalizeOperatorKey(String raw) {
   final compact = raw.replaceAll(RegExp(r'[,\s，]'), '');
@@ -614,7 +755,7 @@ String _normalizedRuleLeft(
     }
     return leftRef.id;
   }
-  final rawLeft = '${rule['left'] ?? rule['indicator'] ?? ''}'.trim();
+  final rawLeft = '${rule['left'] ?? rule['lhs'] ?? rule['indicator'] ?? ''}'.trim();
   if (indicatorIds.contains(rawLeft)) return rawLeft;
   if (leftRef.type == 'volume' || leftRef.type == 'volume_sma') {
     return 'volume';
@@ -679,6 +820,16 @@ Map<String, dynamic> _normalizeSizing(Object? raw) {
 
 Iterable<StrategyIndicatorRef> _indicatorRefs(Map<String, dynamic> rule) sync* {
   yield _leftRef(rule);
+  if (rule['indicator2'] != null ||
+      rule['params2'] != null ||
+      rule['period2'] != null) {
+    yield _refFromObject({
+      'indicator': rule['indicator2'],
+      'params': rule['params2'],
+      'period': rule['period2'],
+      'length': rule['length2'],
+    });
+  }
   final reference = rule['reference'];
   if (reference is Map) yield _refFromObject(reference);
   if (rule['referenceIndicator'] != null || rule['referencePeriod'] != null) {
@@ -713,10 +864,14 @@ StrategyIndicatorRef _leftRef(Map<String, dynamic> rule) {
   final left = rule['left'];
   if (left is Map) return _refFromObject(left);
   final parsed = parseStrategyIndicatorRef(
-    '${rule['indicator'] ?? left ?? rule['ref'] ?? ''}',
+    '${rule['indicator'] ?? left ?? rule['lhs'] ?? rule['ref'] ?? ''}',
   );
+  final params = _mapOf(rule['params']);
   final period =
-      _intOf(rule['period'] ?? rule['length'], fallback: parsed.period) ??
+      _intOf(
+        rule['period'] ?? rule['length'] ?? params?['period'],
+        fallback: parsed.period,
+      ) ??
       parsed.period;
   return StrategyIndicatorRef(parsed.type, period);
 }
@@ -724,10 +879,14 @@ StrategyIndicatorRef _leftRef(Map<String, dynamic> rule) {
 StrategyIndicatorRef _refFromObject(Map raw) {
   final ref = Map<String, dynamic>.from(raw);
   final parsed = parseStrategyIndicatorRef(
-    '${ref['indicator'] ?? ref['type'] ?? ref['left'] ?? ref['ref'] ?? ref['name'] ?? ref['id'] ?? ''}',
+    '${ref['indicator'] ?? ref['type'] ?? ref['left'] ?? ref['field'] ?? ref['ref'] ?? ref['name'] ?? ref['id'] ?? ''}',
   );
+  final params = _mapOf(ref['params']);
   final period =
-      _intOf(ref['period'] ?? ref['length'], fallback: parsed.period) ??
+      _intOf(
+        ref['period'] ?? ref['length'] ?? params?['period'],
+        fallback: parsed.period,
+      ) ??
       parsed.period;
   return StrategyIndicatorRef(parsed.type, period);
 }
@@ -747,6 +906,25 @@ Object? _rightValue(
   Map<String, dynamic> condition, {
   Set<String> indicatorIds = const {},
 }) {
+  final rhs = condition['rhs'];
+  if (rhs is String) {
+    if (indicatorIds.contains(rhs)) return rhs;
+    final ref = parseStrategyIndicatorRef(rhs);
+    if (allowedStrategyIndicators.contains(ref.type) ||
+        indicatorIds.contains(ref.id)) {
+      return ref.id;
+    }
+  }
+  if (condition['indicator2'] != null ||
+      condition['params2'] != null ||
+      condition['period2'] != null) {
+    return _refFromObject({
+      'indicator': condition['indicator2'],
+      'params': condition['params2'],
+      'period': condition['period2'],
+      'length': condition['length2'],
+    }).id;
+  }
   final reference = condition['reference'];
   if (reference is Map) {
     final ref = _refFromObject(reference);
@@ -801,6 +979,10 @@ Object? _rightValue(
               1,
         ],
       };
+    }
+    if (allowedStrategyIndicators.contains(ref.type) ||
+        indicatorIds.contains(ref.id)) {
+      return ref.id;
     }
   }
   final right = condition['right'];
@@ -897,12 +1079,20 @@ Object? _volumeComparisonRight(
 }
 
 Object? _exitSource(Map<String, dynamic> input) {
-  final rawExit =
+  final rawExitBase =
       input['exit'] ??
       input['exits'] ??
+      input['exitSignals'] ??
       input['exitRules'] ??
       input['exitRule'] ??
       input['exitConditions'];
+  final rawExitDsl = _rulesDslSource(input, 'exit');
+  final rawExit =
+      rawExitBase == null && rawExitDsl != null
+      ? rawExitDsl
+      : rawExitBase is Map && rawExitDsl is Map
+      ? {...Map<String, dynamic>.from(rawExitDsl), ...Map<String, dynamic>.from(rawExitBase)}
+      : rawExitBase;
   final exit = rawExit is List
       ? <String, dynamic>{'any': rawExit}
       : _mapOf(rawExit) ?? <String, dynamic>{};
@@ -966,7 +1156,10 @@ Object? _sizingSource(Map<String, dynamic> input) {
     final positionSizing = input['positionSizing'];
     if (positionSizing is String) {
       final fixedFraction =
-          _numOf(input['fixedFraction']) ?? _numOf(input['fixed_fraction']);
+          _numOf(input['fixedFraction']) ??
+          _numOf(input['fixed_fraction']) ??
+          _numOf(input['positionFraction']) ??
+          _numOf(input['position_fraction']);
       if (fixedFraction != null) {
         return {'type': positionSizing, 'value': fixedFraction};
       }
@@ -974,7 +1167,10 @@ Object? _sizingSource(Map<String, dynamic> input) {
     return positionSizing;
   }
   final fixedFraction =
-      _numOf(input['fixedFraction']) ?? _numOf(input['fixed_fraction']);
+      _numOf(input['fixedFraction']) ??
+      _numOf(input['fixed_fraction']) ??
+      _numOf(input['positionFraction']) ??
+      _numOf(input['position_fraction']);
   if (fixedFraction != null) {
     return {'type': 'fixed_fraction', 'value': fixedFraction};
   }
