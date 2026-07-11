@@ -68,6 +68,7 @@ import '../agent/tools/market_data_tool/market_data_tool.dart';
 import '../agent/tools/wind_mcp_tool/wind_mcp_tool.dart';
 import '../agent/tools/data_process_tool/data_process_tool.dart';
 import '../agent/tools/portfolio_tool/portfolio_tool.dart';
+import '../agent/tools/provider_router_tool/provider_router_tool.dart';
 import '../agent/tools/research_tool/research_tool.dart';
 import '../agent/tools/report_download_tool/report_download_tool.dart';
 import '../agent/tools/report_parse_tool/report_parse_tool.dart';
@@ -242,6 +243,7 @@ AgentRuntime createAgentRuntime({
     InteractionEvidenceTool(),
     WorkflowEvidenceTool(),
     WorkflowVerifierTool(),
+    ProviderRouterTool(),
     RunbookTool(),
     ArtifactRegistryTool(),
     FinanceWorkflowStateTool(),

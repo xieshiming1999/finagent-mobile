@@ -1,0 +1,103 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:finagent/agent/tool_context.dart';
+import 'package:finagent/agent/tools/provider_router_tool/provider_router_tool.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  test(
+    'ProviderRouter routes quote with code-owned provider order and blocks',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+
+      final result =
+          jsonDecode(
+                (await ProviderRouterTool().call('router-1', {
+                  'action': 'route',
+                  'task': 'quote',
+                  'preferredProviders': ['sina', 'tdx'],
+                  'temporarilyBlockedProviders': ['tdx'],
+                }, context)).content,
+              )
+              as Map<String, dynamic>;
+
+      expect(result['contract'], 'provider-router-route-v1');
+      expect(result['order'], ['sina']);
+      expect(
+        result['skipped'],
+        contains(
+          isA<Map>().having((row) => row['provider'], 'provider', 'tdx'),
+        ),
+      );
+      expect(result['serialProviders'], contains('sina'));
+    },
+  );
+
+  test('ProviderRouter explains credential and compatibility gates', () async {
+    final context = _tempContext();
+    addTearDown(() {
+      final dir = Directory(context.basePath);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    final result =
+        jsonDecode(
+              (await ProviderRouterTool().call('router-2', {
+                'action': 'route',
+                'task': 'macro',
+                'gates': {'tushareConfigured': true},
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+
+    expect(result['order'], ['tushare']);
+    expect(
+      result['skipped'],
+      contains(
+        isA<Map>().having(
+          (row) => row['reason'],
+          'reason',
+          'wind_not_configured',
+        ),
+      ),
+    );
+    expect(
+      result['skipped'],
+      contains(
+        isA<Map>().having(
+          (row) => row['reason'],
+          'reason',
+          'akshare_compatibility_disabled',
+        ),
+      ),
+    );
+  });
+
+  test('ProviderRouter rejects unsupported task through tool error', () async {
+    final context = _tempContext();
+    addTearDown(() {
+      final dir = Directory(context.basePath);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    final result = await ProviderRouterTool().call('router-3', {
+      'action': 'route',
+      'task': 'unknown',
+    }, context);
+
+    expect(result.isError, true);
+    expect(result.content, contains('requires a supported task'));
+  });
+}
+
+ToolContext _tempContext() {
+  final dir = Directory.systemTemp.createTempSync(
+    'finagent_provider_router_test_',
+  );
+  return ToolContext(basePath: dir.path, serviceBaseUrl: '');
+}
