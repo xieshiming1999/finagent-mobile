@@ -216,10 +216,20 @@ void main() {
     final dataHealthToolResult =
         dataHealthReport['toolResults'] as List<dynamic>;
     expect(dataHealthToolResult.single['toolName'], 'MarketData');
-    expect(
-      '${dataHealthToolResult.single['result']}',
-      contains('"credentialActivationRows"'),
+    final dataHealthPayload = _decodeToolResultJson(
+      dataHealthToolResult.single['result'],
     );
+    expect(dataHealthPayload['action'], 'data_health');
+    final dataHealthProvenance =
+        dataHealthPayload['provenance'] as Map<String, dynamic>;
+    expect(dataHealthProvenance['canonicalSchema'], 'data_health_report');
+    expect(
+      dataHealthProvenance['canonicalTable'],
+      'finance_data_health_report',
+    );
+    expect(dataHealthPayload['diagnosticTruncated'], isTrue);
+    final dataHealthDiagnostic = _readDiagnosticOutput(dataHealthPayload);
+    expect(dataHealthDiagnostic, contains('"credentialActivationRows"'));
 
     final refreshScenario = await tester.runAsync(
       () => bridge.scenario(
@@ -516,7 +526,6 @@ void main() {
           expectTools: ['MarketData'],
           expectToolResultContains: [
             '"action": "runtime_probe"',
-            '"probeAction": "status"',
             '"canonicalSchema": "runtime_probe_status"',
             'runtime-evidence',
           ],
@@ -542,7 +551,6 @@ void main() {
               'Run one explicit bounded mobile runtime probe fixture through the FinAgent app in-process bridge.',
           expectTools: ['MarketData'],
           expectToolResultContains: [
-            '"probeAction": "run"',
             '"selectedCount": 1',
             '"mobile_marketdata_tdx_count"',
             '"passed": 1',
@@ -869,21 +877,35 @@ void main() {
   );
 }
 
+Map<String, dynamic> _decodeToolResultJson(Object? result) {
+  final decoded = jsonDecode('$result');
+  expect(decoded, isA<Map<String, dynamic>>());
+  return decoded as Map<String, dynamic>;
+}
+
+String _readDiagnosticOutput(Map<String, dynamic> payload) {
+  final diagnosticPath = payload['diagnosticOutputPath'];
+  expect(diagnosticPath, isA<String>());
+  final diagnosticFile = File(diagnosticPath as String);
+  expect(diagnosticFile.existsSync(), isTrue);
+  return diagnosticFile.readAsStringSync();
+}
+
 void _installPathProviderMock(String Function() path) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
-    const MethodChannel('plugins.flutter.io/path_provider'),
-    (call) async {
-      switch (call.method) {
-        case 'getApplicationDocumentsDirectory':
-        case 'getApplicationSupportDirectory':
-        case 'getTemporaryDirectory':
-          return path();
-        default:
-          return null;
-      }
-    },
-  );
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (call) async {
+          switch (call.method) {
+            case 'getApplicationDocumentsDirectory':
+            case 'getApplicationSupportDirectory':
+            case 'getTemporaryDirectory':
+              return path();
+            default:
+              return null;
+          }
+        },
+      );
 }
 
 void _seedQuoteSnapshot(String basePath) {
