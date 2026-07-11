@@ -100,7 +100,14 @@ void main() {
           'readOnly': true,
           'canParallel': true,
           'requiresUserInteraction': false,
-          'actions': ['detail', 'help', 'list', 'module', 'modules'],
+          'actions': [
+            'detail',
+            'help',
+            'list',
+            'module',
+            'modules',
+            'providerModules',
+          ],
         },
       ]),
     );

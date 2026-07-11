@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../../domain/market/providers/data_api_interface_contract.dart';
 import '../../message.dart';
 import '../../tool.dart';
 import '../../tool_context.dart';
@@ -27,9 +28,16 @@ class ToolCatalogTool extends Tool {
     'properties': {
       'action': {
         'type': 'string',
-        'enum': ['help', 'list', 'detail', 'modules', 'module'],
+        'enum': [
+          'help',
+          'list',
+          'detail',
+          'modules',
+          'module',
+          'providerModules',
+        ],
         'description':
-            'help, list all tool capabilities, detail one tool, list capability modules, or detail one module',
+            'help, list all tool capabilities, detail one tool, list capability modules, detail one module, or summarize provider capability modules',
       },
       'tool': {'type': 'string', 'description': 'Tool name for detail action'},
       'module': {
@@ -57,6 +65,12 @@ class ToolCatalogTool extends Tool {
     final action = (input['action'] as String?)?.trim() ?? 'list';
     if (action == 'help') {
       return ToolResult(toolUseId: toolUseId, content: jsonEncode(_help()));
+    }
+    if (action == 'providerModules') {
+      return ToolResult(
+        toolUseId: toolUseId,
+        content: jsonEncode(_providerModules()),
+      );
     }
     if (!['list', 'detail', 'modules', 'module'].contains(action)) {
       return ToolResult(
@@ -174,10 +188,35 @@ class ToolCatalogTool extends Tool {
 
   Map<String, dynamic> _help() => {
     'contract': 'tool-catalog-help-v1',
-    'actions': ['list', 'detail', 'modules', 'module'],
+    'actions': ['list', 'detail', 'modules', 'module', 'providerModules'],
     'guidance':
         'Use list/detail for individual tools. Use modules/module to inspect provider modules, cache/permission behavior, health dependencies, and runtime limitations before broad or unfamiliar work.',
   };
+
+  Map<String, dynamic> _providerModules() {
+    final byProvider = <String, _ProviderModuleAccumulator>{};
+    for (final definition in dataApiInterfaceContract.interfaces) {
+      for (final capability in definition.capabilities) {
+        final provider = capability.provider.name;
+        byProvider
+            .putIfAbsent(provider, () => _ProviderModuleAccumulator(provider))
+            .add(definition, capability);
+      }
+    }
+    final providers = byProvider.values.map((item) => item.toJson()).toList()
+      ..sort((a, b) => '${a['provider']}'.compareTo('${b['provider']}'));
+    return {
+      'contract': 'provider-module-matrix-v1',
+      'runtime': 'finagent-mobile',
+      'source': 'dataApiInterfaceContract',
+      'version': dataApiInterfaceContractVersion,
+      'providerCount': providers.length,
+      'interfaceCount': dataApiInterfaceContract.interfaces.length,
+      'providers': providers,
+      'guidance':
+          'Use this matrix before broad provider calls. Supported/globalOnly capabilities are reusable only when normalizer, canonical table, readback, and runtime evidence are present. Gated/unstable/disabled/notSupported providers must not be retried as normal workflow.',
+    };
+  }
 
   List<Map<String, dynamic>> _moduleDescriptors(
     List<ToolCapabilitySummary> capabilities,
@@ -402,4 +441,50 @@ class ToolCatalogTool extends Tool {
       templates[id] ?? templates['runtime-tool']!,
     );
   }
+}
+
+class _ProviderModuleAccumulator {
+  _ProviderModuleAccumulator(this.provider);
+
+  final String provider;
+  final interfaces = <String>{};
+  final schemas = <String>{};
+  final readbacks = <String>{};
+  final probes = <String>{};
+  final statusCounts = <String, int>{};
+  final unsupportedExamples = <String>[];
+
+  void add(
+    DataApiInterfaceDefinition definition,
+    DataApiProviderCapability capability,
+  ) {
+    interfaces.add(definition.id);
+    if (definition.canonicalSchema.isNotEmpty)
+      schemas.add(definition.canonicalSchema);
+    readbacks.addAll(definition.queryActions);
+    final probeId = capability.probeId;
+    if (probeId != null && probeId.isNotEmpty) probes.add(probeId);
+    final status = capability.status.name;
+    statusCounts[status] = (statusCounts[status] ?? 0) + 1;
+    if (capability.status == DataApiCapabilityStatus.notSupported ||
+        capability.status == DataApiCapabilityStatus.disabled ||
+        capability.status == DataApiCapabilityStatus.transportUnstable) {
+      if (unsupportedExamples.length < 5) {
+        unsupportedExamples.add('${definition.id}:${capability.status.name}');
+      }
+    }
+  }
+
+  Map<String, dynamic> toJson() => {
+    'provider': provider,
+    'interfaceCount': interfaces.length,
+    'schemaCount': schemas.length,
+    'readbackActionCount': readbacks.length,
+    'probeCount': probes.length,
+    'statusCounts': statusCounts,
+    'sampleInterfaces': interfaces.take(8).toList(),
+    'sampleSchemas': schemas.take(8).toList(),
+    'sampleReadbacks': readbacks.take(8).toList(),
+    'unsupportedExamples': unsupportedExamples,
+  };
 }

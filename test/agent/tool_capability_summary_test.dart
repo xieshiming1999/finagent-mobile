@@ -117,6 +117,7 @@ void main() {
       'list',
       'module',
       'modules',
+      'providerModules',
     ]);
     expect(agent.actionValues, ['help', 'run']);
     expect(uiControl.actionValues, contains('help'));
@@ -194,6 +195,7 @@ void main() {
           'list',
           'module',
           'modules',
+          'providerModules',
         ]);
       }
     },
@@ -228,6 +230,18 @@ void main() {
     expect(workflow.content, contains('chat and event agents'));
     expect(workflow.content, contains('WorkflowVerifier'));
     expect(workflow.content, contains('FinanceWorkflowState'));
+
+    final providers = await tool.call('provider-modules', {
+      'action': 'providerModules',
+    }, context);
+    expect(providers.isError, isFalse);
+    expect(
+      providers.content,
+      contains('"contract":"provider-module-matrix-v1"'),
+    );
+    expect(providers.content, contains('"runtime":"finagent-mobile"'));
+    expect(providers.content, contains('"provider":"eastmoneyDirect"'));
+    expect(providers.content, contains('"statusCounts"'));
   });
 
   test('AskUserQuestion summary is derived from tool contract', () {
