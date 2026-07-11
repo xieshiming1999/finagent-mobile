@@ -5,6 +5,7 @@ import 'package:finagent/agent/prompt_builder.dart';
 import 'package:finagent/agent/tool.dart';
 import 'package:finagent/agent/tool_context.dart';
 import 'package:finagent/agent/tools/ask_user_question_tool/ask_user_question_tool.dart';
+import 'package:finagent/agent/tools/ui_control_tool/ui_control_tool.dart';
 import 'package:finagent/agent/tools/webview_tool/webview_tool.dart';
 import 'package:finagent/shared/agent_factory.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -95,6 +96,9 @@ void main() {
     final agent = runtime.agent.toolCapabilities.singleWhere(
       (capability) => capability.name == 'Agent',
     );
+    final uiControl = runtime.agent.toolCapabilities.singleWhere(
+      (capability) => capability.name == 'UIControl',
+    );
 
     expect(ask.requiresUserInteraction, isTrue);
     expect(ask.readOnly, isTrue);
@@ -103,6 +107,8 @@ void main() {
     expect(interactionEvidence.actionValues, ['help', 'recent', 'summary']);
     expect(toolCatalog.actionValues, ['detail', 'help', 'list']);
     expect(agent.actionValues, ['help', 'run']);
+    expect(uiControl.actionValues, contains('help'));
+    expect(uiControl.actionValues, contains('openPage'));
   });
 
   test('AskUserQuestion summary is derived from tool contract', () {
@@ -130,6 +136,21 @@ void main() {
     expect(decoded, contains('"contract": "webview-help-v1"'));
     expect(decoded, contains('"navigate"'));
     expect(decoded, contains('"screenshot"'));
+  });
+
+  test('UIControl help is available without a registered UI handler', () async {
+    final tool = UIControlTool();
+    final context = ToolContext(
+      basePath: '/tmp/ui-control-help',
+      serviceBaseUrl: '',
+    );
+
+    final result = await tool.call('ui-help', {'action': 'help'}, context);
+
+    expect(result.isError, isFalse);
+    expect(result.content, contains('"contract": "ui-control-help-v1"'));
+    expect(result.content, contains('"showChartFromStore"'));
+    expect(result.content, contains('"openPage"'));
   });
 
   test('PromptBuilder includes compact tool capability flags', () {

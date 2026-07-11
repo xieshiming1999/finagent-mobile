@@ -33,6 +33,21 @@ class UIControlTool extends Tool {
     'properties': {
       'action': {
         'type': 'string',
+        'enum': [
+          'help',
+          'addPage',
+          'openPage',
+          'closePage',
+          'removePage',
+          'createTile',
+          'updateTile',
+          'removeTile',
+          'showQuote',
+          'showTable',
+          'showChart',
+          'showChartFromStore',
+          'showHtml',
+        ],
         'description':
             'The UI action to perform (e.g., navigate, showChart, showTable)',
       },
@@ -69,6 +84,10 @@ class UIControlTool extends Tool {
     final params =
         (input['params'] ?? input['payload']) as Map<String, dynamic>? ?? {};
 
+    if (action == 'help') {
+      return ToolResult(toolUseId: toolUseId, content: _uiControlHelp());
+    }
+
     if (handler == null) {
       return ToolResult(
         toolUseId: toolUseId,
@@ -87,5 +106,41 @@ class UIControlTool extends Tool {
         isError: true,
       );
     }
+  }
+
+  String _uiControlHelp() {
+    return '''
+{
+  "tool": "UIControl",
+  "contract": "ui-control-help-v1",
+  "purpose": "Open or update in-app UI surfaces from the agent while keeping UI implementation outside the agent core.",
+  "actions": {
+    "pages": ["addPage", "openPage", "closePage", "removePage"],
+    "tiles": ["createTile", "updateTile", "removeTile"],
+    "inline": ["showQuote", "showTable", "showChart", "showChartFromStore", "showHtml"]
+  },
+  "requiredFields": {
+    "openPage": ["params.file or params.path", "params.title"],
+    "showChart": ["params.dataFile"],
+    "showChartFromStore": ["params.symbol"],
+    "createTile": ["params.title", "params.type"],
+    "updateTile": ["params.id"]
+  },
+  "pathRules": [
+    "Page files should normally live under memory/pages.",
+    "Paths are relative to the app runtime base path unless absolute.",
+    "For simple K-line views, prefer showChartFromStore over writing large JSON arrays."
+  ],
+  "observation": [
+    "UIControl requests are handled by the app UI layer.",
+    "Use WorkflowEvidence or session tool results before claiming a page/dashboard workflow is complete."
+  ],
+  "errorFeedback": [
+    "Missing handler is a tool error.",
+    "Missing required params should be corrected before retry.",
+    "Use WebView(action: help) for WebView-specific navigation and screenshot behavior."
+  ]
+}
+''';
   }
 }
