@@ -271,16 +271,13 @@ Key actions:
     final symbol = input['symbol'] as String?;
 
     try {
-      if (symbol != null &&
-          _isStockTechnicalAction(action) &&
-          coreCnMarketIndexCodeSet.contains(_cleanSixDigitCode(symbol))) {
-        return ToolResult(
-          toolUseId: toolUseId,
-          content:
-              'DataProcess(action:"$action") is stock/K-line analysis and does not provide governed index technical indicators for core market index code ${_cleanSixDigitCode(symbol)}. Use MarketData(action:"query_index_quote", symbols:["000001","399001","399006"]) or MarketData(action:"quote", symbols:["000001","399001","399006"]) for index evidence, and state index technical-indicator coverage as missing unless a governed index K-line/indicator contract is available.',
-          isError: true,
-        );
-      }
+      final stockOnlyViolation = _stockOnlyActionViolation(
+        toolUseId,
+        action,
+        input,
+        symbol,
+      );
+      if (stockOnlyViolation != null) return stockOnlyViolation;
       return switch (action) {
         'help' => _help(toolUseId),
         'calendar' => _calendar(toolUseId),
@@ -452,6 +449,41 @@ Key actions:
       );
     }
     return fn();
+  }
+
+  ToolResult? _stockOnlyActionViolation(
+    String toolUseId,
+    String action,
+    Map<String, dynamic> input,
+    String? symbol,
+  ) {
+    if (!_isStockTechnicalAction(action)) return null;
+    final assetClass = _structuredAssetClass(input);
+    if (assetClass == 'fund' ||
+        assetClass == 'etf' ||
+        assetClass == 'money_fund') {
+      return ToolResult(
+        toolUseId: toolUseId,
+        content:
+            'DataProcess(action:"$action") is a stock/K-line analysis action, but type="$assetClass" was requested. For fund watchlist signal checks use DataProcess(action:"watch_signal_check", type:"fund", status:"watching"). For fund evidence use MarketData/DataStore fund query actions such as query_fund_nav, query_fund_money_yield, query_fund_performance, or query_fund_holding. For fund strategy validation use the governed strategy/fund workflow contract instead of stock technical signals.',
+        isError: true,
+      );
+    }
+    if (symbol != null &&
+        coreCnMarketIndexCodeSet.contains(_cleanSixDigitCode(symbol))) {
+      return ToolResult(
+        toolUseId: toolUseId,
+        content:
+            'DataProcess(action:"$action") is stock/K-line analysis and does not provide governed index technical indicators for core market index code ${_cleanSixDigitCode(symbol)}. Use MarketData(action:"query_index_quote", symbols:["000001","399001","399006"]) or MarketData(action:"quote", symbols:["000001","399001","399006"]) for index evidence, and state index technical-indicator coverage as missing unless a governed index K-line/indicator contract is available.',
+        isError: true,
+      );
+    }
+    return null;
+  }
+
+  String _structuredAssetClass(Map<String, dynamic> input) {
+    final value = input['type'] ?? input['assetClass'] ?? input['asset_class'];
+    return value == null ? '' : '$value'.trim().toLowerCase();
   }
 
   bool _isStockTechnicalAction(String action) {

@@ -8,6 +8,22 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test(
+    'DataProcess rejects typed fund requests for stock-only signal actions',
+    () async {
+      final result = await DataProcessTool().call('dp-fund-signals', {
+        'action': 'signals',
+        'type': 'fund',
+        'symbols': ['511220'],
+      }, ToolContext(basePath: '', serviceBaseUrl: ''));
+
+      expect(result.isError, isTrue);
+      expect(result.content, contains('type="fund" was requested'));
+      expect(result.content, contains('watch_signal_check'));
+      expect(result.content, isNot(contains('symbol required')));
+    },
+  );
+
+  test(
     'DataProcess rejects stock-only actions for core market index codes',
     () async {
       final dir = await Directory.systemTemp.createTemp(
