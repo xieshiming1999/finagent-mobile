@@ -28,6 +28,7 @@ import 'speculation.dart';
 import 'goal_manager.dart';
 import 'goal_judge.dart';
 import 'goal_verifier.dart';
+import 'interaction_evidence.dart';
 import 'tool.dart';
 import 'tool_context.dart';
 import 'tools/bash_tool/bash_tool.dart';
@@ -1978,6 +1979,12 @@ class Agent {
 
           if (needsConfirm) {
             final completer = Completer<ToolConfirmResult>();
+            appendInteractionEvidence(toolContext, {
+              'type': 'permission_request',
+              'requestId': toolUse.id,
+              'toolName': toolUse.name,
+              'inputKeys': interactionInputKeys(toolUse.input),
+            });
             controller.add(
               AgentToolConfirmRequest(
                 toolName: toolUse.name,
@@ -1987,6 +1994,15 @@ class Agent {
             );
 
             final confirmResult = await completer.future;
+            appendInteractionEvidence(toolContext, {
+              'type': 'permission_resolved',
+              'requestId': toolUse.id,
+              'toolName': toolUse.name,
+              'approved': confirmResult.approved,
+              'alwaysAllow': confirmResult.alwaysAllow,
+              'rejectReason': confirmResult.rejectReason,
+              'inputKeys': interactionInputKeys(toolUse.input),
+            });
             if (!confirmResult.approved) {
               final reason = confirmResult.rejectReason;
               result = ToolResult(

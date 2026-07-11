@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import '../../ask_user_question_contract.dart';
+import '../../interaction_evidence.dart';
 import '../../message.dart';
 import '../../tool.dart';
 import '../../tool_context.dart';
@@ -195,6 +196,12 @@ class AskUserQuestionTool extends Tool {
     final questionsList = (input['questions'] as List<dynamic>)
         .map((q) => UserQuestion.fromJson(q as Map<String, dynamic>))
         .toList();
+    appendInteractionEvidence(context, {
+      'type': 'user_question_pending',
+      'requestId': toolUseId,
+      'toolName': name,
+      'questions': questionsList.map((q) => q.toJson()).toList(),
+    });
 
     // Call UI handler — this blocks until user answers
     final answers = await handler!(questionsList);
@@ -213,6 +220,14 @@ class AskUserQuestionTool extends Tool {
       });
     }
     final contract = buildAskUserQuestionContract(structuredAnswers);
+    appendInteractionEvidence(context, {
+      'type': 'user_question_resolved',
+      'requestId': toolUseId,
+      'toolName': name,
+      'questions': questionsList.map((q) => q.toJson()).toList(),
+      'answers': answers,
+      'structuredAnswers': structuredAnswers,
+    });
 
     return ToolResult(
       toolUseId: toolUseId,
