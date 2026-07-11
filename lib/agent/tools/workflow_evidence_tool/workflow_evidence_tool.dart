@@ -25,12 +25,13 @@ class WorkflowEvidenceTool extends Tool {
     'properties': {
       'action': {
         'type': 'string',
-        'enum': ['help', 'summary'],
-        'description': 'help or summary',
+        'enum': ['help', 'summary', 'trace'],
+        'description': 'help, summary, or replayable trace',
       },
       'limit': {
         'type': 'integer',
-        'description': 'Maximum recent session evidence rows to return, default 20',
+        'description':
+            'Maximum recent session evidence rows to return, default 20',
       },
     },
   };
@@ -54,7 +55,7 @@ class WorkflowEvidenceTool extends Tool {
     if (action == 'help') {
       return ToolResult(toolUseId: toolUseId, content: jsonEncode(_help()));
     }
-    if (action != 'summary') {
+    if (action != 'summary' && action != 'trace') {
       return ToolResult(
         toolUseId: toolUseId,
         content:
@@ -68,9 +69,44 @@ class WorkflowEvidenceTool extends Tool {
     final sessionEvidence = _readCurrentSession(context, limit);
     final artifacts = _listArtifacts(context, limit);
     final pending = readPendingInteractionState(context);
+    final workflowStates = _readWorkflowStates(context, limit);
     final uiArtifactCount =
         ((artifacts['pages'] as Map)['count'] as int) +
         ((artifacts['dashboards'] as Map)['count'] as int);
+    final runtimeState = _deriveRuntimeState(
+      pendingInteractions: pending,
+      session: sessionEvidence,
+      uiArtifactCount: uiArtifactCount,
+    );
+    if (action == 'trace') {
+      return ToolResult(
+        toolUseId: toolUseId,
+        content: jsonEncode({
+          'contract': 'workflow-trace-v1',
+          'sources': {
+            'session': '${context.basePath}/sessions/current.jsonl',
+            'interactionPending':
+                '${context.memoryDir}/interaction_pending.json',
+            'workflowState': '${context.memoryDir}/workflows/state.json',
+            'artifacts': [
+              '${context.basePath}/memory/pages',
+              '${context.basePath}/memory/dashboards',
+            ],
+          },
+          'runtimeState': runtimeState,
+          'timeline': _traceTimeline(
+            sessionEvidence,
+            pending,
+            artifacts,
+            workflowStates,
+            limit,
+          ),
+          'workflowStates': workflowStates,
+          'guidance':
+              'Use this trace to replay the workflow from structured evidence: state, tool calls, pending interactions, UI artifacts, and final answer evidence.',
+        }),
+      );
+    }
     return ToolResult(
       toolUseId: toolUseId,
       content: jsonEncode({
@@ -86,11 +122,8 @@ class WorkflowEvidenceTool extends Tool {
         'pendingInteractions': pending,
         'session': sessionEvidence,
         'artifacts': artifacts,
-        'runtimeState': _deriveRuntimeState(
-          pendingInteractions: pending,
-          session: sessionEvidence,
-          uiArtifactCount: uiArtifactCount,
-        ),
+        'workflowStates': workflowStates,
+        'runtimeState': runtimeState,
         'guidance':
             'Use this summary to verify tool calls, failures, pending human input, and UI artifacts. It is evidence, not a substitute for a full app workflow check.',
       }),
@@ -99,10 +132,11 @@ class WorkflowEvidenceTool extends Tool {
 
   Map<String, dynamic> _help() => {
     'contract': 'workflow-evidence-help-v1',
-    'actions': ['summary'],
+    'actions': ['summary', 'trace'],
     'reads': [
       'sessions/current.jsonl',
       'memory/interaction_pending.json',
+      'memory/workflows/state.json',
       'memory/pages',
       'memory/dashboards',
     ],
@@ -194,14 +228,14 @@ class WorkflowEvidenceTool extends Tool {
       'exists': true,
       'messageCount': messageCount,
       'toolCallCount': toolCallCount,
-        'toolResultCount': toolResultCount,
-        'toolErrorCount': toolErrorCount,
-        'lastRole': lastRole,
-        'lastAssistantHadToolUse': lastAssistantHadToolUse,
-        'lastToolResultIsError': lastToolResultIsError,
-        'unresolvedToolCallCount': toolUseIds.length - resolvedToolUseIds.length,
-        'recent': recent,
-      };
+      'toolResultCount': toolResultCount,
+      'toolErrorCount': toolErrorCount,
+      'lastRole': lastRole,
+      'lastAssistantHadToolUse': lastAssistantHadToolUse,
+      'lastToolResultIsError': lastToolResultIsError,
+      'unresolvedToolCallCount': toolUseIds.length - resolvedToolUseIds.length,
+      'recent': recent,
+    };
   }
 
   Map<String, dynamic> _listArtifacts(ToolContext context, int limit) {
@@ -216,12 +250,15 @@ class WorkflowEvidenceTool extends Tool {
         out[entry.key] = {'exists': false, 'count': 0, 'recent': []};
         continue;
       }
-      final files = dir
-          .listSync()
-          .whereType<File>()
-          .where((file) => file.path.endsWith('.html'))
-          .toList()
-        ..sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+      final files =
+          dir
+              .listSync()
+              .whereType<File>()
+              .where((file) => file.path.endsWith('.html'))
+              .toList()
+            ..sort(
+              (a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()),
+            );
       out[entry.key] = {
         'exists': true,
         'count': files.length,
@@ -240,11 +277,93 @@ class WorkflowEvidenceTool extends Tool {
     return out;
   }
 
+  List<Map<String, dynamic>> _readWorkflowStates(
+    ToolContext context,
+    int limit,
+  ) {
+    final file = File('${context.memoryDir}/workflows/state.json');
+    if (!file.existsSync()) return [];
+    try {
+      final decoded = jsonDecode(file.readAsStringSync());
+      if (decoded is! Map) return [];
+      final records = decoded['records'];
+      if (records is! List) return [];
+      return records
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .take(limit)
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  List<Map<String, dynamic>> _traceTimeline(
+    Map<String, dynamic> session,
+    List<Map<String, dynamic>> pending,
+    Map<String, dynamic> artifacts,
+    List<Map<String, dynamic>> workflowStates,
+    int limit,
+  ) {
+    final events = <Map<String, dynamic>>[];
+    for (final state in workflowStates) {
+      events.add({
+        'type': 'workflow_state',
+        'timestamp': state['updatedAt'],
+        'status': state['status'],
+        'workflowKind': (state['workflowState'] as Map?)?['workflowKind'],
+        'subject': (state['workflowState'] as Map?)?['subject'],
+        'id': state['id'],
+      });
+    }
+    for (final item in (session['recent'] as List? ?? const [])) {
+      if (item is Map) {
+        events.add({
+          'type': 'session_message',
+          'timestamp': item['timestamp'],
+          'role': item['role'],
+          if (item['toolUses'] != null) 'toolUses': item['toolUses'],
+          if (item['toolResult'] != null) 'toolResult': item['toolResult'],
+          if (item['content'] != null) 'content': item['content'],
+        });
+      }
+    }
+    for (final item in pending) {
+      events.add({
+        'timestamp': item['updatedAt'],
+        'pendingType': item['type'],
+        ...item,
+        'type': 'pending_interaction',
+      });
+    }
+    for (final group in ['pages', 'dashboards']) {
+      final recent = (artifacts[group] as Map?)?['recent'];
+      if (recent is List) {
+        for (final item in recent.whereType<Map>()) {
+          events.add({
+            'type': 'ui_artifact',
+            'artifactKind': group,
+            'timestamp': item['updatedAt'],
+            'path': item['path'],
+            'sizeBytes': item['sizeBytes'],
+          });
+        }
+      }
+    }
+    events.sort(
+      (a, b) => '${a['timestamp'] ?? ''}'.compareTo('${b['timestamp'] ?? ''}'),
+    );
+    return events.length <= limit
+        ? events
+        : events.sublist(events.length - limit);
+  }
+
   Object? _compactValue(Object? value) {
     if (value is String) return _truncate(value, 180);
     if (value is Map) {
       return value.map(
-        (key, item) => MapEntry('$key', item is String ? _truncate(item, 120) : item),
+        (key, item) =>
+            MapEntry('$key', item is String ? _truncate(item, 120) : item),
       );
     }
     return value;
@@ -263,12 +382,16 @@ class WorkflowEvidenceTool extends Tool {
         .toList();
     String state = 'idle';
     String reason = 'No active session evidence is visible.';
-    String nextAction = 'Start a workflow or inspect tool help before broad action.';
+    String nextAction =
+        'Start a workflow or inspect tool help before broad action.';
 
-    if (pendingTypes.any((type) => type.contains('approval') || type.contains('permission'))) {
+    if (pendingTypes.any(
+      (type) => type.contains('approval') || type.contains('permission'),
+    )) {
       state = 'waiting_for_approval';
       reason = 'A structured approval or permission interaction is pending.';
-      nextAction = 'Resolve the pending approval before continuing the workflow.';
+      nextAction =
+          'Resolve the pending approval before continuing the workflow.';
     } else if (pendingInteractions.isNotEmpty) {
       state = 'waiting_for_user';
       reason = 'A structured user question is pending.';
@@ -276,24 +399,31 @@ class WorkflowEvidenceTool extends Tool {
     } else if ((session['unresolvedToolCallCount'] as int? ?? 0) > 0) {
       state = 'using_tool';
       reason = 'At least one tool call has no visible result yet.';
-      nextAction = 'Wait for the tool result or inspect session evidence for missing output.';
+      nextAction =
+          'Wait for the tool result or inspect session evidence for missing output.';
     } else if ((session['toolErrorCount'] as int? ?? 0) > 0) {
       state = 'blocked';
       reason = 'Failed tool results are visible in the current session.';
-      nextAction = 'Inspect failed tool results and recover before final claims.';
-    } else if (session['lastRole'] == 'tool' && session['lastToolResultIsError'] != true) {
+      nextAction =
+          'Inspect failed tool results and recover before final claims.';
+    } else if (session['lastRole'] == 'tool' &&
+        session['lastToolResultIsError'] != true) {
       state = 'verifying_result';
       reason = 'The latest visible event is a successful tool result.';
-      nextAction = 'Verify evidence and synthesize the result before finalizing.';
+      nextAction =
+          'Verify evidence and synthesize the result before finalizing.';
     } else if (session['lastRole'] == 'assistant' &&
         session['lastAssistantHadToolUse'] != true &&
         ((session['toolCallCount'] as int? ?? 0) > 0 || uiArtifactCount > 0)) {
       state = 'complete';
-      reason = 'The latest assistant message follows collected tool or UI evidence.';
-      nextAction = 'Use WorkflowEvidence or CapabilityStatus evaluation before relying on completion.';
+      reason =
+          'The latest assistant message follows collected tool or UI evidence.';
+      nextAction =
+          'Use WorkflowEvidence or CapabilityStatus evaluation before relying on completion.';
     } else if ((session['toolCallCount'] as int? ?? 0) > 0) {
       state = 'thinking';
-      reason = 'Tool evidence exists but no terminal assistant synthesis is visible.';
+      reason =
+          'Tool evidence exists but no terminal assistant synthesis is visible.';
       nextAction = 'Continue reasoning or inspect workflow evidence.';
     }
 
