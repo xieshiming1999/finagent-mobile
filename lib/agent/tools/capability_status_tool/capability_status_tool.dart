@@ -179,6 +179,7 @@ class CapabilityStatusTool extends Tool {
         'toolErrorCount': session['toolErrorCount'],
         'toolCallCount': session['toolCallCount'],
         'uiArtifactCount': uiArtifactCount,
+        'repeatedFailureCount': session['repeatedFailureCount'],
       },
       'pendingInteractions': pending,
       'session': session,
@@ -312,6 +313,8 @@ class CapabilityStatusTool extends Tool {
     }
 
     final recentFailedTools = <Map<String, dynamic>>[];
+    final toolUsesById = <String, Map<String, dynamic>>{};
+    final repeatedFailuresBySignature = <String, Map<String, dynamic>>{};
     var toolCallCount = 0;
     var toolErrorCount = 0;
     for (final line in file.readAsLinesSync()) {
@@ -323,12 +326,42 @@ class CapabilityStatusTool extends Tool {
           continue;
         }
         final toolUses = decoded['toolUses'];
-        if (toolUses is List) toolCallCount += toolUses.length;
+        if (toolUses is List) {
+          toolCallCount += toolUses.length;
+          for (final item in toolUses) {
+            if (item is Map) {
+              final id = '${item['id'] ?? ''}';
+              if (id.isNotEmpty) {
+                toolUsesById[id] = {
+                  'name': item['name'],
+                  'input': item['input'],
+                };
+              }
+            }
+          }
+        }
         final result = decoded['toolResult'] ?? decoded['tool_result'];
         if (result is Map && result['isError'] == true) {
           toolErrorCount++;
+          final toolUseId = '${result['toolUseId'] ?? ''}';
+          final toolUse = toolUsesById[toolUseId];
+          final signature = _toolFailureSignature(toolUse);
+          if (signature != null) {
+            final existing = repeatedFailuresBySignature.putIfAbsent(
+              signature,
+              () => {
+                'toolName': toolUse?['name'],
+                'input': toolUse?['input'],
+                'count': 0,
+                'latestToolUseId': toolUseId,
+              },
+            );
+            existing['count'] = (existing['count'] as int) + 1;
+            existing['latestToolUseId'] = toolUseId;
+          }
           recentFailedTools.add({
             'toolUseId': result['toolUseId'],
+            if (toolUse?['name'] != null) 'toolName': toolUse?['name'],
             'content': _truncate('${result['content'] ?? ''}', 240),
           });
           if (recentFailedTools.length > limit) recentFailedTools.removeAt(0);
@@ -340,7 +373,32 @@ class CapabilityStatusTool extends Tool {
       'toolCallCount': toolCallCount,
       'toolErrorCount': toolErrorCount,
       'recentFailedTools': recentFailedTools,
+      'repeatedFailureCount': repeatedFailuresBySignature.values
+          .where((row) => (row['count'] as int) >= 3)
+          .length,
+      'repeatedFailedToolCalls': repeatedFailuresBySignature.values
+          .where((row) => (row['count'] as int) >= 3)
+          .map(
+            (row) => {
+              ...row,
+              'warning':
+                  'Same tool/input failed ${row['count']} times. Stop repeating this call; inspect help/status or change arguments before retrying.',
+            },
+          )
+          .toList(),
     };
+  }
+
+  String? _toolFailureSignature(Map<String, dynamic>? toolUse) {
+    final name = '${toolUse?['name'] ?? ''}';
+    if (name.isEmpty) return null;
+    Object? input = toolUse?['input'];
+    try {
+      input = jsonEncode(input ?? const {});
+    } catch (_) {
+      input = '$input';
+    }
+    return '$name::$input';
   }
 
   Map<String, dynamic> _listArtifacts(ToolContext context, int limit) => {

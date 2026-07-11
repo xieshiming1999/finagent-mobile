@@ -83,6 +83,30 @@ void main() {
     expect(result.isError, true);
     expect(result.content, contains('Unsupported requiredEvidence "made_up"'));
   });
+
+  test('CapabilityStatus reports repeated identical failed tool calls', () async {
+    final context = _tempContext();
+    addTearDown(() {
+      final dir = Directory(context.basePath);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+    _seedRepeatedFailureEvidence(context);
+
+    final tool = CapabilityStatusTool(toolsProvider: () => [_ExampleTool()]);
+    final summary =
+        jsonDecode(
+              (await tool.call('cap-4', {'action': 'summary'}, context)).content,
+            )
+            as Map<String, dynamic>;
+
+    expect(summary['health']['repeatedFailureCount'], 1);
+    final repeated =
+        (summary['session']['repeatedFailedToolCalls'] as List).single
+            as Map<String, dynamic>;
+    expect(repeated['toolName'], 'MarketData');
+    expect(repeated['count'], 3);
+    expect(repeated['warning'], contains('Stop repeating this call'));
+  });
 }
 
 ToolContext _tempContext() {
@@ -129,6 +153,40 @@ void _seedEvidence(ToolContext context) {
   );
   File('${context.memoryDir}/dashboards/market.html').writeAsStringSync(
     '<html>market</html>',
+  );
+}
+
+void _seedRepeatedFailureEvidence(ToolContext context) {
+  Directory('${context.basePath}/sessions').createSync(recursive: true);
+  final rows = <String>[];
+  for (var i = 1; i <= 3; i++) {
+    rows.add(
+      jsonEncode({
+        'type': 'message',
+        'role': 'assistant',
+        'toolUses': [
+          {
+            'id': 'call-$i',
+            'name': 'MarketData',
+            'input': {'action': 'query_quote'},
+          },
+        ],
+      }),
+    );
+    rows.add(
+      jsonEncode({
+        'type': 'message',
+        'role': 'tool',
+        'toolResult': {
+          'toolUseId': 'call-$i',
+          'content': 'symbols required',
+          'isError': true,
+        },
+      }),
+    );
+  }
+  File('${context.basePath}/sessions/current.jsonl').writeAsStringSync(
+    rows.join('\n'),
   );
 }
 
