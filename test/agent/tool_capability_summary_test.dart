@@ -1,0 +1,100 @@
+import 'dart:io';
+
+import 'package:finagent/agent/message.dart';
+import 'package:finagent/agent/tool.dart';
+import 'package:finagent/agent/tool_context.dart';
+import 'package:finagent/agent/tools/ask_user_question_tool/ask_user_question_tool.dart';
+import 'package:finagent/shared/agent_factory.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+class _ExampleTool extends Tool {
+  @override
+  String get name => 'Example';
+
+  @override
+  String get description => 'Example broad tool';
+
+  @override
+  bool get isReadOnly => false;
+
+  @override
+  bool get requiresUserInteraction => true;
+
+  @override
+  Map<String, dynamic> get inputSchema => {
+    'type': 'object',
+    'required': ['action'],
+    'properties': {
+      'action': {
+        'type': 'string',
+        'enum': ['help', 'run'],
+      },
+      'symbol': {'type': 'string'},
+    },
+  };
+
+  @override
+  Future<ToolResult> call(
+    String toolUseId,
+    Map<String, dynamic> input,
+    ToolContext context,
+  ) async => ToolResult(toolUseId: toolUseId, content: 'ok');
+}
+
+void main() {
+  test('summarizes mobile tool metadata for progressive discovery', () {
+    final summary = summarizeToolCapability(_ExampleTool());
+
+    expect(summary.toJson(), {
+      'name': 'Example',
+      'description': 'Example broad tool',
+      'readOnly': false,
+      'canParallel': false,
+      'requiresUserInteraction': true,
+      'permission': 'write-or-side-effect',
+      'schema': {
+        'propertyNames': ['action', 'symbol'],
+        'required': ['action'],
+        'actionValues': ['help', 'run'],
+      },
+    });
+  });
+
+  test('exposes live agent tool capabilities without prompt scraping', () {
+    final dir = Directory.systemTemp.createTempSync(
+      'finagent_tool_capability_summary_test_',
+    );
+    addTearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    final runtime = createAgentRuntime(
+      basePath: dir.path,
+      serverUrl: '',
+      featurePrompt: 'test',
+      skipPermissions: true,
+      enableWatchlistRefresher: false,
+    );
+    addTearDown(() {
+      runtime.agent.stopAutoProcessing();
+      runtime.monitorScheduler.stop();
+      runtime.cronScheduler.stop();
+    });
+
+    final ask = runtime.agent.toolCapabilities.singleWhere(
+      (capability) => capability.name == 'AskUserQuestion',
+    );
+
+    expect(ask.requiresUserInteraction, isTrue);
+    expect(ask.readOnly, isTrue);
+    expect(ask.propertyNames, contains('questions'));
+  });
+
+  test('AskUserQuestion summary is derived from tool contract', () {
+    final summary = summarizeToolCapability(AskUserQuestionTool());
+
+    expect(summary.name, 'AskUserQuestion');
+    expect(summary.requiresUserInteraction, isTrue);
+    expect(summary.propertyNames, contains('questions'));
+  });
+}

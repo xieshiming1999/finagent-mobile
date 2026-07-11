@@ -286,6 +286,9 @@ class Agent {
   List<String> get toolNames =>
       _tools.map((tool) => tool.name).toList(growable: false);
 
+  List<ToolCapabilitySummary> get toolCapabilities =>
+      _tools.map(summarizeToolCapability).toList(growable: false);
+
   T? findTool<T extends Tool>() {
     for (final t in _tools) {
       if (t is T) return t;
