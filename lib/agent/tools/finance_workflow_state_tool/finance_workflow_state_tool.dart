@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import '../../message.dart';
 import '../../tool.dart';
@@ -64,9 +65,37 @@ class FinanceWorkflowStateTool extends Tool {
     'properties': {
       'action': {
         'type': 'string',
-        'enum': ['help', 'create', 'validate'],
+        'enum': [
+          'help',
+          'create',
+          'validate',
+          'save',
+          'list',
+          'get',
+          'current',
+        ],
         'description':
-            'help, create a finance-workflow-state-v1 object, or validate an existing state',
+            'help, create/validate a finance-workflow-state-v1 object, or save/list/get/current durable workflow state',
+      },
+      'id': {'type': 'string'},
+      'status': {
+        'type': 'string',
+        'enum': ['active', 'blocked', 'complete', 'cancelled'],
+      },
+      'blocker': {'type': 'string'},
+      'pendingUserQuestion': {'type': 'object'},
+      'pendingApproval': {'type': 'object'},
+      'generatedArtifacts': {
+        'type': 'array',
+        'items': {'type': 'string'},
+      },
+      'completedSteps': {
+        'type': 'array',
+        'items': {'type': 'string'},
+      },
+      'requiredEvidence': {
+        'type': 'array',
+        'items': {'type': 'string'},
       },
       'workflowKind': {'type': 'string', 'enum': _workflowKinds},
       'assetClass': {'type': 'string', 'enum': _assetClasses},
@@ -91,7 +120,8 @@ class FinanceWorkflowStateTool extends Tool {
       },
       'workflowState': {
         'type': 'object',
-        'description': 'Existing finance-workflow-state-v1 object for validation',
+        'description':
+            'Existing finance-workflow-state-v1 object for validation',
       },
     },
   };
@@ -115,7 +145,16 @@ class FinanceWorkflowStateTool extends Tool {
     if (action == 'help') {
       return ToolResult(toolUseId: toolUseId, content: jsonEncode(_help()));
     }
-    if (action != 'create' && action != 'validate') {
+    if (action == 'list') {
+      return ToolResult(
+        toolUseId: toolUseId,
+        content: jsonEncode(_list(context, input)),
+      );
+    }
+    if (action == 'get' || action == 'current') {
+      return _get(toolUseId, context, input, current: action == 'current');
+    }
+    if (action != 'create' && action != 'validate' && action != 'save') {
       return ToolResult(
         toolUseId: toolUseId,
         content:
@@ -123,7 +162,7 @@ class FinanceWorkflowStateTool extends Tool {
         isError: true,
       );
     }
-    final rawState = action == 'validate'
+    final rawState = action == 'validate' || action == 'save'
         ? input['workflowState']
         : input;
     final state = _normalizeState(rawState);
@@ -140,6 +179,9 @@ class FinanceWorkflowStateTool extends Tool {
       ...state,
       'updatedAt': state['updatedAt'] ?? DateTime.now().toIso8601String(),
     };
+    if (action == 'save') {
+      return _save(toolUseId, context, input, out);
+    }
     return ToolResult(
       toolUseId: toolUseId,
       content: jsonEncode({
@@ -154,7 +196,7 @@ class FinanceWorkflowStateTool extends Tool {
 
   Map<String, dynamic> _help() => {
     'contract': 'finance-workflow-state-help-v1',
-    'actions': ['create', 'validate'],
+    'actions': ['create', 'validate', 'save', 'list', 'get', 'current'],
     'enums': {
       'workflowKind': _workflowKinds,
       'assetClass': _assetClasses,
@@ -172,7 +214,7 @@ class FinanceWorkflowStateTool extends Tool {
       'evidenceRefs',
     ],
     'guidance':
-        'The agent must choose these typed fields explicitly. Do not infer workflow behavior by matching user prompt text in runtime code.',
+        'The agent must choose these typed fields explicitly. Save active workflow state when later turns, recovery, verification, or UI evidence need it. Do not infer workflow behavior by matching user prompt text in runtime code.',
   };
 
   Map<String, dynamic> _normalizeState(Object? raw) {
@@ -251,5 +293,165 @@ class FinanceWorkflowStateTool extends Tool {
       for (final item in value)
         if ('$item'.trim().isNotEmpty) '$item'.trim(),
     }.toList();
+  }
+
+  ToolResult _save(
+    String toolUseId,
+    ToolContext context,
+    Map<String, dynamic> input,
+    Map<String, dynamic> state,
+  ) {
+    final store = _readStore(context);
+    final now = DateTime.now().toIso8601String();
+    final id = _optionalString(input['id']) ?? _stateId(state, now);
+    final record = {
+      'id': id,
+      'contract': 'workflow-state-record-v1',
+      'status': _status(input['status']),
+      'workflowState': state,
+      'requiredEvidence': _stringList(input['requiredEvidence']),
+      'completedSteps': _stringList(input['completedSteps']),
+      'generatedArtifacts': _stringList(input['generatedArtifacts']),
+      if (_mapOrNull(input['pendingUserQuestion']) != null)
+        'pendingUserQuestion': _mapOrNull(input['pendingUserQuestion']),
+      if (_mapOrNull(input['pendingApproval']) != null)
+        'pendingApproval': _mapOrNull(input['pendingApproval']),
+      if (_optionalString(input['blocker']) != null)
+        'blocker': _optionalString(input['blocker']),
+      'updatedAt': now,
+    };
+    final records = _records(store)
+      ..removeWhere((item) => item['id'] == id)
+      ..insert(0, record);
+    _writeStore(context, {
+      'contract': 'workflow-state-store-v1',
+      'records': records,
+    });
+    return ToolResult(
+      toolUseId: toolUseId,
+      content: jsonEncode({
+        'contract': 'workflow-state-record-v1',
+        'record': record,
+        'usage':
+            'Use FinanceWorkflowState(action:"current") or action:"get" to resume typed workflow state in later turns.',
+      }),
+    );
+  }
+
+  Map<String, dynamic> _list(ToolContext context, Map<String, dynamic> input) {
+    final limit = _intValue(input['limit'], defaultValue: 20).clamp(1, 100);
+    final kind = _optionalString(input['workflowKind']);
+    final records = _records(_readStore(context))
+        .where((record) {
+          if (kind == null) return true;
+          final state = record['workflowState'];
+          return state is Map && state['workflowKind'] == kind;
+        })
+        .take(limit)
+        .toList();
+    return {
+      'contract': 'workflow-state-list-v1',
+      'count': records.length,
+      'workflowKind': kind,
+      'records': records,
+    };
+  }
+
+  ToolResult _get(
+    String toolUseId,
+    ToolContext context,
+    Map<String, dynamic> input, {
+    required bool current,
+  }) {
+    final records = _records(_readStore(context));
+    final id = _optionalString(input['id']);
+    final record = current
+        ? records.cast<Map<String, dynamic>?>().firstWhere(
+            (item) => item?['status'] == 'active',
+            orElse: () => records.isEmpty ? null : records.first,
+          )
+        : records.cast<Map<String, dynamic>?>().firstWhere(
+            (item) => item?['id'] == id,
+            orElse: () => null,
+          );
+    if (record == null) {
+      return ToolResult(
+        toolUseId: toolUseId,
+        content: current
+            ? 'No saved workflow state. Use FinanceWorkflowState(action:"save") after creating typed state.'
+            : 'FinanceWorkflowState(action:"get") requires an existing id. Use action="list" first.',
+        isError: true,
+      );
+    }
+    return ToolResult(
+      toolUseId: toolUseId,
+      content: jsonEncode({
+        'contract': 'workflow-state-record-v1',
+        'record': record,
+      }),
+    );
+  }
+
+  Map<String, dynamic> _readStore(ToolContext context) {
+    final file = _storeFile(context);
+    if (!file.existsSync())
+      return {'contract': 'workflow-state-store-v1', 'records': []};
+    try {
+      final decoded = jsonDecode(file.readAsStringSync());
+      return decoded is Map<String, dynamic>
+          ? decoded
+          : {'contract': 'workflow-state-store-v1', 'records': []};
+    } catch (_) {
+      return {'contract': 'workflow-state-store-v1', 'records': []};
+    }
+  }
+
+  void _writeStore(ToolContext context, Map<String, dynamic> store) {
+    final file = _storeFile(context);
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(store));
+  }
+
+  File _storeFile(ToolContext context) =>
+      File('${context.memoryDir}/workflows/state.json');
+
+  List<Map<String, dynamic>> _records(Map<String, dynamic> store) {
+    final records = store['records'];
+    if (records is! List) return [];
+    return records
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  String _stateId(Map<String, dynamic> state, String now) {
+    final subject =
+        _optionalString(state['subject']) ??
+        _stringList(state['subjects']).join('-');
+    final suffix = now.replaceAll(RegExp(r'[^0-9]'), '');
+    return [
+      'workflow',
+      state['workflowKind'],
+      state['intentMode'],
+      if (subject.isNotEmpty) subject,
+      suffix,
+    ].where((part) => '$part'.trim().isNotEmpty).join('-');
+  }
+
+  String _status(Object? value) {
+    final text = '${value ?? 'active'}'.trim();
+    const allowed = {'active', 'blocked', 'complete', 'cancelled'};
+    return allowed.contains(text) ? text : 'active';
+  }
+
+  int _intValue(Object? value, {required int defaultValue}) {
+    if (value is int) return value;
+    return int.tryParse('${value ?? ''}') ?? defaultValue;
+  }
+
+  Map<String, dynamic>? _mapOrNull(Object? value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
   }
 }
