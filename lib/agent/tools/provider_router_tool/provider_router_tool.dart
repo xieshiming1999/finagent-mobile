@@ -1,11 +1,19 @@
 import 'dart:convert';
 
 import '../../data_fetcher/provider_policy.dart';
+import '../../data_fetcher/api_stats.dart';
 import '../../message.dart';
 import '../../tool.dart';
 import '../../tool_context.dart';
 
+typedef ProviderHealthProvider = List<Map<String, dynamic>> Function();
+
 class ProviderRouterTool extends Tool {
+  ProviderRouterTool({ProviderHealthProvider? runtimeHealthProvider})
+    : _runtimeHealthProvider = runtimeHealthProvider;
+
+  final ProviderHealthProvider? _runtimeHealthProvider;
+
   @override
   String get name => 'ProviderRouter';
 
@@ -42,6 +50,11 @@ class ProviderRouterTool extends Tool {
         'items': {'type': 'object'},
         'description':
             'Optional health rows: provider, status, reason. unhealthy/blocked/quota_exhausted/credential_missing statuses are skipped.',
+      },
+      'includeRuntimeHealth': {
+        'type': 'boolean',
+        'description':
+            'Default true. Merge recent runtime API health from the app statistics store so provider health can affect routing without manual rows.',
       },
       'gates': {
         'type': 'object',
@@ -118,7 +131,8 @@ class ProviderRouterTool extends Tool {
   ) {
     const policy = ProviderPolicy();
     final gates = _gates(input);
-    final healthBlocks = _healthBlocks(input);
+    final healthRows = _combinedHealthRows(input);
+    final healthBlocks = _healthBlocks(healthRows);
     final effectiveGates = ProviderGates(
       windConfigured: gates.windConfigured,
       windQuotaAvailable: gates.windQuotaAvailable,
@@ -170,10 +184,24 @@ class ProviderRouterTool extends Tool {
             },
           )
           .toList(),
+      'providerHealthSource': _providerHealthSource(input, healthRows),
       'nextAction': allowed.isEmpty
           ? 'No provider is currently allowed. Use cache/readback, configure credentials, or clear temporary provider blocks before retrying.'
           : 'Use providers in returned order; do not override order from prompt knowledge.',
     };
+  }
+
+  List<Map<String, dynamic>> _combinedHealthRows(Map<String, dynamic> input) {
+    final rows = <Map<String, dynamic>>[];
+    final provided = input['providerHealth'];
+    if (provided is List) {
+      rows.addAll(provided.whereType<Map>().map(Map<String, dynamic>.from));
+    }
+    if (input['includeRuntimeHealth'] == false) return rows;
+    final runtime =
+        _runtimeHealthProvider?.call() ?? runtimeProviderHealthRows();
+    rows.addAll(runtime);
+    return rows;
   }
 }
 
@@ -250,12 +278,10 @@ ProviderGates _gates(Map<String, dynamic> input) {
   );
 }
 
-Map<FinanceProvider, String> _healthBlocks(Map<String, dynamic> input) {
-  final rows = input['providerHealth'];
-  if (rows is! List) return const {};
+Map<FinanceProvider, String> _healthBlocks(List<Map<String, dynamic>> rows) {
   const policy = ProviderPolicy();
   final out = <FinanceProvider, String>{};
-  for (final row in rows.whereType<Map>()) {
+  for (final row in rows) {
     final providers = policy.normalizeProviders([row['provider']]);
     if (providers.isEmpty) continue;
     final provider = providers.first;
@@ -275,6 +301,54 @@ Map<FinanceProvider, String> _healthBlocks(Map<String, dynamic> input) {
   }
   return out;
 }
+
+List<Map<String, dynamic>> runtimeProviderHealthRows({
+  Duration range = const Duration(minutes: 30),
+}) {
+  return ApiStats.instance
+      .getSummary(range: range)
+      .where((summary) => summary.totalRequests > 0)
+      .map((summary) {
+        final status = _runtimeHealthStatus(summary);
+        return {
+          'provider': summary.source,
+          'status': status,
+          'reason': status == 'ready'
+              ? 'runtime health ready: ${summary.successCount}/${summary.totalRequests} recent calls succeeded'
+              : 'runtime health $status: ${summary.failCount}/${summary.totalRequests} recent calls failed${summary.lastError == null ? '' : ' (${summary.lastError})'}',
+          'source': 'ApiStats',
+          'total': summary.totalRequests,
+          'success': summary.successCount,
+          'failures': summary.failCount,
+          'p95LatencyMs': summary.p95LatencyMs,
+          'lastRequest': summary.lastRequest?.toIso8601String(),
+        };
+      })
+      .toList(growable: false);
+}
+
+String _runtimeHealthStatus(SourceSummary summary) {
+  if (summary.failCount <= 0) return 'ready';
+  if (summary.successCount <= 0) return 'runtime_unavailable';
+  if (summary.failRate >= 0.5) return 'transport_unstable';
+  return 'degraded';
+}
+
+Map<String, dynamic> _providerHealthSource(
+  Map<String, dynamic> input,
+  List<Map<String, dynamic>> rows,
+) => {
+  'manualRows': input['providerHealth'] is List
+      ? (input['providerHealth'] as List).length
+      : 0,
+  'runtimeRows': input['includeRuntimeHealth'] == false
+      ? 0
+      : rows.length -
+            (input['providerHealth'] is List
+                ? (input['providerHealth'] as List).length
+                : 0),
+  'runtimeEnabled': input['includeRuntimeHealth'] != false,
+};
 
 String _skipReason(
   FinanceProvider provider,

@@ -117,6 +117,84 @@ void main() {
     },
   );
 
+  test('ProviderRouter merges runtime provider health by default', () async {
+    final context = _tempContext();
+    addTearDown(() {
+      final dir = Directory(context.basePath);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    final tool = ProviderRouterTool(
+      runtimeHealthProvider: () => [
+        {
+          'provider': 'tdx',
+          'status': 'runtime_unavailable',
+          'reason': 'runtime probe failed',
+          'source': 'test-runtime-health',
+        },
+      ],
+    );
+
+    final result =
+        jsonDecode(
+              (await tool.call('router-runtime-health', {
+                'action': 'route',
+                'task': 'quote',
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+
+    expect(result['order'].first, 'eastmoneyDirect');
+    expect(result['providerHealthSource']['runtimeRows'], 1);
+    expect(result['providerHealthSource']['runtimeEnabled'], true);
+    expect(
+      result['providerHealth'],
+      contains(
+        isA<Map>().having(
+          (row) => row['reason'],
+          'reason',
+          contains('runtime_unavailable'),
+        ),
+      ),
+    );
+  });
+
+  test(
+    'ProviderRouter can disable runtime provider health for diagnostics',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+
+      final tool = ProviderRouterTool(
+        runtimeHealthProvider: () => [
+          {
+            'provider': 'tdx',
+            'status': 'runtime_unavailable',
+            'reason': 'runtime probe failed',
+            'source': 'test-runtime-health',
+          },
+        ],
+      );
+
+      final result =
+          jsonDecode(
+                (await tool.call('router-runtime-health-off', {
+                  'action': 'route',
+                  'task': 'quote',
+                  'includeRuntimeHealth': false,
+                }, context)).content,
+              )
+              as Map<String, dynamic>;
+
+      expect(result['order'].first, 'tdx');
+      expect(result['providerHealth'], isEmpty);
+      expect(result['providerHealthSource']['runtimeEnabled'], false);
+    },
+  );
+
   test('ProviderRouter rejects unsupported task through tool error', () async {
     final context = _tempContext();
     addTearDown(() {
