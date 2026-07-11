@@ -4,9 +4,15 @@ import 'package:finagent/agent/message.dart';
 import 'package:finagent/agent/prompt_builder.dart';
 import 'package:finagent/agent/tool.dart';
 import 'package:finagent/agent/tool_context.dart';
+import 'package:finagent/agent/tools/artifact_registry_tool/artifact_registry_tool.dart';
 import 'package:finagent/agent/tools/ask_user_question_tool/ask_user_question_tool.dart';
+import 'package:finagent/agent/tools/finance_workflow_state_tool/finance_workflow_state_tool.dart';
+import 'package:finagent/agent/tools/provider_router_tool/provider_router_tool.dart';
+import 'package:finagent/agent/tools/recovery_planner_tool/recovery_planner_tool.dart';
+import 'package:finagent/agent/tools/tool_catalog_tool/tool_catalog_tool.dart';
 import 'package:finagent/agent/tools/ui_control_tool/ui_control_tool.dart';
 import 'package:finagent/agent/tools/webview_tool/webview_tool.dart';
+import 'package:finagent/agent/tools/workflow_verifier_tool/workflow_verifier_tool.dart';
 import 'package:finagent/shared/agent_factory.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -192,6 +198,37 @@ void main() {
       }
     },
   );
+
+  test('ToolCatalog module descriptors expose agent path usability', () async {
+    final tool = ToolCatalogTool(
+      toolsProvider: () => [
+        ToolCatalogTool(toolsProvider: () => const []),
+        ProviderRouterTool(),
+        WorkflowVerifierTool(),
+        FinanceWorkflowStateTool(),
+        RecoveryPlannerTool(),
+        ArtifactRegistryTool(),
+      ],
+    );
+    final context = ToolContext(
+      basePath: '/tmp/tool-catalog-modules',
+      serviceBaseUrl: '',
+    );
+
+    final modules = await tool.call('modules', {'action': 'modules'}, context);
+    expect(modules.isError, isFalse);
+    expect(modules.content, contains('"id":"finance-data"'));
+    expect(modules.content, contains('"agentPaths":["chat","event"]'));
+
+    final workflow = await tool.call('workflow-module', {
+      'action': 'module',
+      'module': 'workflow-harness',
+    }, context);
+    expect(workflow.isError, isFalse);
+    expect(workflow.content, contains('chat and event agents'));
+    expect(workflow.content, contains('WorkflowVerifier'));
+    expect(workflow.content, contains('FinanceWorkflowState'));
+  });
 
   test('AskUserQuestion summary is derived from tool contract', () {
     final summary = summarizeToolCapability(AskUserQuestionTool());
