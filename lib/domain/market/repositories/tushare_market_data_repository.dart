@@ -232,18 +232,31 @@ class TushareMarketDataRepository {
     String? start,
     String? end,
     int limit = 100,
+    bool descending = false,
   }) {
     return _storeForContext(context)?.queryTradeCalendar(
           market: market,
           start: start,
           end: end,
           limit: limit,
+          descending: descending,
         ) ??
         _dataManager.queryTradeCalendar(
           market: market,
           start: start,
           end: end,
           limit: limit,
+          descending: descending,
         );
+  }
+
+  Map<String, dynamic>? queryTradeCalendarCoverage(
+    ToolContext context, {
+    String? market,
+  }) {
+    return _storeForContext(
+          context,
+        )?.queryTradeCalendarCoverage(market: market) ??
+        _dataManager.queryTradeCalendarCoverage(market: market);
   }
 }

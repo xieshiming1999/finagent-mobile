@@ -706,13 +706,22 @@ class TushareMarketDataService {
     String? end,
     int limit = 100,
   }) {
+    final hasRange =
+        (start != null && start.trim().isNotEmpty) ||
+        (end != null && end.trim().isNotEmpty);
     final rows = _repository.queryTradeCalendar(
       context,
       market: market,
       start: start,
       end: end,
       limit: limit,
+      descending: !hasRange,
     );
+    final coverage = _repository.queryTradeCalendarCoverage(
+      context,
+      market: market,
+    );
+    final displayRows = hasRange ? rows : rows.reversed.toList();
     return {
       'action': 'query_trade_calendar',
       'interfaceId': 'calendar.trade_days',
@@ -727,8 +736,13 @@ class TushareMarketDataService {
       'canonicalSchema': 'trade_calendar',
       'canonicalTable': 'trade_calendar',
       'count': rows.length,
+      'pageRows': rows.length,
+      if (coverage != null) 'coverage': coverage,
+      if (coverage != null) 'coverageStart': coverage['earliestDate'],
+      if (coverage != null) 'coverageEnd': coverage['latestDate'],
+      if (coverage != null) 'coverageRows': coverage['rowCount'],
       'source': 'local trade_calendar',
-      'data': rows,
+      'data': displayRows,
     };
   }
 

@@ -66,4 +66,53 @@ void main() {
       expect(rows.any((row) => row.containsKey('raw_json')), isFalse);
     },
   );
+
+  test(
+    'calendar readback separates full coverage from limited page rows',
+    () async {
+      final dir = await Directory.systemTemp.createTemp(
+        'finagent-query-calendar-coverage-',
+      );
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final store = ReusableDataStore(dir.path)..cleanup();
+      final rows = <Map<String, dynamic>>[];
+      var date = DateTime.utc(2026, 1, 5);
+      final end = DateTime.utc(2026, 12, 31);
+      while (!date.isAfter(end)) {
+        rows.add({
+          'date':
+              '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
+          'market': 'CN',
+          'is_trading_day':
+              date.weekday == DateTime.saturday ||
+                  date.weekday == DateTime.sunday
+              ? 0
+              : 1,
+        });
+        date = date.add(const Duration(days: 1));
+      }
+      store.saveTradeCalendarRows(rows, market: 'CN', source: 'fixture');
+
+      final service = MarketDataQueryActionService(dataManager: DataManager());
+      final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
+
+      final summary = service.query('query_trade_calendar', const [], {
+        'market': 'CN',
+        'limit': 100,
+      }, context);
+      expect(summary['cacheStatus'], 'cache-hit');
+      expect(summary['coverageStart'], '2026-01-05');
+      expect(summary['coverageEnd'], '2026-12-31');
+      expect(summary['coverageRows'], rows.length);
+      expect(summary['pageRows'], 100);
+      expect((summary['data'] as List).last['date'], '2026-12-31');
+
+      final exact = service.query('query_trade_calendar', const [], {
+        'market': 'CN',
+        'date': '2026-07-10',
+      }, context);
+      expect(exact['count'], 1);
+      expect((exact['data'] as List).first['date'], '2026-07-10');
+    },
+  );
 }

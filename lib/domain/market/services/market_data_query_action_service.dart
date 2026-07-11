@@ -207,11 +207,18 @@ class MarketDataQueryActionService {
       case 'query_fund_performance':
         return _queryFundPerformance(symbols, input, context);
       case 'query_trade_calendar':
+        final date = input['date'] as String?;
         return _requireTushare().queryTradeCalendar(
           context,
           market: input['market'] as String?,
-          start: input['start'] as String? ?? input['startDate'] as String?,
-          end: input['end'] as String? ?? input['endDate'] as String?,
+          start:
+              date ??
+              (input['start'] as String?) ??
+              (input['startDate'] as String?),
+          end:
+              date ??
+              (input['end'] as String?) ??
+              (input['endDate'] as String?),
           limit: _inputLimit(input, 100),
         );
       case 'query_stock_list':

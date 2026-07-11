@@ -502,13 +502,19 @@ extension DataManagerResearchStoreAccess on DataManager {
     String? start,
     String? end,
     int limit = 100,
+    bool descending = false,
   }) {
     return _store?.queryTradeCalendar(
           market: market,
           start: start,
           end: end,
           limit: limit,
+          descending: descending,
         ) ??
         const [];
+  }
+
+  Map<String, dynamic>? queryTradeCalendarCoverage({String? market}) {
+    return _store?.queryTradeCalendarCoverage(market: market);
   }
 }

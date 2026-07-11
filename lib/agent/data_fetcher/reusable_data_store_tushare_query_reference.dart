@@ -102,6 +102,7 @@ extension ReusableDataStoreTushareQueryReference on ReusableDataStore {
     String? start,
     String? end,
     int limit = 100,
+    bool descending = false,
   }) {
     final db = _db;
     if (db == null) return const [];
@@ -122,8 +123,9 @@ extension ReusableDataStoreTushareQueryReference on ReusableDataStore {
       args.add(endDate);
     }
     final whereSql = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
+    final order = descending ? 'DESC' : 'ASC';
     final rows = db.select(
-      'SELECT * FROM trade_calendar $whereSql ORDER BY date ASC LIMIT ?',
+      'SELECT * FROM trade_calendar $whereSql ORDER BY date $order LIMIT ?',
       [...args, limit],
     );
     return rows
@@ -137,5 +139,27 @@ extension ReusableDataStoreTushareQueryReference on ReusableDataStore {
           },
         )
         .toList();
+  }
+
+  Map<String, dynamic>? queryTradeCalendarCoverage({String? market}) {
+    final db = _db;
+    if (db == null) return null;
+    final normalizedMarket = market != null && market.trim().isNotEmpty
+        ? market.trim().toUpperCase()
+        : 'CN';
+    final rows = db.select(
+      'SELECT MIN(date) AS earliest_date, MAX(date) AS latest_date, COUNT(*) AS row_count FROM trade_calendar WHERE market = ?',
+      [normalizedMarket],
+    );
+    if (rows.isEmpty) return null;
+    final row = rows.first;
+    final count = row['row_count'] as int? ?? 0;
+    if (count == 0) return null;
+    return {
+      'market': normalizedMarket,
+      'earliestDate': row['earliest_date'],
+      'latestDate': row['latest_date'],
+      'rowCount': count,
+    };
   }
 }
