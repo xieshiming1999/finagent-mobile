@@ -283,6 +283,9 @@ class Agent {
   /// Add a tool after construction (for tools that need Agent reference).
   void addTool(Tool tool) => _tools.add(tool);
 
+  List<String> get toolNames =>
+      _tools.map((tool) => tool.name).toList(growable: false);
+
   T? findTool<T extends Tool>() {
     for (final t in _tools) {
       if (t is T) return t;
@@ -2173,7 +2176,8 @@ class Agent {
     final preview = compactJson ?? updatedResult.content.substring(0, 2000);
     return ToolResult(
       toolUseId: updatedResult.toolUseId,
-      content: compactJson ??
+      content:
+          compactJson ??
           '$preview\n\n'
               '... (${updatedResult.content.length} chars total, '
               'full output was persisted in diagnostic tool-output storage at $filePath. '

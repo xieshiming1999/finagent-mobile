@@ -51,6 +51,23 @@ session/history, API/task logs, reusable-store, or service readiness. It is a
 local diagnostic/readiness report under `data.health`, not a provider refresh
 and not a replacement for `interface_availability`.
 
+When the user asks how to recover from a行情, macro, data-source, or provider
+failure, do not answer only from this static guidance. Inspect current runtime
+evidence first:
+
+```json
+MarketData(action: "data_health", section: "failures", limit: 10)
+MarketData(action: "query_api_calls", minutes: 120, limit: 10)
+```
+
+Then summarize the actual failure classes, missing evidence, cache/readback
+fallback, and next bounded retry or no-retry decision. If there are no recent
+failures, state that the recovery policy is being described from contract
+evidence rather than a live failure row.
+For provider failure recovery, answer from the health and API-call evidence
+directly. Do not inspect or rewrite dashboard/page files unless the user asks
+for a dashboard, report artifact, or file update.
+
 Treat provider results as reusable only when code has a registered canonical schema and a working query path.
 If a provider just failed, inspect `data_health`, then `query_api_calls` before retrying. `query_api_calls` is the shared mobile / FinAgent `provider.api_call_log` readback over local `api_requests`. Use `MarketData(action: "data_health", section: "gaps")` and the returned `providerGapQueue` for provider normalizer/readback backlog, `credentialActivationQueue` for gated provider activation or permission/quota work still needing action, `credentialValidatedQueue` for credential-gated capabilities that already have live valid-schema evidence, and `policyDisabledQueue` for capabilities that must remain blocked; use `section: "failures"` and the returned `failureActionQueue` for classified recent failure actions. Use `MarketData(action: "finance_doctor")` when local runtime/session/API/task/reusable-store readiness could explain a workflow failure before attempting provider retries. Stop immediate retries for invalid parameters, permissions, quota/rate limits, disabled provider policy, or repeated transport resets; switch source or use local reusable rows instead.
 Use `MarketData(action: "runtime_probe", probeAction: "status")` to inspect current durable runtime-probe evidence before running probes. Read `recommendedTargets`, `blockedTargets`, `providerProbePacks`, and `guidance`: `probeMode:"failures"` and `probeMode:"all"` only auto-run retryable transport, timeout, provider-error, runtime-unavailable, or transport-unstable targets. Credential/permission, quota/rate-limit, unsupported-route, runtime-blocked, schema-contract, schema-mismatch, and explicit do-not-retry rows stay in `blockedTargets` until the root cause changes or the user deliberately passes bounded `probeIds`. `runtime_probe` is the governed probe entry; it writes durable evidence under `data/runtime-probes` and should be preferred over ad hoc provider validation loops.

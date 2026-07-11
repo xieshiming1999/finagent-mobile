@@ -260,6 +260,7 @@ class WorkflowAutomationControl {
           minToolCalls: _optionalPositiveInt(turn['minToolCalls']),
           maxToolCalls: _optionalPositiveInt(turn['maxToolCalls']),
           maxDataToolCalls: _optionalPositiveInt(turn['maxDataToolCalls']),
+          allowedTools: _stringList(turn['allowedTools']),
           expectTools: _stringList(turn['expectTools']),
           expectToolActions: _stringList(turn['expectToolActions']),
           maxToolActionCounts: _stringIntMap(turn['maxToolActionCounts']),
@@ -349,9 +350,10 @@ class WorkflowAutomationControl {
     if (scenario.allowPendingUserQuestion) {
       return _sendPromptWithPendingQuestionSupport(scenario);
     }
+    final disabledTools = _disabledToolsForScenario(scenario);
     final run = await sendPrompt(
       _promptWithScenarioConstraints(scenario),
-      disabledTools: scenario.disallowTools.toSet(),
+      disabledTools: disabledTools,
       timeoutMs: scenario.timeoutMs,
     );
     return _applyScenarioLimit(scenario, run);
@@ -361,9 +363,10 @@ class WorkflowAutomationControl {
     WorkflowAutomationScenario scenario,
   ) async {
     var completed = false;
+    final disabledTools = _disabledToolsForScenario(scenario);
     final future = sendPrompt(
       _promptWithScenarioConstraints(scenario),
-      disabledTools: scenario.disallowTools.toSet(),
+      disabledTools: disabledTools,
       timeoutMs: scenario.timeoutMs,
     ).whenComplete(() => completed = true);
     final pendingSnapshots = <Map<String, dynamic>>[];
@@ -416,6 +419,12 @@ class WorkflowAutomationControl {
 
   String _promptWithScenarioConstraints(WorkflowAutomationScenario scenario) {
     final constraints = <String>[];
+    if (scenario.allowedTools.isNotEmpty) {
+      constraints.add(
+        'Use only these tools in this scenario: '
+        '${scenario.allowedTools.join(', ')}.',
+      );
+    }
     if (scenario.disallowTools.isNotEmpty) {
       constraints.add(
         'Do not use these tools in this scenario: '
@@ -443,6 +452,18 @@ class WorkflowAutomationControl {
         '${scenario.maxToolActionCounts.entries.map((entry) => '${entry.key} <= ${entry.value}').join(', ')}.',
       );
     }
+    if (scenario.expectTools.isNotEmpty) {
+      constraints.add(
+        'This workflow requires these observable tools before the final answer: '
+        '${scenario.expectTools.join(', ')}.',
+      );
+    }
+    if (scenario.expectToolActions.isNotEmpty) {
+      constraints.add(
+        'This workflow requires these observable tool actions before the final answer: '
+        '${scenario.expectToolActions.join(', ')}.',
+      );
+    }
     final parts = <String>[];
     if (constraints.isNotEmpty) {
       parts.addAll([
@@ -460,6 +481,16 @@ class WorkflowAutomationControl {
       );
     }
     return parts.join('\n');
+  }
+
+  Set<String> _disabledToolsForScenario(WorkflowAutomationScenario scenario) {
+    final disabled = scenario.disallowTools.toSet();
+    if (scenario.allowedTools.isEmpty) return disabled;
+    final allowed = scenario.allowedTools.toSet();
+    for (final toolName in agent.toolNames) {
+      if (!allowed.contains(toolName)) disabled.add(toolName);
+    }
+    return disabled;
   }
 
   String _pendingQuestionKey(Map<String, dynamic> state) {
@@ -718,6 +749,30 @@ class WorkflowAutomationControl {
     final uiState = await uiStateProvider?.call();
     final uiSemantics = await uiSemanticsProvider?.call();
     final uiArtifacts = await uiArtifactsProvider?.call();
+    final messageEvidence = agent.messages.map(_messageToEvidence).toList();
+    final eventToolCalls = events
+        .whereType<AgentToolUseStart>()
+        .map((e) => {'toolName': e.toolName, 'input': e.input})
+        .toList();
+    final reportToolCalls = eventToolCalls.isNotEmpty
+        ? eventToolCalls
+        : _toolCallsFromMessages(messageEvidence);
+    final eventToolResults = toolResults
+        .map(
+          (e) => {
+            'toolName': e.toolName,
+            'isError': e.isError,
+            'durationMs': e.durationMs,
+            'result': _truncate(e.result),
+          },
+        )
+        .toList();
+    final reportToolResults = eventToolResults.isNotEmpty
+        ? eventToolResults
+        : _toolResultsFromMessages(messageEvidence);
+    final reportToolErrors = reportToolResults
+        .where((e) => e['isError'] == true)
+        .toList(growable: false);
     return {
       'runId': runId,
       'runtime': 'shared-mobile',
@@ -738,33 +793,12 @@ class WorkflowAutomationControl {
         agent.sessionManager.currentSession?.filePath,
       ),
       'eventTypes': events.map((e) => e.runtimeType.toString()).toList(),
-      'toolCalls': events
-          .whereType<AgentToolUseStart>()
-          .map((e) => {'toolName': e.toolName, 'input': e.input})
-          .toList(),
-      'toolResults': toolResults
-          .map(
-            (e) => {
-              'toolName': e.toolName,
-              'isError': e.isError,
-              'durationMs': e.durationMs,
-              'result': _truncate(e.result),
-            },
-          )
-          .toList(),
-      'toolErrors': toolResults
-          .where((e) => e.isError)
-          .map(
-            (e) => {
-              'toolName': e.toolName,
-              'durationMs': e.durationMs,
-              'result': _truncate(e.result),
-            },
-          )
-          .toList(),
+      'toolCalls': reportToolCalls,
+      'toolResults': reportToolResults,
+      'toolErrors': reportToolErrors,
       'finalAssistantText': _finalAssistantText(agent.messages),
       'messageCount': agent.messages.length,
-      'messages': agent.messages.map(_messageToEvidence).toList(),
+      'messages': messageEvidence,
       if (uiStateProvider != null) 'uiState': uiState,
       if (uiSemanticsProvider != null) 'uiSemantics': uiSemantics,
       'uiEvidence': _buildUiEvidence(uiState, semantics: uiSemantics),
@@ -856,6 +890,7 @@ class WorkflowAutomationScenario {
     this.minToolCalls,
     this.maxToolCalls,
     this.maxDataToolCalls,
+    this.allowedTools = const [],
     this.expectTools = const [],
     this.expectToolActions = const [],
     this.maxToolActionCounts = const {},
@@ -880,6 +915,7 @@ class WorkflowAutomationScenario {
   final int? minToolCalls;
   final int? maxToolCalls;
   final int? maxDataToolCalls;
+  final List<String> allowedTools;
   final List<String> expectTools;
   final List<String> expectToolActions;
   final Map<String, int> maxToolActionCounts;
@@ -1034,6 +1070,7 @@ class WorkflowAutomationInProcessBridge {
     int? minToolCalls,
     int? maxToolCalls,
     int? maxDataToolCalls,
+    List<String> allowedTools = const [],
     List<String> expectTools = const [],
     bool expectNoToolErrors = false,
     List<String> expectToolErrors = const [],
@@ -1061,6 +1098,7 @@ class WorkflowAutomationInProcessBridge {
         minToolCalls: minToolCalls,
         maxToolCalls: maxToolCalls,
         maxDataToolCalls: maxDataToolCalls,
+        allowedTools: allowedTools,
         expectTools: expectTools,
         expectNoToolErrors: expectNoToolErrors,
         expectToolErrors: expectToolErrors,
@@ -1282,6 +1320,7 @@ class WorkflowAutomationHttpHost {
           minToolCalls: _optionalPositiveInt(parsed['minToolCalls']),
           maxToolCalls: _optionalPositiveInt(parsed['maxToolCalls']),
           maxDataToolCalls: _optionalPositiveInt(parsed['maxDataToolCalls']),
+          allowedTools: _stringList(parsed['allowedTools']),
           expectTools: _stringList(parsed['expectTools']),
           expectToolActions: _stringList(parsed['expectToolActions']),
           maxToolActionCounts: _stringIntMap(parsed['maxToolActionCounts']),
@@ -1371,6 +1410,65 @@ Map<String, dynamic> _messageToEvidence(Message message) {
     toolResult['content'] = _truncate(toolResult['content'] as String);
   }
   return json;
+}
+
+List<Map<String, dynamic>> _toolCallsFromMessages(
+  List<Map<String, dynamic>> messages,
+) {
+  final calls = <Map<String, dynamic>>[];
+  for (final message in messages) {
+    final toolUses = message['toolUses'];
+    if (toolUses is! List) continue;
+    for (final rawUse in toolUses) {
+      if (rawUse is! Map) continue;
+      final name = '${rawUse['name'] ?? rawUse['toolName'] ?? ''}'.trim();
+      if (name.isEmpty) continue;
+      final input = rawUse['input'] is Map
+          ? Map<String, dynamic>.from(rawUse['input'] as Map)
+          : <String, dynamic>{};
+      calls.add({
+        if (rawUse['id'] != null) 'id': rawUse['id'],
+        'toolName': name,
+        'input': input,
+      });
+    }
+  }
+  return calls;
+}
+
+List<Map<String, dynamic>> _toolResultsFromMessages(
+  List<Map<String, dynamic>> messages,
+) {
+  final results = <Map<String, dynamic>>[];
+  final toolNamesById = <String, String>{};
+  for (final message in messages) {
+    final toolUses = message['toolUses'];
+    if (toolUses is! List) continue;
+    for (final rawUse in toolUses) {
+      if (rawUse is! Map) continue;
+      final id = '${rawUse['id'] ?? ''}'.trim();
+      final name = '${rawUse['name'] ?? rawUse['toolName'] ?? ''}'.trim();
+      if (id.isNotEmpty && name.isNotEmpty) toolNamesById[id] = name;
+    }
+  }
+  for (final message in messages) {
+    final toolResult = message['toolResult'];
+    if (toolResult is! Map) continue;
+    final toolUseId = '${toolResult['toolUseId'] ?? ''}'.trim();
+    final toolName =
+        (toolNamesById[toolUseId] ??
+                '${toolResult['toolName'] ?? toolResult['name'] ?? ''}')
+            .trim();
+    results.add({
+      if (toolUseId.isNotEmpty) 'toolUseId': toolUseId,
+      if (toolName.isNotEmpty) 'toolName': toolName,
+      'isError': toolResult['isError'] == true,
+      if (toolResult['durationMs'] != null)
+        'durationMs': toolResult['durationMs'],
+      'result': _truncate('${toolResult['content'] ?? ''}'),
+    });
+  }
+  return results;
 }
 
 Map<String, dynamic> _summarizeReportFile(File file) {

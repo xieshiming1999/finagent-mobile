@@ -52,6 +52,7 @@ for (const scenario of selected) {
       minToolCalls: runtimeTurn.minToolCalls,
       maxToolCalls: runtimeTurn.maxToolCalls,
       maxDataToolCalls: runtimeTurn.maxDataToolCalls,
+      allowedTools: runtimeTurn.allowedTools,
       disallowTools: runtimeTurn.disallowTools,
       expectTools: runtimeTurn.expectTools,
       expectToolActions: runtimeTurn.expectToolActions,
@@ -104,7 +105,7 @@ function mergeRuntimeOverride(turn, override, turnId) {
   if (Array.isArray(turn.disallowTools) || Array.isArray(merged.disallowTools)) {
     const base = Array.isArray(turn.disallowTools) ? turn.disallowTools : [];
     const replacement = Array.isArray(merged.disallowTools) ? merged.disallowTools : base;
-    const allow = new Set(Array.isArray(merged.allowTools) ? merged.allowTools : []);
+    const allow = new Set(Array.isArray(merged.allowedTools) ? merged.allowedTools : []);
     merged.disallowTools = replacement.filter((tool) => !allow.has(tool));
   }
   return merged;
