@@ -54,6 +54,7 @@ import '../agent/tools/task_stop_tool/task_stop_tool.dart';
 import '../agent/tools/task_update_tool/task_update_tool.dart';
 import '../agent/tools/team_create_tool/team_create_tool.dart';
 import '../agent/tools/team_delete_tool/team_delete_tool.dart';
+import '../agent/tools/tool_catalog_tool/tool_catalog_tool.dart';
 import '../agent/tools/ask_user_question_tool/ask_user_question_tool.dart';
 import '../agent/tools/ui_control_tool/ui_control_tool.dart';
 import '../agent/tools/ui_notify_tool/ui_notify_tool.dart';
@@ -284,6 +285,9 @@ AgentRuntime createAgentRuntime({
   final tools = excludeTools.isEmpty
       ? baseTools
       : baseTools.where((t) => !excludeTools.contains(t.name)).toList();
+  if (!excludeTools.contains('ToolCatalog')) {
+    tools.add(ToolCatalogTool(toolsProvider: () => tools));
+  }
 
   final financeDataBudgetPolicy = FinanceDataBudgetPolicy();
   final agent = Agent(

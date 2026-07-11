@@ -1,0 +1,90 @@
+import 'dart:convert';
+
+import 'package:finagent/agent/message.dart';
+import 'package:finagent/agent/tool.dart';
+import 'package:finagent/agent/tool_context.dart';
+import 'package:finagent/agent/tools/tool_catalog_tool/tool_catalog_tool.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+class _ExampleTool extends Tool {
+  @override
+  String get name => 'Example';
+
+  @override
+  String get description => 'Example tool';
+
+  @override
+  bool get isReadOnly => false;
+
+  @override
+  Map<String, dynamic> get inputSchema => {
+    'type': 'object',
+    'properties': {
+      'action': {
+        'type': 'string',
+        'enum': ['run', 'help'],
+      },
+    },
+  };
+
+  @override
+  Future<ToolResult> call(
+    String toolUseId,
+    Map<String, dynamic> input,
+    ToolContext context,
+  ) async => ToolResult(toolUseId: toolUseId, content: 'ok');
+}
+
+void main() {
+  test('ToolCatalog lists and details runtime tool capabilities', () async {
+    late final List<Tool> tools;
+    final catalog = ToolCatalogTool(toolsProvider: () => tools);
+    tools = [_ExampleTool(), catalog];
+    final context = ToolContext(
+      basePath: '/tmp/tool-catalog-test',
+      serviceBaseUrl: '',
+    );
+
+    final list =
+        jsonDecode(
+              (await catalog.call('list-1', {
+                'action': 'list',
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+    expect(list['contract'], 'tool-catalog-result-v1');
+    expect(list['action'], 'list');
+    expect(
+      list['tools'],
+      containsAll([
+        {
+          'name': 'Example',
+          'permission': 'write-or-side-effect',
+          'readOnly': false,
+          'canParallel': false,
+          'requiresUserInteraction': false,
+          'actions': ['help', 'run'],
+        },
+        {
+          'name': 'ToolCatalog',
+          'permission': 'read-only',
+          'readOnly': true,
+          'canParallel': true,
+          'requiresUserInteraction': false,
+          'actions': ['detail', 'help', 'list'],
+        },
+      ]),
+    );
+
+    final detail =
+        jsonDecode(
+              (await catalog.call('detail-1', {
+                'action': 'detail',
+                'tool': 'Example',
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+    expect(detail['tool']['name'], 'Example');
+    expect(detail['tool']['schema']['actionValues'], ['help', 'run']);
+  });
+}
