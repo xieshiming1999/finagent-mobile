@@ -370,7 +370,8 @@ class FinanceCustomStrategyEvidence {
       final metrics = latestRun['metrics'];
       final metricsMap = metrics is Map ? metrics : const {};
       final resolvedSaveStatus =
-          saveStatus ?? (latestRun['strategyId'] != null ? 'saved strategy readback' : '-');
+          saveStatus ??
+          (latestRun['strategyId'] != null ? 'saved strategy readback' : '-');
       return [
         '## 策略保存与重跑完成',
         '',
@@ -536,16 +537,22 @@ class FinanceCustomStrategyEvidence {
   }
 
   String? rejectedValidation(List<Message> messages, int turnStartIndex) {
+    var seenLaterSuccessfulStrategyEvidence = false;
     for (final message in messages.skip(turnStartIndex).toList().reversed) {
       final result = message.toolResult;
       if (result == null || result.isError) continue;
       final decoded = _decodeResultMap(result.content);
       if (decoded == null) continue;
       try {
+        if (_isSuccessfulStrategyEvidence(decoded)) {
+          seenLaterSuccessfulStrategyEvidence = true;
+          continue;
+        }
         if (decoded['action'] != 'custom_strategy_validate' ||
             decoded['status'] != 'rejected') {
           continue;
         }
+        if (seenLaterSuccessfulStrategyEvidence) return null;
         final errors = decoded['errors'] is List
             ? (decoded['errors'] as List).map((item) => '$item').toList()
             : const <String>[];
@@ -568,6 +575,22 @@ class FinanceCustomStrategyEvidence {
       }
     }
     return null;
+  }
+
+  bool _isSuccessfulStrategyEvidence(Map<String, dynamic> decoded) {
+    final action = decoded['action'];
+    if (action != 'custom_strategy_validate' &&
+        action != 'custom_strategy_save' &&
+        action != 'custom_strategy_run' &&
+        action != 'custom_strategy_backtest') {
+      return false;
+    }
+    final status = decoded['status']?.toString();
+    return status == 'validated' ||
+        status == 'backtested' ||
+        status == 'saved' ||
+        decoded['accepted'] is List &&
+            (decoded['errors'] is! List || (decoded['errors'] as List).isEmpty);
   }
 
   List<ToolUse> _toolCalls(Iterable<Message> messages) => messages
@@ -674,12 +697,9 @@ class FinanceCustomStrategyEvidence {
   }
 
   String? save(List<Message> messages, int turnStartIndex) {
-    final commandState =
-        turnStartIndex >= 0 && turnStartIndex < messages.length
-            ? FinanceWorkflowState.fromUserContent(
-                messages[turnStartIndex].content,
-              )
-            : null;
+    final commandState = turnStartIndex >= 0 && turnStartIndex < messages.length
+        ? FinanceWorkflowState.fromUserContent(messages[turnStartIndex].content)
+        : null;
     if (commandState?.isStrategy != true ||
         commandState?.intentMode != FinanceIntentMode.save) {
       return null;

@@ -80,10 +80,7 @@ void main() {
         _tool('bt-300059', _backtest('300059', 1, 1)),
       ];
 
-      final answer = evidence.comparison(
-        messages: messages,
-        turnStartIndex: 1,
-      );
+      final answer = evidence.comparison(messages: messages, turnStartIndex: 1);
 
       expect(answer, contains('多标的动量策略比较'));
       expect(answer, contains('600519'));
@@ -110,10 +107,7 @@ void main() {
         _tool('bt-000858', _backtest('000858', 6, 2)),
       ];
 
-      final answer = evidence.comparison(
-        messages: messages,
-        turnStartIndex: 1,
-      );
+      final answer = evidence.comparison(messages: messages, turnStartIndex: 1);
 
       expect(answer, isNull);
     });
@@ -178,12 +172,14 @@ void main() {
       expect(answer, contains('backtested evidence'));
     });
 
-    test('builds save-rerun boundary from structured save and run evidence without prompt parsing', () {
-      final evidence = FinanceCustomStrategyEvidence();
-      final messages = [
-        _user('把刚才验证通过的策略保存下来，然后重新按策略 ID 跑一次，确认结果一致。'),
-        _assistantTool('save', {'action': 'custom_strategy_save'}),
-        _tool('save', '''
+    test(
+      'builds save-rerun boundary from structured save and run evidence without prompt parsing',
+      () {
+        final evidence = FinanceCustomStrategyEvidence();
+        final messages = [
+          _user('把刚才验证通过的策略保存下来，然后重新按策略 ID 跑一次，确认结果一致。'),
+          _assistantTool('save', {'action': 'custom_strategy_save'}),
+          _tool('save', '''
 {
   "action": "custom_strategy_save",
   "strategyId": "custom_ema_v1",
@@ -194,12 +190,12 @@ void main() {
   "evidence": {"status": "backtested", "bars": 240}
 }
 '''),
-        _assistantTool('run', {
-          'action': 'custom_strategy_run',
-          'strategyId': 'custom_ema_v1',
-          'code': '000858',
-        }),
-        _tool('run', '''
+          _assistantTool('run', {
+            'action': 'custom_strategy_run',
+            'strategyId': 'custom_ema_v1',
+            'code': '000858',
+          }),
+          _tool('run', '''
 {
   "action": "custom_strategy_run",
   "code": "000858",
@@ -212,32 +208,35 @@ void main() {
   "dataCoverage": {"symbol": "000858", "rows": 240, "requiredBars": 120, "sufficient": true, "source": "local kline_daily", "cacheStatus": "local-hit"}
 }
 '''),
-      ];
+        ];
 
-      final answer = evidence.saveRunBoundary(
-        messages: messages,
-        turnStartIndex: 1,
-      );
+        final answer = evidence.saveRunBoundary(
+          messages: messages,
+          turnStartIndex: 1,
+        );
 
-      expect(answer, contains('策略保存与重跑完成'));
-      expect(answer, contains('strategyId：custom_ema_v1'));
-      expect(answer, contains('标的：000858'));
-      expect(answer, contains('数据覆盖'));
-      expect(answer, contains('总收益率：4%'));
-      expect(answer, contains('最大回撤：8%'));
-      expect(answer, contains('胜率：50%'));
-    });
+        expect(answer, contains('策略保存与重跑完成'));
+        expect(answer, contains('strategyId：custom_ema_v1'));
+        expect(answer, contains('标的：000858'));
+        expect(answer, contains('数据覆盖'));
+        expect(answer, contains('总收益率：4%'));
+        expect(answer, contains('最大回撤：8%'));
+        expect(answer, contains('胜率：50%'));
+      },
+    );
 
-    test('builds rerun answer from custom_strategy_run evidence without same-turn save', () {
-      final evidence = FinanceCustomStrategyEvidence();
-      final messages = [
-        _user('换成五粮液000858重跑已保存策略。'),
-        _assistantTool('run', {
-          'action': 'custom_strategy_run',
-          'strategyId': 'custom_ema_v1',
-          'code': '000858',
-        }),
-        _tool('run', '''
+    test(
+      'builds rerun answer from custom_strategy_run evidence without same-turn save',
+      () {
+        final evidence = FinanceCustomStrategyEvidence();
+        final messages = [
+          _user('换成五粮液000858重跑已保存策略。'),
+          _assistantTool('run', {
+            'action': 'custom_strategy_run',
+            'strategyId': 'custom_ema_v1',
+            'code': '000858',
+          }),
+          _tool('run', '''
 {
   "action": "custom_strategy_run",
   "code": "000858",
@@ -250,19 +249,20 @@ void main() {
   "dataCoverage": {"symbol": "000858", "rows": 240, "requiredBars": 120, "sufficient": true, "source": "local kline_daily", "cacheStatus": "local-hit"}
 }
 '''),
-      ];
+        ];
 
-      final answer = evidence.saveRunBoundary(
-        messages: messages,
-        turnStartIndex: 1,
-      );
+        final answer = evidence.saveRunBoundary(
+          messages: messages,
+          turnStartIndex: 1,
+        );
 
-      expect(answer, contains('策略保存与重跑完成'));
-      expect(answer, contains('strategyId：custom_ema_v1'));
-      expect(answer, contains('标的：000858'));
-      expect(answer, contains('保存状态：saved strategy readback'));
-      expect(answer, contains('总收益率：4%'));
-    });
+        expect(answer, contains('策略保存与重跑完成'));
+        expect(answer, contains('strategyId：custom_ema_v1'));
+        expect(answer, contains('标的：000858'));
+        expect(answer, contains('保存状态：saved strategy readback'));
+        expect(answer, contains('总收益率：4%'));
+      },
+    );
 
     test('does not close natural-language save-rerun turn after save only', () {
       final evidence = FinanceCustomStrategyEvidence();
@@ -308,5 +308,38 @@ void main() {
       expect(answer, contains('exit operator missing'));
       expect(answer, contains('exit rule has no executable right-hand value'));
     });
+
+    test(
+      'does not report stale rejected validation after corrected structured evidence',
+      () {
+        final evidence = FinanceCustomStrategyEvidence();
+        final messages = [
+          _user('structured validation correction'),
+          _assistantTool('bad', {'action': 'custom_strategy_validate'}),
+          _tool('bad', '''
+{
+  "action": "custom_strategy_validate",
+  "status": "rejected",
+  "strategyId": "custom_strategy_v1",
+  "errors": ["entry rule has no executable right-hand value"]
+}
+'''),
+          _assistantTool('good', {'action': 'custom_strategy_validate'}),
+          _tool('good', '''
+{
+  "action": "custom_strategy_validate",
+  "status": "validated",
+  "strategyId": "custom_strategy_v1",
+  "accepted": ["entry:close:>"],
+  "errors": []
+}
+'''),
+        ];
+
+        final answer = evidence.rejectedValidation(messages, 1);
+
+        expect(answer, isNull);
+      },
+    );
   });
 }
