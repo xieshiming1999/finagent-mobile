@@ -59,6 +59,77 @@ void main() {
     expect(result['nextAction'], contains('Do not finalize yet'));
   });
 
+  test('WorkflowVerifier accepts matching typed workflow state', () async {
+    final context = _tempContext();
+    addTearDown(() {
+      final dir = Directory(context.basePath);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+    _seedSession(context, toolName: 'MarketData');
+    _seedWorkflowState(context, workflowKind: 'stock_research');
+    ArtifactRegistry(context.basePath).register(
+      kind: ArtifactKind.analysis,
+      path: 'memory/reports/stock-analysis.md',
+      title: 'Stock analysis',
+      source: 'agent-workflow',
+      verificationStatus: ArtifactVerificationStatus.verified,
+    );
+
+    final result =
+        jsonDecode(
+              (await WorkflowVerifierTool().call('verify-state', {
+                'action': 'check',
+                'workflow': 'stock_research',
+                'requireWorkflowState': true,
+                'providerHealth': [
+                  {'provider': 'tdx', 'status': 'healthy'},
+                ],
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+
+    expect(result['passed'], true);
+    expect(result['missing'], isEmpty);
+    expect(result['observed']['workflowState']['id'], 'state-1');
+  });
+
+  test('WorkflowVerifier fails on blocking provider health', () async {
+    final context = _tempContext();
+    addTearDown(() {
+      final dir = Directory(context.basePath);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+    _seedSession(context, toolName: 'MarketData');
+    ArtifactRegistry(context.basePath).register(
+      kind: ArtifactKind.analysis,
+      path: 'memory/reports/stock-analysis.md',
+      title: 'Stock analysis',
+      source: 'agent-workflow',
+      verificationStatus: ArtifactVerificationStatus.verified,
+    );
+
+    final result =
+        jsonDecode(
+              (await WorkflowVerifierTool().call('verify-health', {
+                'action': 'check',
+                'workflow': 'stock_research',
+                'providerHealth': [
+                  {'provider': 'eastmoney', 'status': 'transport_unstable'},
+                ],
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+
+    expect(result['passed'], false);
+    expect(result['missing'], contains('provider_health'));
+    expect(
+      result['checks'].firstWhere(
+        (check) => check['id'] == 'provider_health',
+      )['message'],
+      contains('eastmoney:transport_unstable'),
+    );
+  });
+
   test(
     'WorkflowVerifier rejects unknown workflow through tool error',
     () async {
@@ -109,5 +180,37 @@ void _seedSession(ToolContext context, {required String toolName}) {
         },
       }),
     ].join('\n'),
+  );
+}
+
+void _seedWorkflowState(ToolContext context, {required String workflowKind}) {
+  final dir = Directory('${context.memoryDir}/workflows')
+    ..createSync(recursive: true);
+  File('${dir.path}/state.json').writeAsStringSync(
+    jsonEncode({
+      'contract': 'workflow-state-store-v1',
+      'records': [
+        {
+          'id': 'state-1',
+          'contract': 'workflow-state-record-v1',
+          'status': 'active',
+          'workflowState': {
+            'contract': 'finance-workflow-state-v1',
+            'workflowKind': workflowKind,
+            'assetClass': 'stock',
+            'intentMode': 'analysis',
+            'executionMode': 'preview_only',
+            'safetyBoundary': 'no_trade',
+            'evidenceRefs': ['quote'],
+            'confirmationState': 'none',
+            'source': 'test',
+          },
+          'requiredEvidence': ['quote'],
+          'completedSteps': ['quote'],
+          'generatedArtifacts': [],
+          'updatedAt': '2026-07-11T00:00:00.000Z',
+        },
+      ],
+    }),
   );
 }
