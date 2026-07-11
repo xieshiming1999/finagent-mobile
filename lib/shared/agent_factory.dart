@@ -24,6 +24,7 @@ import '../agent/session.dart';
 import '../agent/tool.dart';
 import '../agent/tool_context.dart';
 import '../agent/tools/agent_tool/agent_tool.dart';
+import '../agent/tools/agent_self_debug_tool/agent_self_debug_tool.dart';
 import '../agent/tools/bash_tool/bash_tool.dart';
 import '../agent/tools/cron_create_tool/cron_create_tool.dart';
 import '../agent/tools/cron_delete_tool/cron_delete_tool.dart';
@@ -301,6 +302,7 @@ AgentRuntime createAgentRuntime({
   }
   if (!excludeTools.contains('CapabilityStatus')) {
     tools.add(CapabilityStatusTool(toolsProvider: () => tools));
+    tools.add(AgentSelfDebugTool(toolsProvider: () => tools));
   }
 
   final financeDataBudgetPolicy = FinanceDataBudgetPolicy();
