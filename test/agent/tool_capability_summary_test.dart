@@ -105,11 +105,93 @@ void main() {
     expect(ask.propertyNames, contains('questions'));
     expect(interactionEvidence.requiresUserInteraction, isFalse);
     expect(interactionEvidence.actionValues, ['help', 'recent', 'summary']);
-    expect(toolCatalog.actionValues, ['detail', 'help', 'list']);
+    expect(toolCatalog.actionValues, [
+      'detail',
+      'help',
+      'list',
+      'module',
+      'modules',
+    ]);
     expect(agent.actionValues, ['help', 'run']);
     expect(uiControl.actionValues, contains('help'));
     expect(uiControl.actionValues, contains('openPage'));
   });
+
+  test(
+    'chat and event runtimes expose provider and workflow harness tools',
+    () {
+      final dir = Directory.systemTemp.createTempSync(
+        'finagent_agent_path_reachability_test_',
+      );
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+
+      final chatRuntime = createAgentRuntime(
+        basePath: '${dir.path}/chat',
+        serverUrl: '',
+        featurePrompt: 'chat test',
+        agentRole: 'chat',
+        skipPermissions: true,
+        enableWatchlistRefresher: false,
+      );
+      final eventRuntime = createAgentRuntime(
+        basePath: '${dir.path}/event',
+        serverUrl: '',
+        featurePrompt: 'event test',
+        agentRole: 'event',
+        skipPermissions: true,
+        enableWatchlistRefresher: false,
+      );
+      addTearDown(() {
+        for (final runtime in [chatRuntime, eventRuntime]) {
+          runtime.agent.stopAutoProcessing();
+          runtime.monitorScheduler.stop();
+          runtime.cronScheduler.stop();
+        }
+      });
+
+      const expected = {
+        'ToolCatalog',
+        'CapabilityStatus',
+        'AgentSelfDebug',
+        'ProviderRouter',
+        'RecoveryPlanner',
+        'Runbook',
+        'WorkflowEvidence',
+        'WorkflowVerifier',
+        'FinanceWorkflowState',
+        'ArtifactRegistry',
+        'BudgetGovernor',
+        'SourceReader',
+      };
+
+      for (final runtime in [chatRuntime, eventRuntime]) {
+        final names = runtime.agent.toolCapabilities
+            .map((capability) => capability.name)
+            .toSet();
+        expect(names, containsAll(expected));
+        final router = runtime.agent.toolCapabilities.singleWhere(
+          (capability) => capability.name == 'ProviderRouter',
+        );
+        final verifier = runtime.agent.toolCapabilities.singleWhere(
+          (capability) => capability.name == 'WorkflowVerifier',
+        );
+        final catalog = runtime.agent.toolCapabilities.singleWhere(
+          (capability) => capability.name == 'ToolCatalog',
+        );
+        expect(router.actionValues, ['help', 'route', 'tasks']);
+        expect(verifier.actionValues, ['check', 'help', 'list']);
+        expect(catalog.actionValues, [
+          'detail',
+          'help',
+          'list',
+          'module',
+          'modules',
+        ]);
+      }
+    },
+  );
 
   test('AskUserQuestion summary is derived from tool contract', () {
     final summary = summarizeToolCapability(AskUserQuestionTool());
