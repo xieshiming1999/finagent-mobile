@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 enum ArtifactKind {
+  analysis,
   goal,
   planSnapshot,
   workPacket,
@@ -11,11 +12,21 @@ enum ArtifactKind {
   apiError,
   dataSnapshot,
   research,
+  macroEvidence,
   dashboard,
+  strategy,
+  backtest,
   report,
+  tradePreparation,
 }
 
-enum ArtifactVerificationStatus { unverified, verified, stale, failed, unsupported }
+enum ArtifactVerificationStatus {
+  unverified,
+  verified,
+  stale,
+  failed,
+  unsupported,
+}
 
 extension ArtifactVerificationStatusWire on ArtifactVerificationStatus {
   String get wireName => switch (this) {
@@ -36,6 +47,7 @@ extension ArtifactVerificationStatusWire on ArtifactVerificationStatus {
 
 extension ArtifactKindWire on ArtifactKind {
   String get wireName => switch (this) {
+    ArtifactKind.analysis => 'analysis',
     ArtifactKind.goal => 'goal',
     ArtifactKind.planSnapshot => 'plan_snapshot',
     ArtifactKind.workPacket => 'work_packet',
@@ -43,8 +55,12 @@ extension ArtifactKindWire on ArtifactKind {
     ArtifactKind.apiError => 'api_error',
     ArtifactKind.dataSnapshot => 'data_snapshot',
     ArtifactKind.research => 'research',
+    ArtifactKind.macroEvidence => 'macro_evidence',
     ArtifactKind.dashboard => 'dashboard',
+    ArtifactKind.strategy => 'strategy',
+    ArtifactKind.backtest => 'backtest',
     ArtifactKind.report => 'report',
+    ArtifactKind.tradePreparation => 'trade_preparation',
   };
 
   static ArtifactKind? parse(String value) {
@@ -114,8 +130,7 @@ class ArtifactRecord {
     return ArtifactRecord(
       id: json['id'] as String? ?? '',
       kind: kind,
-      stableRef:
-          json['stableRef'] as String? ?? 'artifact:${json['id'] ?? ''}',
+      stableRef: json['stableRef'] as String? ?? 'artifact:${json['id'] ?? ''}',
       path: json['path'] as String? ?? '',
       title: json['title'] as String? ?? '',
       source: json['source'] as String? ?? '',
@@ -212,7 +227,12 @@ class ArtifactRegistry {
       provenance: provenance.isEmpty
           ? previous?.provenance ?? {'source': source}
           : provenance,
-      links: _uniqueStrings(['artifact:$recordId', path, ...links, ...?previous?.links]),
+      links: _uniqueStrings([
+        'artifact:$recordId',
+        path,
+        ...links,
+        ...?previous?.links,
+      ]),
       metadata: metadata,
     );
     _write([record, ...records.where((item) => item.id != recordId)]);

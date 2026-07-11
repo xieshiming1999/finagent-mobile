@@ -56,6 +56,7 @@ import '../agent/tools/team_create_tool/team_create_tool.dart';
 import '../agent/tools/team_delete_tool/team_delete_tool.dart';
 import '../agent/tools/tool_catalog_tool/tool_catalog_tool.dart';
 import '../agent/tools/ask_user_question_tool/ask_user_question_tool.dart';
+import '../agent/tools/artifact_registry_tool/artifact_registry_tool.dart';
 import '../agent/tools/ui_control_tool/ui_control_tool.dart';
 import '../agent/tools/ui_notify_tool/ui_notify_tool.dart';
 import '../agent/tools/ui_query_tool/ui_query_tool.dart';
@@ -239,6 +240,7 @@ AgentRuntime createAgentRuntime({
     InteractionEvidenceTool(),
     WorkflowEvidenceTool(),
     RunbookTool(),
+    ArtifactRegistryTool(),
     FinanceWorkflowStateTool(),
     ...extraTools,
     uiQueryTool,
