@@ -252,10 +252,122 @@ class _ApiHealthSheetState extends State<_ApiHealthSheet>
         ),
         _runtimeProbeCard(l10n, cs),
         _runtimeProbeQueueCard(runtimeHealth, l10n, cs),
+        _providerCapabilityMatrixCard(runtimeHealth, l10n, cs),
         _dataContractCard(l10n, cs),
         ...report.checks.map((check) => _doctorCheckCard(check, l10n, cs)),
       ],
     );
+  }
+
+  Widget _providerCapabilityMatrixCard(
+    Map<String, dynamic> runtimeHealth,
+    AppLocalizations l10n,
+    ColorScheme cs,
+  ) {
+    final rows = _healthRows(runtimeHealth['providerRows']);
+    if (rows.isEmpty) return const SizedBox.shrink();
+    rows.sort((a, b) {
+      final left = _providerCapabilityScore(a);
+      final right = _providerCapabilityScore(b);
+      if (left != right) return right.compareTo(left);
+      return '${a['provider'] ?? ''}'.compareTo('${b['provider'] ?? ''}');
+    });
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l10n.providerCapabilityMatrix,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            ...rows.take(8).map((row) {
+              final provider = row['provider']?.toString() ?? '-';
+              final supported = row['supported']?.toString() ?? '0';
+              final gated = row['gated']?.toString() ?? '0';
+              final outputOnly = row['outputOnly']?.toString() ?? '0';
+              final unstable = row['unstable']?.toString() ?? '0';
+              final disabled = row['disabled']?.toString() ?? '0';
+              final notSupported = row['notSupported']?.toString() ?? '0';
+              final nextAction =
+                  row['nextAction']?.toString() ??
+                  l10n.providerRouteRuleDefault;
+              return Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            provider,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '$supported ${l10n.supportedLabel}',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: cs.onSurface.withValues(alpha: 0.62),
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${l10n.gatedLabel} $gated · ${l10n.outputOnlyLabel} $outputOnly · ${l10n.unstableLabel} $unstable · ${l10n.disabledLabel} $disabled · ${l10n.notSupportedLabel} $notSupported',
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: cs.onSurface.withValues(alpha: 0.55),
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      nextAction,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: cs.onSurface.withValues(alpha: 0.62),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  int _providerCapabilityScore(Map<String, dynamic> row) {
+    int value(String key) {
+      final raw = row[key];
+      if (raw is num) return raw.toInt();
+      return int.tryParse(raw?.toString() ?? '') ?? 0;
+    }
+
+    return value('supported') * 10 +
+        value('gated') * 3 +
+        value('outputOnly') -
+        value('unstable') -
+        value('disabled') -
+        value('notSupported');
   }
 
   Widget _runtimeProbeCard(AppLocalizations l10n, ColorScheme cs) {

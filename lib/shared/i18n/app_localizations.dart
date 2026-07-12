@@ -146,6 +146,15 @@ class AppLocalizations {
     'lastProbeRun': 'Last probe run',
     'passedLabel': 'passed',
     'runtimeHealthQueues': 'Runtime action queues',
+    'providerCapabilityMatrix': 'Provider capability matrix',
+    'supportedLabel': 'supported',
+    'gatedLabel': 'gated',
+    'outputOnlyLabel': 'output-only',
+    'unstableLabel': 'unstable',
+    'disabledLabel': 'disabled',
+    'notSupportedLabel': 'not-supported',
+    'providerRouteRuleDefault':
+        'Use ProviderRouter before live calls; prefer cache/readback when available.',
     'credentialQueueTitle': 'Credential / quota queue',
     'providerGapQueueTitle': 'Provider gap queue',
     'policyDisabledQueueTitle': 'Policy-disabled queue',
@@ -597,6 +606,14 @@ class AppLocalizations {
     'lastProbeRun': '上次探测时间',
     'passedLabel': '通过',
     'runtimeHealthQueues': '运行时动作队列',
+    'providerCapabilityMatrix': 'Provider 能力矩阵',
+    'supportedLabel': '支持',
+    'gatedLabel': '门控',
+    'outputOnlyLabel': '仅输出',
+    'unstableLabel': '不稳定',
+    'disabledLabel': '已禁用',
+    'notSupportedLabel': '不支持',
+    'providerRouteRuleDefault': '实时调用前先使用 ProviderRouter；可用时优先使用缓存/读回。',
     'credentialQueueTitle': '凭证 / 额度队列',
     'providerGapQueueTitle': 'Provider 缺口队列',
     'policyDisabledQueueTitle': '策略禁用队列',
@@ -1032,6 +1049,14 @@ class AppLocalizations {
   String get lastProbeRun => _value('lastProbeRun');
   String get passedLabel => _value('passedLabel');
   String get runtimeHealthQueues => _value('runtimeHealthQueues');
+  String get providerCapabilityMatrix => _value('providerCapabilityMatrix');
+  String get supportedLabel => _value('supportedLabel');
+  String get gatedLabel => _value('gatedLabel');
+  String get outputOnlyLabel => _value('outputOnlyLabel');
+  String get unstableLabel => _value('unstableLabel');
+  String get disabledLabel => _value('disabledLabel');
+  String get notSupportedLabel => _value('notSupportedLabel');
+  String get providerRouteRuleDefault => _value('providerRouteRuleDefault');
   String get credentialQueueTitle => _value('credentialQueueTitle');
   String get providerGapQueueTitle => _value('providerGapQueueTitle');
   String get policyDisabledQueueTitle => _value('policyDisabledQueueTitle');
