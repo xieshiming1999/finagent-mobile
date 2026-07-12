@@ -713,6 +713,69 @@ void main() {
   );
 
   test(
+    'bounded hook does not treat broad macro themes as stock quote targets',
+    () {
+      final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+      final summary = hooks.buildBudgetStopText(
+        messages: [
+          Message(role: Role.user, content: 'macro energy attribution'),
+          Message(
+            role: Role.assistant,
+            content: '',
+            toolUses: const [
+              ToolUse(
+                id: 'factor',
+                name: 'MarketData',
+                input: {'action': 'query_macro_factors', 'target': 'energy'},
+              ),
+              ToolUse(
+                id: 'attr',
+                name: 'MarketData',
+                input: {'action': 'query_macro_attribution', 'target': 'energy'},
+              ),
+              ToolUse(
+                id: 'sources',
+                name: 'MarketData',
+                input: {
+                  'action': 'query_macro_research_evidence',
+                  'family': 'commodity_research',
+                },
+              ),
+            ],
+          ),
+          _tool('factor', {
+            'action': 'query_macro_factors',
+            'rows': [
+              {
+                'title': 'Energy inventory evidence',
+                'family': 'commodity_research',
+                'sourceDataTime': '2026-07-01',
+                'affectedAssets': ['oil', 'energy equities', 'funds'],
+                'confidenceEffect':
+                    'Raises monitoring priority for energy-sensitive assets.',
+              },
+            ],
+          }),
+          _tool('attr', {'action': 'query_macro_attribution', 'rows': []}),
+          _tool('sources', {
+            'action': 'query_macro_research_evidence',
+            'rows': [
+              {'source_name': 'EIA', 'family': 'commodity_research'},
+            ],
+          }),
+        ],
+        turnStartIndex: 0,
+        prompt: null,
+        failureSummary: 'test',
+      );
+
+      expect(summary, contains('宏观证据与来源状态'));
+      expect(summary, contains('Energy inventory evidence'));
+      expect(summary, isNot(contains('个股行情')));
+    },
+  );
+
+  test(
     'bounded hook prefers named stock macro target over broad industry target',
     () {
       final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
