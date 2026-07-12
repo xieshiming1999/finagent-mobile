@@ -62,6 +62,8 @@ class FinanceWorkflowState {
   final String source;
   final bool hasUnsupportedExecutableParts;
   final List<String> blockedTools;
+  final List<Map<String, dynamic>> requiredArtifacts;
+  final Map<String, dynamic>? requiredVerifier;
 
   const FinanceWorkflowState({
     required this.workflowKind,
@@ -77,6 +79,8 @@ class FinanceWorkflowState {
     this.updatedAt,
     this.hasUnsupportedExecutableParts = false,
     this.blockedTools = const [],
+    this.requiredArtifacts = const [],
+    this.requiredVerifier,
   });
 
   bool get isStrategy =>
@@ -104,6 +108,8 @@ class FinanceWorkflowState {
     'source': source,
     'hasUnsupportedExecutableParts': hasUnsupportedExecutableParts,
     if (blockedTools.isNotEmpty) 'blockedTools': blockedTools,
+    if (requiredArtifacts.isNotEmpty) 'requiredArtifacts': requiredArtifacts,
+    if (requiredVerifier != null) 'requiredVerifier': requiredVerifier,
   };
 
   factory FinanceWorkflowState.fromJson(Map<String, dynamic> json) {
@@ -158,6 +164,16 @@ class FinanceWorkflowState {
                 : const [])
           '$value',
       ],
+      requiredArtifacts: [
+        for (final value
+            in json['requiredArtifacts'] is List
+                ? json['requiredArtifacts'] as List
+                : const [])
+          if (value is Map) Map<String, dynamic>.from(value),
+      ],
+      requiredVerifier: json['requiredVerifier'] is Map
+          ? Map<String, dynamic>.from(json['requiredVerifier'] as Map)
+          : null,
     );
   }
 

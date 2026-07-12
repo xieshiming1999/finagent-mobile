@@ -2350,8 +2350,19 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       turnStartIndex: turnStartIndex,
       failureSummary: failureSummary,
     );
+    final macroArtifactGate = _macroArtifactFinalizationGate(
+      messages,
+      workflowState,
+      turnStartIndex,
+    );
+    final macroArtifactGateSatisfied =
+        macroArtifactGate.required &&
+        macroArtifactGate.artifactRegistered &&
+        macroArtifactGate.verifierChecked;
     if (macroEvidence != null &&
-        !_requiresMacroStockQuoteRecovery(messages.sublist(turnStartIndex)) &&
+        (!macroArtifactGate.required || macroArtifactGateSatisfied) &&
+        (!_requiresMacroStockQuoteRecovery(messages.sublist(turnStartIndex)) ||
+            macroArtifactGateSatisfied) &&
         !_hasPendingMacroConditionWatchlistWorkflow(
           messages.sublist(turnStartIndex),
           workflowState,
@@ -2468,6 +2479,12 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     required Tool? Function(String name) toolByName,
     required DomainRecoveryToolCall callTool,
   }) async {
+    final macroArtifact = await _buildMacroArtifactFinalizationRecovery(
+      messages: messages,
+      toolByName: toolByName,
+      callTool: callTool,
+    );
+    if (macroArtifact != null) return macroArtifact;
     final macroStockQuote = await _buildMacroStockQuoteRecovery(
       messages: messages,
       toolByName: toolByName,
@@ -2486,6 +2503,220 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       toolByName: toolByName,
       callTool: callTool,
     );
+  }
+
+  Future<String?> _buildMacroArtifactFinalizationRecovery({
+    required List<Message> messages,
+    required Tool? Function(String name) toolByName,
+    required DomainRecoveryToolCall callTool,
+  }) async {
+    final turnStartIndex = _lastUserIndex(messages);
+    if (turnStartIndex < 0) return null;
+    final workflowState = FinanceWorkflowState.latestFromMessages(
+      messages,
+      turnStartIndex: turnStartIndex,
+    );
+    final gate = _macroArtifactFinalizationGate(
+      messages,
+      workflowState,
+      turnStartIndex,
+    );
+    if (!gate.required) return null;
+    final evidence = _macroEvidenceSummary.collect(messages, turnStartIndex);
+    if (!evidence.hasMacroEvidence || !evidence.hasActionableMacroEvidence) {
+      return null;
+    }
+    if (!gate.artifactRegistered) {
+      final artifactTool = toolByName('ArtifactRegistry');
+      if (artifactTool == null) return null;
+      await callTool(
+        artifactTool,
+        'auto_macro_artifact_register_${DateTime.now().microsecondsSinceEpoch}',
+        {
+          'action': 'register',
+          'kind': gate.artifactKind,
+          'title': '宏观影响证据报告',
+          'source': 'macro_factor_lookup',
+          'verificationStatus': 'unverified',
+          'freshness': {
+            'sourceTime': _firstEvidenceTime(evidence),
+            'fetchedAt': DateTime.now().toIso8601String(),
+            'status': evidence.missingLines.isNotEmpty ? 'unknown' : 'fresh',
+          },
+          'provenance': {
+            'workflow': 'macro_factor_lookup',
+            'evidenceTier': 'governed_macro_readback',
+            'sourceDataTime': _firstEvidenceTime(evidence),
+            'missingEvidence': evidence.missingLines,
+            'confidenceEffect': _firstOrDefault(
+              evidence.decisionLines,
+              _firstOrDefault(evidence.reliabilityLines, '宏观证据用于调整分析信心和观察优先级。'),
+            ),
+            'affectedAssets': _macroAffectedAssets(evidence),
+          },
+          'metadata': {
+            'workflow': 'macro_factor_lookup',
+            'workflowState': workflowState?.toJson(),
+            'macroEvidenceSummary': {
+              'contract': 'macro-artifact-evidence-summary-v1',
+              'topic': 'macro_factor_lookup',
+              'sourceTime': _firstEvidenceTime(evidence),
+              'fetchedAt': DateTime.now().toIso8601String(),
+              'freshnessStatus': evidence.missingLines.isNotEmpty
+                  ? 'unknown'
+                  : 'fresh',
+              'confidenceEffect': _firstOrDefault(
+                evidence.decisionLines,
+                _firstOrDefault(
+                  evidence.reliabilityLines,
+                  '宏观证据用于调整分析信心和观察优先级。',
+                ),
+              ),
+              'affectedAssets': _macroAffectedAssets(evidence),
+              'missingEvidence': evidence.missingLines.isNotEmpty
+                  ? evidence.missingLines
+                  : ['未发现阻断性缺失证据；仍需在后续刷新中复核来源时效。'],
+              'failureClass': evidence.missingLines.isNotEmpty
+                  ? 'missing_evidence'
+                  : null,
+            },
+            'sourceLines': evidence.sourceLines,
+            'contentLines': evidence.contentLines,
+            'factorLines': evidence.factorLines,
+            'evidenceLines': evidence.evidenceLines,
+            'reliabilityLines': evidence.reliabilityLines,
+            'assetImpactLines': evidence.assetImpactLines,
+            'decisionLines': evidence.decisionLines,
+          },
+        },
+      );
+    }
+    if (!gate.verifierChecked) {
+      final verifierTool = toolByName('WorkflowVerifier');
+      if (verifierTool == null) return null;
+      await callTool(
+        verifierTool,
+        'auto_macro_workflow_verify_${DateTime.now().microsecondsSinceEpoch}',
+        {
+          'action': 'check',
+          'workflow': gate.verifierWorkflow,
+          'requireWorkflowState': false,
+        },
+      );
+    }
+    return buildBudgetStopText(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+      prompt: null,
+      failureSummary:
+          '本轮已使用结构化宏观 readback、ArtifactRegistry 和 WorkflowVerifier 完成可复核宏观产物边界。',
+    );
+  }
+
+  _MacroArtifactFinalizationGate _macroArtifactFinalizationGate(
+    List<Message> messages,
+    FinanceWorkflowState? workflowState,
+    int turnStartIndex,
+  ) {
+    final requiresReviewableMacroArtifact =
+        workflowState?.requiredArtifacts.any((item) {
+          final kinds = item['kindAnyOf'];
+          if (kinds is! List) return false;
+          return kinds
+              .map((kind) => '$kind')
+              .any((kind) => kind == 'report' || kind == 'dashboard');
+        }) ??
+        false;
+    final requiredVerifier = workflowState?.requiredVerifier;
+    final verifierWorkflow =
+        '${requiredVerifier?['workflow'] ?? 'macro_factor_lookup'}';
+    final requiresMacroVerifier =
+        requiredVerifier?['tool'] == 'WorkflowVerifier' &&
+        verifierWorkflow == 'macro_factor_lookup';
+    final evidence = _macroEvidenceSummary.collect(messages, turnStartIndex);
+    final required =
+        evidence.hasMacroEvidence &&
+        (requiresReviewableMacroArtifact || requiresMacroVerifier);
+    final turnMessages = messages.sublist(turnStartIndex);
+    final artifactKind =
+        workflowState?.requiredArtifacts.any((item) {
+              final kinds = item['kindAnyOf'];
+              return kinds is List &&
+                  kinds.map((kind) => '$kind').contains('dashboard');
+            }) ??
+            false
+        ? 'dashboard'
+        : 'report';
+    return _MacroArtifactFinalizationGate(
+      required: required,
+      artifactRegistered: _hasSuccessfulToolAction(
+        turnMessages,
+        'ArtifactRegistry',
+        'register',
+      ),
+      verifierChecked: _hasSuccessfulToolAction(
+        turnMessages,
+        'WorkflowVerifier',
+        'check',
+      ),
+      artifactKind: artifactKind,
+      verifierWorkflow: verifierWorkflow,
+    );
+  }
+
+  bool _hasSuccessfulToolAction(
+    List<Message> messages,
+    String toolName,
+    String action,
+  ) {
+    final callsById = <String, ToolUse>{};
+    for (final message in messages) {
+      if (message.role != Role.assistant) continue;
+      for (final call in message.toolUses ?? const <ToolUse>[]) {
+        if (call.name == toolName && call.input['action'] == action) {
+          callsById[call.id] = call;
+        }
+      }
+    }
+    for (final message in messages) {
+      final result = message.toolResult;
+      if (message.role != Role.tool || result == null || result.isError) {
+        continue;
+      }
+      if (callsById.containsKey(result.toolUseId)) return true;
+    }
+    return false;
+  }
+
+  String _firstOrDefault(List<String> values, String fallback) {
+    return values.firstWhere(
+      (value) => value.trim().isNotEmpty,
+      orElse: () => fallback,
+    );
+  }
+
+  String? _firstEvidenceTime(MacroEvidence evidence) {
+    final joined = [
+      ...evidence.factorLines,
+      ...evidence.contentLines,
+      ...evidence.evidenceLines,
+      ...evidence.reliabilityLines,
+    ].join(' ');
+    return RegExp(
+      r'\d{4}-\d{2}-\d{2}(?:T[\d:.+-Z]+)?',
+    ).firstMatch(joined)?.group(0);
+  }
+
+  List<String> _macroAffectedAssets(MacroEvidence evidence) {
+    if (evidence.assetImpactLines.isNotEmpty) {
+      return evidence.assetImpactLines.take(8).toList();
+    }
+    return const [
+      'industry_watchlist',
+      'stock_watchlist',
+      'fund_watchlist',
+      'strategy_assumptions',
+    ];
   }
 
   Future<String?> _buildMacroStockQuoteRecovery({
@@ -2525,4 +2756,20 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
           '本轮已使用结构化宏观 readback、新闻线索和个股行情证据；如需刷新来源，应进入显式 macro source update / extraction workflow。',
     );
   }
+}
+
+class _MacroArtifactFinalizationGate {
+  const _MacroArtifactFinalizationGate({
+    required this.required,
+    required this.artifactRegistered,
+    required this.verifierChecked,
+    required this.artifactKind,
+    required this.verifierWorkflow,
+  });
+
+  final bool required;
+  final bool artifactRegistered;
+  final bool verifierChecked;
+  final String artifactKind;
+  final String verifierWorkflow;
 }

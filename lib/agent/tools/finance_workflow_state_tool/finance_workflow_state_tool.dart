@@ -118,6 +118,17 @@ class FinanceWorkflowStateTool extends Tool {
         'type': 'array',
         'items': {'type': 'string'},
       },
+      'requiredArtifacts': {
+        'type': 'array',
+        'items': {'type': 'object'},
+        'description':
+            'Structured output artifact requirements, for example kindAnyOf/report/dashboard and fields that must be included.',
+      },
+      'requiredVerifier': {
+        'type': 'object',
+        'description':
+            'Structured verifier requirement, for example {"tool":"WorkflowVerifier","action":"check","workflow":"macro_factor_lookup"}.',
+      },
       'workflowState': {
         'type': 'object',
         'description':
@@ -162,7 +173,7 @@ class FinanceWorkflowStateTool extends Tool {
         isError: true,
       );
     }
-    final rawState = action == 'validate' || action == 'save'
+    final rawState = input['workflowState'] is Map
         ? input['workflowState']
         : input;
     final state = _normalizeState(rawState);
@@ -238,6 +249,10 @@ class FinanceWorkflowStateTool extends Tool {
       'hasUnsupportedExecutableParts':
           input['hasUnsupportedExecutableParts'] == true,
       'blockedTools': _stringList(input['blockedTools']),
+      if (_objectList(input['requiredArtifacts']).isNotEmpty)
+        'requiredArtifacts': _objectList(input['requiredArtifacts']),
+      if (_mapOrNull(input['requiredVerifier']) != null)
+        'requiredVerifier': _mapOrNull(input['requiredVerifier']),
     };
   }
 
@@ -293,6 +308,14 @@ class FinanceWorkflowStateTool extends Tool {
       for (final item in value)
         if ('$item'.trim().isNotEmpty) '$item'.trim(),
     }.toList();
+  }
+
+  List<Map<String, dynamic>> _objectList(Object? value) {
+    if (value is! List) return [];
+    return [
+      for (final item in value)
+        if (item is Map) Map<String, dynamic>.from(item),
+    ];
   }
 
   ToolResult _save(

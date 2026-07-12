@@ -113,4 +113,54 @@ void main() {
       expect(listPayload['count'], 1);
     },
   );
+
+  test(
+    'FinanceWorkflowState create accepts nested workflowState requirements',
+    () async {
+      final dir = Directory.systemTemp.createTempSync(
+        'finagent_finance_workflow_state_tool_nested_test_',
+      );
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final tool = FinanceWorkflowStateTool();
+      final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
+
+      final result = await tool.call('tool-6', {
+        'action': 'create',
+        'workflowState': {
+          'contract': 'finance-workflow-state-v1',
+          'workflowKind': 'evidence_review',
+          'assetClass': 'mixed',
+          'intentMode': 'review',
+          'executionMode': 'none',
+          'confirmationState': 'none',
+          'safetyBoundary': 'macro evidence is context only',
+          'evidenceRefs': ['macro_evidence', 'artifact_registry'],
+          'requiredArtifacts': [
+            {
+              'kindAnyOf': ['report', 'dashboard'],
+              'mustInclude': ['sourceTime', 'fetchedAt', 'confidenceEffect'],
+            },
+          ],
+          'requiredVerifier': {
+            'tool': 'WorkflowVerifier',
+            'action': 'check',
+            'workflow': 'macro_factor_lookup',
+          },
+        },
+      }, context);
+
+      expect(result.isError, isFalse);
+      final decoded = jsonDecode(result.content) as Map<String, dynamic>;
+      final state = decoded['workflowState'] as Map<String, dynamic>;
+      expect(state['workflowKind'], 'evidence_review');
+      expect(state['requiredArtifacts'], isA<List>());
+      expect(
+        (state['requiredArtifacts'] as List).single['kindAnyOf'],
+        contains('dashboard'),
+      );
+      expect(state['requiredVerifier']['workflow'], 'macro_factor_lookup');
+    },
+  );
 }

@@ -431,6 +431,119 @@ void main() {
     expect(summary, contains('不能直接编译成可执行交易信号'));
   });
 
+  test(
+    'bounded macro summary waits for required artifact and verifier evidence',
+    () {
+      final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+      final workflowData =
+          'data: ${jsonEncode({
+            'workflowState': {
+              'contract': 'finance-workflow-state-v1',
+              'workflowKind': 'evidence_review',
+              'assetClass': 'mixed',
+              'intentMode': 'review',
+              'executionMode': 'none',
+              'safetyBoundary': 'macro evidence is context only',
+              'evidenceRefs': ['macro_evidence', 'artifact_registry'],
+              'confirmationState': 'none',
+              'source': 'agent-structured-intent',
+              'requiredArtifacts': [
+                {
+                  'kindAnyOf': ['report', 'dashboard'],
+                  'mustInclude': ['sourceTime', 'fetchedAt', 'missingEvidence', 'confidenceEffect', 'affectedAssets'],
+                },
+              ],
+              'requiredVerifier': {'tool': 'WorkflowVerifier', 'action': 'check', 'workflow': 'macro_factor_lookup'},
+            },
+          })}';
+      final baseMessages = [
+        Message(role: Role.user, content: 'macro artifact\n$workflowData'),
+        Message(
+          role: Role.assistant,
+          content: '',
+          toolUses: const [
+            ToolUse(
+              id: 'macro',
+              name: 'MarketData',
+              input: {
+                'action': 'query_macro_numeric_series',
+                'provider': 'eia',
+                'seriesId': 'WCESTUS1',
+              },
+            ),
+          ],
+        ),
+        _tool('macro', {
+          'action': 'query_macro_numeric_series',
+          'status': 'ok',
+          'series': [
+            {
+              'seriesId': 'WCESTUS1',
+              'metricName': 'US commercial crude oil inventories',
+              'provider': 'eia',
+              'sourceName': 'EIA',
+              'value': 420000,
+              'unit': 'MBBL',
+              'sourceDataTime': '2026-07-03',
+              'fetchedAt': '2026-07-12T02:00:00Z',
+              'affectedAssets': ['oil', 'energy equities', 'A-shares'],
+              'confidenceEffect': 'adds official inventory context',
+            },
+          ],
+        }),
+      ];
+
+      final waiting = hooks.buildBudgetStopText(
+        messages: baseMessages,
+        turnStartIndex: 0,
+        prompt: null,
+        failureSummary: 'test',
+      );
+
+      expect(waiting, isNot(contains('宏观证据与来源状态')));
+
+      final finalized = hooks.buildBudgetStopText(
+        messages: [
+          ...baseMessages,
+          Message(
+            role: Role.assistant,
+            content: '',
+            toolUses: const [
+              ToolUse(
+                id: 'artifact',
+                name: 'ArtifactRegistry',
+                input: {'action': 'register', 'kind': 'dashboard'},
+              ),
+              ToolUse(
+                id: 'verify',
+                name: 'WorkflowVerifier',
+                input: {'action': 'check', 'workflow': 'macro_factor_lookup'},
+              ),
+            ],
+          ),
+          _tool('artifact', {
+            'contract': 'artifact-registry-result-v1',
+            'action': 'register',
+            'artifact': {'kind': 'dashboard'},
+          }),
+          _tool('verify', {
+            'contract': 'workflow-verifier-result-v1',
+            'action': 'check',
+            'workflow': 'macro_factor_lookup',
+            'status': 'passed',
+          }),
+        ],
+        turnStartIndex: 0,
+        prompt: null,
+        failureSummary: 'test',
+      );
+
+      expect(finalized, contains('宏观证据与来源状态'));
+      expect(finalized, contains('US commercial crude oil inventories'));
+      expect(finalized, contains('不能直接编译成可执行交易信号'));
+    },
+  );
+
   test('uses EIA only as stock and fund macro context', () {
     final summary = FinanceMacroEvidenceSummary().build(
       messages: [
