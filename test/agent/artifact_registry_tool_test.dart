@@ -106,6 +106,31 @@ void main() {
     },
   );
 
+  test('ArtifactRegistry help discloses managed register requirements', () async {
+    final context = _tempContext();
+    addTearDown(() {
+      final dir = Directory(context.basePath);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    final tool = ArtifactRegistryTool();
+    final help =
+        jsonDecode(
+              (await tool.call('artifact-help', {
+                'action': 'help',
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+    final guidance = (help['guidance'] as List).join('\n');
+    final schema = tool.inputSchema['properties'] as Map<String, dynamic>;
+
+    expect(guidance, contains('kind, title, and source'));
+    expect(
+      (schema['source'] as Map<String, dynamic>)['description'],
+      contains('Required for register'),
+    );
+  });
+
   test('ArtifactRegistry creates managed artifact file without path', () async {
     final context = _tempContext();
     addTearDown(() {

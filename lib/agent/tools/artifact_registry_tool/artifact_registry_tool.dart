@@ -35,8 +35,16 @@ class ArtifactRegistryTool extends Tool {
       },
       'id': {'type': 'string', 'description': 'Artifact id or stable id.'},
       'path': {'type': 'string', 'description': 'Runtime artifact path.'},
-      'title': {'type': 'string'},
-      'source': {'type': 'string'},
+      'title': {
+        'type': 'string',
+        'description':
+            'Required for register. Human-readable artifact title.',
+      },
+      'source': {
+        'type': 'string',
+        'description':
+            'Required for register. Name the workflow, provider, tool, or evidence source that produced the artifact.',
+      },
       'ownerTask': {'type': 'string'},
       'verificationStatus': {
         'type': 'string',
@@ -106,6 +114,7 @@ class ArtifactRegistryTool extends Tool {
     'kinds': ArtifactKind.values.map((kind) => kind.wireName).toList(),
     'guidance': [
       'Register artifacts after creating durable workflow outputs; do not rely only on chat text.',
+      'For action="register", always provide kind, title, and source. If path is omitted, ArtifactRegistry creates a managed JSON artifact file.',
       'Use provenance and freshness to explain where evidence came from and whether it is reusable.',
       'Use get/list before reusing an existing artifact in later turns.',
       'Use graph to inspect claim/evidence/source relationships before citing a prior artifact.',
