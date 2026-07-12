@@ -92,6 +92,33 @@ When the user asks to invent, create, or save a new strategy, do not pass an
 arbitrary strategy name into `backtest`, `backtest_batch`, or
 `optimize_params`. Use the governed custom strategy path:
 
+For a single custom strategy design/backtest request, keep the first pass
+bounded to the custom strategy lifecycle: `custom_strategy_help` when discovery
+is needed, exactly one `custom_strategy_validate`, then exactly one
+`custom_strategy_backtest` if validation succeeds. Do not run broad
+preset-strategy comparisons, multiple custom strategy variants, or multiple
+`MarketData(backtest)` calls in the same turn unless the user explicitly asks
+to compare against presets, optimize parameters, or rank alternatives.
+`custom_strategy_backtest` already returns benchmark/data/risk evidence; use
+that evidence before spending extra backtest calls.
+
+Save and rerun are separate lifecycle steps. Do not call
+`custom_strategy_save`, `custom_strategy_run`, `custom_strategy_read`, or
+`custom_strategy_compare` during a design/validate/backtest request unless the
+user explicitly asks to save, persist, reload/read back, rerun, compare saved
+strategies, monitor, or create a watch artifact. A saveable backtest means the
+strategy can be saved; it is not permission to save or rerun in the same turn.
+
+`custom_strategy_help` is progressive-disclosure by default. The normal
+`MarketData(action:"custom_strategy_help")` response is a compact contract
+summary with examples, categories, counts, preview indicator parameter schemas,
+and input/output contracts. Use only the indicators and parameters shown in
+the preview unless you explicitly request
+`MarketData(action:"custom_strategy_help", detail:"catalog")` for a full
+catalog. Only ask for the full catalog when a specific uncommon indicator is
+needed. Do not use `Read` to inspect overflow help output for ordinary
+strategy design.
+
 Do not use `Read`, `LS`, `Grep`, `Glob`, or hand-authored file paths to inspect
 strategy artifacts, memory files, skill source files, or tool-output files while
 designing, ranking, validating, or reviewing a strategy. Runtime memory needed

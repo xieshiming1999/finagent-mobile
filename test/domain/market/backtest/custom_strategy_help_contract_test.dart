@@ -25,8 +25,21 @@ void main() {
     expect(executable.containsKey('indicators'), isFalse);
     expect(executable.containsKey('indicatorCatalog'), isFalse);
     expect(executable.containsKey('indicatorCatalogByCategory'), isFalse);
-    expect(executable.containsKey('stockExample'), isFalse);
-    expect(executable.containsKey('ruleCompositionExamples'), isFalse);
+    expect(executable['stockExample'], isA<Map>());
+    final stockExample = executable['stockExample'] as Map;
+    expect(stockExample['indicators'], isA<List>());
+    expect(
+      (stockExample['indicators'] as List).any(
+        (row) => row is Map && row['id'] == 'ema20' && row['type'] == 'ema',
+      ),
+      isTrue,
+    );
+    expect(executable['ruleCompositionExamples'], isA<Map>());
+    final ruleExamples = executable['ruleCompositionExamples'] as Map;
+    expect(
+      (ruleExamples['declaredIndicatorPattern'] as Map)['entryRule'],
+      containsPair('left', 'ema20'),
+    );
 
     final fundObservation = help['fundObservationV1'] as Map;
     expect(fundObservation['indicatorCount'], greaterThan(5));
@@ -104,6 +117,36 @@ void main() {
     expect((spec['exit'] as Map)['any'], contains(isA<Map>()));
   });
 
+  test('custom strategy accepts equality operators for flag rules', () {
+    final validation = CustomStrategyEngine().validate({
+      'name': 'volume flag equality',
+      'market': 'cn',
+      'symbols': ['300059'],
+      'indicators': [
+        {
+          'id': 'volBreak20',
+          'type': 'volume_breakout',
+          'source': 'volume',
+          'params': {'period': 20},
+        },
+      ],
+      'entry': {
+        'all': [
+          {'left': 'volBreak20', 'op': '==', 'right': 1},
+        ],
+      },
+      'exit': {
+        'any': [
+          {'left': 'volBreak20', 'op': '!=', 'right': 1},
+          {'type': 'stop_loss_pct', 'value': 6},
+        ],
+      },
+    });
+
+    expect(validation['status'], 'validated');
+    expect(validation['errors'], isEmpty);
+  });
+
   test('custom strategy accepts agent-authored entrySignals and exitSignals lists', () async {
     final service = BacktestMarketDataService(
       candleLoader: (symbol, period, context) async =>
@@ -167,6 +210,56 @@ void main() {
             .having((row) => row['left'], 'left', 'close')
             .having((row) => row['op'], 'op', '<')
             .having((row) => row['right'], 'right', {'mul': ['sma20', 1]}),
+      ),
+    );
+  });
+
+  test('custom strategy preserves arithmetic right-hand multiplier objects', () async {
+    final service = BacktestMarketDataService(
+      candleLoader: (symbol, period, context) async =>
+          _relativeStrengthCandles(symbol),
+    );
+
+    final validation = await service.customStrategyValidate({
+      'strategySpec': {
+        'name': 'volume multiplier rule',
+        'market': 'cn',
+        'assetClass': 'stock',
+        'indicators': [
+          {
+            'id': 'vol20',
+            'type': 'volume_sma',
+            'source': 'volume',
+            'params': {'period': 20},
+          },
+        ],
+        'entry': {
+          'all': [
+            {
+              'left': 'volume',
+              'op': '>=',
+              'right': {'left': 'volume_sma', 'op': '*', 'right': 1.2},
+            },
+          ],
+        },
+        'exit': {
+          'any': [
+            {'type': 'stop_loss_pct', 'value': 8},
+          ],
+        },
+      },
+    });
+
+    expect(validation.isError, isFalse);
+    final spec = (validation.content as Map<String, dynamic>)['spec']
+        as Map<String, dynamic>;
+    expect(
+      (spec['entry'] as Map)['all'],
+      contains(
+        isA<Map>()
+            .having((row) => row['left'], 'left', 'volume')
+            .having((row) => row['op'], 'op', '>=')
+            .having((row) => row['right'], 'right', {'mul': ['vol20', 1.2]}),
       ),
     );
   });
@@ -631,6 +724,18 @@ void main() {
     expect(
       fundObservation['indicatorCatalogByCategory'],
       containsPair('fund_return_quality', isNotEmpty),
+    );
+
+    final nestedHelp = CustomStrategyEngine().help({
+      'params': {'detail': 'catalog'},
+    });
+    final nestedExecutable = nestedHelp['executableV1'] as Map;
+    expect(nestedExecutable['indicatorCatalog'], isNotEmpty);
+    expect(
+      nestedExecutable['indicatorCatalog'],
+      contains(
+        isA<Map>().having((row) => row['type'], 'type', 'volume_breakout'),
+      ),
     );
   });
 

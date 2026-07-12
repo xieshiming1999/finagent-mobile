@@ -529,6 +529,10 @@ bool _evaluateRule(
       return left < right;
     case '<=':
       return left <= right;
+    case '==':
+      return left == right;
+    case '!=':
+      return left != right;
     case 'crosses_above':
       return prevLeft != null &&
           prevRight != null &&

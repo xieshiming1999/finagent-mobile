@@ -184,6 +184,31 @@ class CustomStrategyEngine {
           },
         },
         'ruleCompositionExamples': {
+          'declaredIndicatorPattern': {
+            'description':
+                'Declare every indicator once in strategySpec.indicators with an id, then reference only that id or built-in series such as close/volume inside entry/exit rules. Do not put an indicator object inline inside entryRules or exitRules.',
+            'indicators': [
+              {
+                'id': 'ema20',
+                'type': 'ema',
+                'source': 'close',
+                'params': {'period': 20},
+              },
+              {
+                'id': 'ema60',
+                'type': 'ema',
+                'source': 'close',
+                'params': {'period': 60},
+              },
+            ],
+            'entryRule': {
+              'left': 'ema20',
+              'op': '>',
+              'right': {
+                'mul': ['ema60', 1],
+              },
+            },
+          },
           'volumeGreaterThanMovingAverageMultiple': {
             'description':
                 'For volume > N times average volume, declare volume_sma and compare built-in volume against {"mul":["volSma20", N]}. Do not put multiplier inside volume_breakout params.',
@@ -828,7 +853,7 @@ class CustomStrategyEngine {
           'condition': 'Simple comparisons joined by and/or.',
         },
         'grammar':
-            '<series-or-indicator-id> (< | <= | > | >= | crosses_above | crosses_below) (<series-or-indicator-id> | number)',
+            '<series-or-indicator-id> (< | <= | > | >= | == | != | crosses_above | crosses_below) (<series-or-indicator-id> | number)',
         'builtInSeries': ['close', 'volume'],
         'examples': [
           {'action': 'entry', 'condition': 'close > sma20 and sma20 > sma60'},
@@ -851,9 +876,7 @@ class CustomStrategyEngine {
             ..remove('indicators')
             ..remove('indicatorCatalog')
             ..remove('indicatorCatalogByCategory')
-            ..remove('indicatorPreviewCatalog')
-            ..remove('stockExample')
-            ..remove('ruleCompositionExamples');
+            ..remove('indicatorPreviewCatalog');
       final fundObservation =
           Map<String, dynamic>.from(payload['fundObservationV1'] as Map)
             ..remove('indicators')
@@ -879,15 +902,25 @@ class CustomStrategyEngine {
   }
 
   bool _wantsDetailedCatalog(Map<String, dynamic> input) {
-    final detail = '${input['detail'] ?? input['mode'] ?? ''}'.toLowerCase();
+    final params = input['params'] is Map
+        ? Map<String, dynamic>.from(input['params'] as Map)
+        : const <String, dynamic>{};
+    final detail =
+        '${input['detail'] ?? input['mode'] ?? params['detail'] ?? params['mode'] ?? ''}'
+            .toLowerCase();
+    final code = '${input['code'] ?? params['code'] ?? ''}'.toLowerCase();
     final requestedFields = input['fields'] is List
         ? (input['fields'] as List).join(' ')
-        : '${input['fields'] ?? ''}';
+        : params['fields'] is List
+            ? (params['fields'] as List).join(' ')
+            : '${input['fields'] ?? params['fields'] ?? ''}';
     return input['includeCatalog'] == true ||
         input['full'] == true ||
         input['indicators'] != null ||
         requestedFields.contains('indicatorCatalog') ||
         requestedFields.contains('indicators') ||
+        code == 'detail:catalog' ||
+        code == 'catalog' ||
         detail == 'catalog' ||
         detail == 'full' ||
         detail == 'detailed';

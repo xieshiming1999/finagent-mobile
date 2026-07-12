@@ -655,7 +655,7 @@ List<Map<String, dynamic>> _conditionRulesFromDsl(String raw) {
 
 Map<String, dynamic>? _parseDslComparison(String raw) {
   final match = RegExp(
-    r'^([a-zA-Z_][a-zA-Z0-9_]*|close|volume)\s*(crosses_above|crosses_below|>=|<=|>|<)\s*([a-zA-Z_][a-zA-Z0-9_]*|[0-9]+(?:\.[0-9]+)?)$',
+    r'^([a-zA-Z_][a-zA-Z0-9_]*|close|volume)\s*(crosses_above|crosses_below|>=|<=|==|!=|>|<)\s*([a-zA-Z_][a-zA-Z0-9_]*|[0-9]+(?:\.[0-9]+)?)$',
   ).firstMatch(raw.trim());
   if (match == null) return null;
   final right = match.group(3)!;
@@ -989,6 +989,24 @@ Object? _rightValue(
   if (right is Map) {
     if (right['mul'] is List) {
       return _normalizeMulRight(right, indicatorIds: indicatorIds);
+    }
+    final op = '${right['op'] ?? right['operator'] ?? ''}'.trim();
+    if (op == '*') {
+      final left = right['left'] ?? right['indicator'] ?? right['type'];
+      final ref = left is String
+          ? parseStrategyIndicatorRef(left)
+          : _refFromObject(right);
+      return {
+        'mul': [
+          indicatorIds.contains(left) ? left : ref.id,
+          _numOf(right['right']) ??
+              _numOf(right['value']) ??
+              _numOf(right['scale']) ??
+              _numOf(right['multiplier']) ??
+              _numOf(right['factor']) ??
+              1,
+        ],
+      };
     }
     final ref = _refFromObject(right);
     return {
