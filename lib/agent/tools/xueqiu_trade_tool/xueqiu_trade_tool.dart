@@ -51,6 +51,7 @@ class XueqiuTradeTool extends Tool {
 - sell — 模拟卖出。需要 symbol / shares / price
 - transfer_in — 模拟转入现金。需要 amount
 - transfer_out — 模拟转出现金。需要 amount
+- MONI 写入如果被 provider 拒绝，停止本次写入流程，必要时读取 position/history 核实副作用；不要重复同一写入，也不要改用 Portfolio fallback。
 
 可选参数:
 - portfolio: 组合名称或 gid；默认使用第一个已配置组合
@@ -61,7 +62,7 @@ class XueqiuTradeTool extends Tool {
 仓位合同:
 - MONI 当前实测合同使用显式 shares；不要把本地 Portfolio 的 A 股 100 股规则套用到 XueqiuTrade 仓位测算。
 - 如果用户只要求测算，或明确说不要交易，仅读取 portfolios / balance / position / quote 后给出计算；不要询问执行确认，不要 preview、buy、sell 或 transfer。
-- 如果用户之后明确授权执行，先调用 preview_order，并以 provider 返回结果判断该股数是否可执行。
+- 如果用户之后明确授权执行，先调用 preview_order；preview 是只读证据，不能保证最终 transaction/add.json 写入一定被 provider 接受。
 
 示例:
 XueqiuTrade(action:"portfolios")
@@ -452,6 +453,16 @@ XueqiuTrade(action:"transfer_in", portfolio:"finasimu", amount:10000)''';
           'shares': _formatNumber(shares),
           'tax_rate': '${(input['tax_rate'] as num?) ?? 1}',
           'commission_rate': '${(input['commission_rate'] as num?) ?? 1}',
+        }, request: {
+          'action': type == 1 ? 'buy' : 'sell',
+          'endpoint': 'MONI/transaction/add.json',
+          'portfolio': group.name,
+          'gid': group.gid,
+          'symbol': normalizedSymbol,
+          'shares': shares,
+          'price': price,
+          'date': _resolveDate(input['date'] as String?),
+          'type': type,
         });
     final readback = await _postWriteReadback(
       group,
@@ -500,6 +511,18 @@ XueqiuTrade(action:"transfer_in", portfolio:"finasimu", amount:10000)''';
             ? (input['market'] as String).trim()
             : 'CHA',
         'amount': _formatNumber(amount),
+      },
+      request: {
+        'action': type == 1 ? 'transfer_in' : 'transfer_out',
+        'endpoint': 'MONI/bank_transfer/add.json',
+        'portfolio': group.name,
+        'gid': group.gid,
+        'amount': amount,
+        'date': _resolveDate(input['date'] as String?),
+        'market': (input['market'] as String?)?.trim().isNotEmpty == true
+            ? (input['market'] as String).trim()
+            : 'CHA',
+        'type': type,
       },
     );
     final readback = await _postWriteReadback(
@@ -794,7 +817,11 @@ XueqiuTrade(action:"transfer_in", portfolio:"finasimu", amount:10000)''';
         throw Exception('HTTP ${resp.statusCode}: ${resp.body}');
       }
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
-      _checkResult(body);
+      _checkResult(
+        body,
+        method: 'GET',
+        endpoint: _safeEndpoint(uri),
+      );
       _record('GET', uri, sw.elapsedMilliseconds, true, 200);
       return body;
     } catch (e) {
@@ -807,6 +834,7 @@ XueqiuTrade(action:"transfer_in", portfolio:"finasimu", amount:10000)''';
   Future<Map<String, dynamic>> _postJson(
     Uri uri,
     Map<String, String> body,
+    {Map<String, dynamic>? request}
   ) async {
     await _throttle();
     final sw = Stopwatch()..start();
@@ -826,7 +854,12 @@ XueqiuTrade(action:"transfer_in", portfolio:"finasimu", amount:10000)''';
         throw Exception('HTTP ${resp.statusCode}: ${resp.body}');
       }
       final payload = jsonDecode(resp.body) as Map<String, dynamic>;
-      _checkResult(payload);
+      _checkResult(
+        payload,
+        method: 'POST',
+        endpoint: _safeEndpoint(uri),
+        request: request,
+      );
       _record('POST', uri, sw.elapsedMilliseconds, true, 200);
       return payload;
     } catch (e) {
@@ -855,7 +888,12 @@ XueqiuTrade(action:"transfer_in", portfolio:"finasimu", amount:10000)''';
     );
   }
 
-  void _checkResult(Map<String, dynamic> body) {
+  void _checkResult(
+    Map<String, dynamic> body, {
+    required String method,
+    required String endpoint,
+    Map<String, dynamic>? request,
+  }) {
     final success = body['success'];
     final code =
         '${body['result_code'] ?? body['error_code'] ?? body['code'] ?? ''}';
@@ -865,9 +903,49 @@ XueqiuTrade(action:"transfer_in", portfolio:"finasimu", amount:10000)''';
     }
     if (success == false || (code.isNotEmpty && code != '60000')) {
       throw Exception(
-        'Xueqiu API error $code${msg.isNotEmpty ? ': $msg' : ''}',
+        const JsonEncoder.withIndent('  ').convert({
+          'error': 'xueqiu_provider_rejected_request',
+          'provider': 'xueqiu',
+          'surface': 'xueqiu_moni',
+          'method': method,
+          'endpoint': endpoint,
+          'resultCode': code.isEmpty ? null : code,
+          'message': msg.isEmpty ? null : msg,
+          'success': success,
+          'request': request,
+          'responseShape': _safePayloadSummary(body),
+          'sideEffectStatus': method == 'POST'
+              ? 'write_not_confirmed; read position/history before claiming any side effect'
+              : 'read_rejected',
+          'nextAction': method == 'POST'
+              ? 'Stop this write workflow, do not retry the same write, do not use Portfolio fallback, read back Xueqiu position/history if needed, and ask the user to verify XQ_COOKIE/session/portfolio/write permission.'
+              : 'Use cache/readback if available or ask the user to verify Xueqiu session and provider availability.',
+        }),
       );
     }
+  }
+
+  String _safeEndpoint(Uri uri) => '${uri.host}${uri.path}';
+
+  Map<String, dynamic> _safePayloadSummary(Map<String, dynamic> body) {
+    final resultData = body['result_data'];
+    dynamic resultSummary;
+    if (resultData == null) {
+      resultSummary = null;
+    } else if (resultData is List) {
+      resultSummary = {'type': 'array', 'length': resultData.length};
+    } else if (resultData is Map) {
+      resultSummary = {
+        'type': 'object',
+        'keys': resultData.keys.map((e) => e.toString()).take(20).toList(),
+      };
+    } else {
+      resultSummary = resultData;
+    }
+    return {
+      'keys': body.keys.map((e) => e.toString()).take(20).toList(),
+      'resultData': resultSummary,
+    };
   }
 }
 
