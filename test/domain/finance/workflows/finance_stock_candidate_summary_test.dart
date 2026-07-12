@@ -5,6 +5,63 @@ import 'package:finagent/domain/finance/workflows/finance_stock_candidate_summar
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('single-stock summary accepts governed live quote and kline actions', () {
+    final summary = FinanceStockCandidateSummary().build(
+      messages: [
+        _tool('quote', {
+          'action': 'quote',
+          'source': '东方财富',
+          'cacheStatus': 'provider-hit',
+          'data': [
+            {
+              'code': '300059',
+              'name': '东方财富',
+              'price': 20.19,
+              'changePct': -1.94,
+              'source': '东方财富',
+            },
+          ],
+        }),
+        _tool('kline', {
+          'action': 'kline',
+          'symbol': '300059',
+          'source': '东方财富',
+          'cacheStatus': 'provider-hit',
+          'bars': 367,
+          'range': '2025-01-02 ~ 2026-07-10',
+          'latest5': [
+            {'date': '2026-07-10', 'close': 20.19, 'changePct': -1.94},
+          ],
+        }),
+        _tool('valuation', {
+          'action': 'query_stock_daily_valuation',
+          'symbol': '300059',
+          'source': 'local fundamental',
+          'cacheStatus': 'cache-miss',
+          'count': 0,
+          'data': const [],
+        }),
+        _tool('flow', {
+          'action': 'query_money_flow',
+          'symbol': '300059',
+          'source': 'local money_flow',
+          'cacheStatus': 'cache-miss',
+          'count': 0,
+          'data': const [],
+        }),
+      ],
+      turnStartIndex: 0,
+      failureSummary: 'stock_risk_metrics credential-gated',
+    );
+
+    expect(summary, isNotNull);
+    expect(summary, contains('东方财富 300059'));
+    expect(summary, contains('单股研究摘要'));
+    expect(summary, contains('2025-01-02 ~ 2026-07-10'));
+    expect(summary, contains('估值/基本面'));
+    expect(summary, contains('stock_risk_metrics credential-gated'));
+  });
+
   test('single-stock summary labels macro and news evidence', () {
     final summary = FinanceStockCandidateSummary().build(
       messages: [

@@ -808,6 +808,12 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     return state?.workflowKind == FinanceWorkflowKind.monitorReview;
   }
 
+  bool _isFundWorkflowState(FinanceWorkflowState? state) {
+    if (state == null) return false;
+    return state.assetClass == FinanceAssetClass.fund ||
+        state.workflowKind == FinanceWorkflowKind.fundResearch;
+  }
+
   @override
   List<ToolUse> rewriteToolCalls({
     required List<Message> messages,
@@ -934,6 +940,10 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     required String? prompt,
     required List<ToolUse> toolCalls,
   }) {
+    final workflowState = FinanceWorkflowState.latestFromMessages(
+      messages,
+      turnStartIndex: turnStartIndex,
+    );
     final macroExternalFallback = _macroExternalFallbackAnswer(
       messages: messages,
       turnStartIndex: turnStartIndex,
@@ -986,17 +996,18 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       );
     }
 
-    if (toolCalls.any(
-      (call) =>
-          customStrategyPolicy.isBypassTool(call.name) ||
-          call.name == 'Read' ||
-          call.name == 'Grep' ||
-          call.name == 'Glob' ||
-          call.name == 'LS' ||
-          call.name == 'Script' ||
-          call.name == 'DataProcess' ||
-          _isFundStockDataDrift(call),
-    )) {
+    if (_isFundWorkflowState(workflowState) &&
+        toolCalls.any(
+          (call) =>
+              customStrategyPolicy.isBypassTool(call.name) ||
+              call.name == 'Read' ||
+              call.name == 'Grep' ||
+              call.name == 'Glob' ||
+              call.name == 'LS' ||
+              call.name == 'Script' ||
+              call.name == 'DataProcess' ||
+              _isFundStockDataDrift(call),
+        )) {
       final fundComparisonSummary = _fundComparisonSummary.build(
         messages: messages,
         turnStartIndex: turnStartIndex,
@@ -1072,10 +1083,6 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     final validateEvidence = _customStrategyEvidence.validation(
       messages,
       turnStartIndex,
-    );
-    final workflowState = FinanceWorkflowState.latestFromMessages(
-      messages,
-      turnStartIndex: turnStartIndex,
     );
     if (validateEvidence != null &&
         customStrategyPolicy.shouldStopAfterValidateOnly(
@@ -2162,6 +2169,22 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     required String? prompt,
     required String answer,
   }) {
+    if (answer.trim().isEmpty) {
+      final workflowState = FinanceWorkflowState.latestFromMessages(
+        messages,
+        turnStartIndex: turnStartIndex,
+      );
+      if (workflowState?.workflowKind == FinanceWorkflowKind.stockResearch &&
+          workflowState?.assetClass == FinanceAssetClass.stock) {
+        final stockSummary = _stockCandidateSummary.build(
+          messages: messages,
+          turnStartIndex: turnStartIndex,
+          failureSummary:
+              '最终模型输出为空或被截断；已停止继续生成大型文件/HTML，改用本轮结构化股票证据作答。',
+        );
+        if (stockSummary != null) return stockSummary;
+      }
+    }
     final tradeBudget = _tradeBudgetSummary.build(
       messages: messages,
       turnStartIndex: turnStartIndex,

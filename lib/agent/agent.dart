@@ -1001,6 +1001,16 @@ class Agent {
 
       if (_maxTokensRecoveryCount > _maxTokensRecoveryLimit) {
         log('Agent', 'Max recovery attempts reached. Stopping.');
+        final rewritten = _domainWorkflowHooks.rewriteFinalAnswer(
+          messages: messages,
+          turnStartIndex: _turnMessageStartIndex,
+          prompt: _currentPrompt,
+          answer: '',
+        );
+        if (rewritten != null && rewritten.trim().isNotEmpty) {
+          await _finishTurnWithAssistantText(rewritten.trim(), controller);
+          return;
+        }
         controller.add(
           AgentError(
             'Output repeatedly truncated after $_maxTokensRecoveryLimit recovery attempts.',

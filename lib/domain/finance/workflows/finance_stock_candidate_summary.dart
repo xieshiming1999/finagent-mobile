@@ -37,6 +37,7 @@ class FinanceStockCandidateSummary {
         final decoded = jsonDecode(content);
         if (decoded is! Map<String, dynamic>) continue;
         switch (decoded['action']) {
+          case 'quote':
           case 'query_quote':
             candidateContractSeen = true;
             quote ??= decoded;
@@ -58,6 +59,7 @@ class FinanceStockCandidateSummary {
           case 'query_stock_daily_valuation':
             valuation ??= decoded;
             break;
+          case 'kline':
           case 'query_kline':
             kline ??= decoded;
             break;
@@ -257,7 +259,14 @@ class FinanceStockCandidateSummary {
   String _klineBudgetSummary(Map<String, dynamic>? payload) {
     if (payload == null) return '未取得。';
     final rows = payload['data'];
-    if (rows is! List || rows.isEmpty) return '${_sourceLine(payload)} 未返回K线行。';
+    if (rows is! List || rows.isEmpty) {
+      final latest = payload['latest5'];
+      if (latest is List && latest.isNotEmpty) {
+        final range = _textValue(payload['range']);
+        return '${_sourceLine(payload)} symbol=${payload['symbol'] ?? '-'}；窗口=${range.isEmpty ? '-' : range}；bars=${payload['bars'] ?? latest.length}；latestRows=${latest.length}。';
+      }
+      return '${_sourceLine(payload)} 未返回K线行。';
+    }
     final first = rows.first;
     final last = rows.last;
     final start = first is Map ? first['date'] : '-';
@@ -310,6 +319,7 @@ class FinanceStockCandidateSummary {
       '- K线：${_klineBudgetSummary(kline)}',
       '- 估值/基本面：${_valuationBudgetSummary(valuation)}',
       '- 资金流：${_moneyFlowBudgetSummary(moneyFlow)}',
+      '- 风险：${_singleStockRiskSummary(valuation: valuation, kline: kline, moneyFlow: moneyFlow, failureSummary: failureSummary)}',
       if (macroEvidence.hasMacroEvidence || macroEvidence.newsLines.isNotEmpty)
         ..._singleStockMacroLines(macroEvidence),
       '',
@@ -324,6 +334,33 @@ class FinanceStockCandidateSummary {
     ];
     return lines.join('\n');
   }
+
+  String _singleStockRiskSummary({
+    required Map<String, dynamic>? valuation,
+    required Map<String, dynamic>? kline,
+    required Map<String, dynamic>? moneyFlow,
+    required String failureSummary,
+  }) {
+    final risks = <String>[
+      if (valuation == null ||
+          _isEmptyRows(valuation['data']) ||
+          (valuation['count'] is num && (valuation['count'] as num) == 0))
+        '估值/基本面证据不足',
+      if (kline == null) '技术面K线证据不足',
+      if (moneyFlow == null ||
+          _isEmptyRows(moneyFlow['data']) ||
+          (moneyFlow['count'] is num && (moneyFlow['count'] as num) == 0))
+        '资金流证据不足',
+      if (failureSummary.trim().isNotEmpty && failureSummary.trim() != 'none')
+        '存在已披露失败或跳过项',
+    ];
+    if (risks.isEmpty) {
+      return '本轮核心证据齐备，但仍需结合仓位、止损和后续验证，不能直接视为买入信号。';
+    }
+    return '${risks.join('；')}；因此本回答只能作为研究摘要，不能作为交易指令。';
+  }
+
+  bool _isEmptyRows(Object? value) => value is! List || value.isEmpty;
 
   List<String> _singleStockMacroLines(MacroEvidence evidence) {
     return [
