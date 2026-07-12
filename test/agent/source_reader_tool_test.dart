@@ -47,7 +47,50 @@ void main() {
     }, ToolContext(basePath: dir.path, serviceBaseUrl: ''));
 
     expect(result.isError, true);
-    expect(result.content, contains('requires exactly one of url or path'));
+    expect(result.content, contains('failureClass=invalid-input'));
+  });
+
+  test('SourceReader classifies missing source files', () async {
+    final dir = Directory.systemTemp.createTempSync(
+      'finagent_source_reader_tool_missing_file_test_',
+    );
+    addTearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    final result = await SourceReaderTool().call('source-missing-file', {
+      'action': 'read',
+      'path': '${dir.path}/missing.html',
+    }, ToolContext(basePath: dir.path, serviceBaseUrl: ''));
+
+    expect(result.isError, true);
+    expect(result.content, contains('failureClass=source-file-missing'));
+  });
+
+  test('SourceReader classifies blocked HTTP source access', () async {
+    final dir = Directory.systemTemp.createTempSync(
+      'finagent_source_reader_tool_http_403_test_',
+    );
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() async {
+      await server.close(force: true);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+    server.listen((request) {
+      request.response
+        ..statusCode = HttpStatus.forbidden
+        ..headers.contentType = ContentType.html
+        ..write('<html><title>blocked</title></html>')
+        ..close();
+    });
+
+    final result = await SourceReaderTool().call('source-http-403', {
+      'action': 'read',
+      'url': 'http://127.0.0.1:${server.port}/blocked',
+    }, ToolContext(basePath: dir.path, serviceBaseUrl: ''));
+
+    expect(result.isError, true);
+    expect(result.content, contains('failureClass=anti-bot-or-access-blocked'));
   });
 
   test(

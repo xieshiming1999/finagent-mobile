@@ -103,8 +103,9 @@ class SourceReaderTool extends Tool {
     if ((url == null && path == null) || (url != null && path != null)) {
       return ToolResult(
         toolUseId: toolUseId,
-        content:
-            'SourceReader(action:"read") requires exactly one of url or path.',
+        content: _sourceReaderFailureContent(
+          'SourceReader(action:"read") requires exactly one of url or path.',
+        ),
         isError: true,
       );
     }
@@ -112,6 +113,9 @@ class SourceReaderTool extends Tool {
       final content = path != null
           ? await _readPath(path)
           : await _readUrl(url!);
+      if (_plainText(content.body).isEmpty) {
+        throw 'empty extracted source content';
+      }
       final hash = sha256.convert(utf8.encode(content.body)).toString();
       final record = {
         'contract': 'source-evidence-record-v1',
@@ -155,7 +159,7 @@ class SourceReaderTool extends Tool {
     } catch (error) {
       return ToolResult(
         toolUseId: toolUseId,
-        content: 'SourceReader failed: $error',
+        content: _sourceReaderFailureContent(error),
         isError: true,
       );
     }
@@ -479,6 +483,74 @@ class SourceReaderTool extends Tool {
       );
     } finally {
       client.close(force: true);
+    }
+  }
+
+  String _sourceReaderFailureContent(Object error) {
+    final message = '$error';
+    final status = RegExp(
+      r'HTTP\s+(\d{3})',
+      caseSensitive: false,
+    ).firstMatch(message)?.group(1);
+    final failureClass = _sourceReaderFailureClass(message, status);
+    final parts = <String>[
+      'SourceReader failureClass=$failureClass',
+      if (status != null) 'status=$status',
+      'nextAction=${_sourceReaderNextAction(failureClass)}',
+      'detail=$message',
+    ];
+    return parts.join('; ');
+  }
+
+  String _sourceReaderFailureClass(String message, String? status) {
+    if (status == '401') return 'credential-or-access-blocked';
+    if (status == '403') return 'anti-bot-or-access-blocked';
+    if (status == '404') return 'source-not-found';
+    if (status == '429') return 'rate-limited';
+    if (RegExp('file not found', caseSensitive: false).hasMatch(message)) {
+      return 'source-file-missing';
+    }
+    if (RegExp(
+      'requires exactly one|invalid',
+      caseSensitive: false,
+    ).hasMatch(message)) {
+      return 'invalid-input';
+    }
+    if (RegExp(
+      'empty extracted source content|empty source',
+      caseSensitive: false,
+    ).hasMatch(message)) {
+      return 'extraction-empty';
+    }
+    if (RegExp(
+      'timeout|connection|network|socket|host lookup|handshake',
+      caseSensitive: false,
+    ).hasMatch(message)) {
+      return 'transport';
+    }
+    return 'source-read-failed';
+  }
+
+  String _sourceReaderNextAction(String failureClass) {
+    switch (failureClass) {
+      case 'credential-or-access-blocked':
+        return 'Check source credential/session access, then retry with an authorized source or attach a manually captured source file.';
+      case 'anti-bot-or-access-blocked':
+        return 'Use browser/WebView/manual source handoff, official PDF, or an allowed alternate source before retrying; do not loop automated fetches.';
+      case 'source-not-found':
+        return 'Verify the URL or provider directory and search for the current report permalink.';
+      case 'rate-limited':
+        return 'Stop immediate retries, wait for the provider limit window, or reuse cached evidence.';
+      case 'source-file-missing':
+        return 'Create or attach the source file before calling SourceReader again.';
+      case 'invalid-input':
+        return 'Call SourceReader(action:"help") and pass exactly one valid url or path.';
+      case 'extraction-empty':
+        return 'Use PDF rendering, browser capture, or manual source text extraction before creating macro evidence.';
+      case 'transport':
+        return 'Check network/proxy/provider health and retry once with bounded scope.';
+      default:
+        return 'Inspect source health and use an alternate evidence path before relying on this source.';
     }
   }
 
