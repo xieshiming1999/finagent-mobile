@@ -2485,6 +2485,12 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       callTool: callTool,
     );
     if (macroArtifact != null) return macroArtifact;
+    final requiredVerifier = await _buildRequiredVerifierRecovery(
+      messages: messages,
+      toolByName: toolByName,
+      callTool: callTool,
+    );
+    if (requiredVerifier != null) return requiredVerifier;
     final macroStockQuote = await _buildMacroStockQuoteRecovery(
       messages: messages,
       toolByName: toolByName,
@@ -2502,6 +2508,70 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       messages: messages,
       toolByName: toolByName,
       callTool: callTool,
+    );
+  }
+
+  Future<String?> _buildRequiredVerifierRecovery({
+    required List<Message> messages,
+    required Tool? Function(String name) toolByName,
+    required DomainRecoveryToolCall callTool,
+  }) async {
+    final turnStartIndex = _lastUserIndex(messages);
+    if (turnStartIndex < 0) return null;
+    final workflowState = FinanceWorkflowState.latestFromMessages(
+      messages,
+      turnStartIndex: turnStartIndex,
+    );
+    final requiredVerifier = workflowState?.requiredVerifier;
+    if (requiredVerifier == null ||
+        requiredVerifier['tool'] != 'WorkflowVerifier') {
+      return null;
+    }
+    final workflow = _textValue(
+      requiredVerifier['workflow'] ?? workflowState?.workflowKind,
+      '',
+    );
+    if (workflow.isEmpty) return null;
+    final turnMessages = messages.sublist(turnStartIndex);
+    if (_hasPassingWorkflowVerifierCheck(turnMessages, workflow)) {
+      return null;
+    }
+    final input = <String, dynamic>{
+      'action': 'check',
+      'workflow': workflow,
+      'requireWorkflowState': false,
+    };
+    if (workflow == 'strategy_rerun') {
+      final payload = _latestSuccessfulToolActionPayload(
+        turnMessages,
+        'MarketData',
+        'custom_strategy_run',
+      );
+      if (payload == null) return null;
+      final strategyId = _textValue(payload['strategyId'], '');
+      final target = _textValue(
+        payload['code'] ??
+            payload['symbol'] ??
+            _firstString(payload['symbols']) ??
+            _firstString(payload['targetSymbols']),
+        '',
+      );
+      if (strategyId.isNotEmpty) input['strategyId'] = strategyId;
+      if (target.isNotEmpty) input['targetSymbols'] = [target];
+    }
+
+    final verifierTool = toolByName('WorkflowVerifier');
+    if (verifierTool == null) return null;
+    await callTool(
+      verifierTool,
+      'required_workflow_verifier_${DateTime.now().microsecondsSinceEpoch}',
+      input,
+    );
+    return buildBudgetStopText(
+      messages: messages,
+      turnStartIndex: turnStartIndex,
+      prompt: null,
+      failureSummary: '本轮已根据结构化 workflowState.requiredVerifier 完成 WorkflowVerifier 校验。',
     );
   }
 
@@ -2686,6 +2756,71 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       if (callsById.containsKey(result.toolUseId)) return true;
     }
     return false;
+  }
+
+  bool _hasPassingWorkflowVerifierCheck(
+    List<Message> messages,
+    String workflow,
+  ) {
+    final callIds = <String>{};
+    for (final message in messages) {
+      if (message.role != Role.assistant) continue;
+      for (final call in message.toolUses ?? const <ToolUse>[]) {
+        if (call.name == 'WorkflowVerifier' &&
+            call.input['action'] == 'check' &&
+            call.input['workflow'] == workflow) {
+          callIds.add(call.id);
+        }
+      }
+    }
+    for (final message in messages) {
+      final result = message.toolResult;
+      if (message.role != Role.tool ||
+          result == null ||
+          result.isError ||
+          !callIds.contains(result.toolUseId)) {
+        continue;
+      }
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is Map && decoded['passed'] == true) return true;
+      } catch (_) {
+        continue;
+      }
+    }
+    return false;
+  }
+
+  Map<String, dynamic>? _latestSuccessfulToolActionPayload(
+    List<Message> messages,
+    String toolName,
+    String action,
+  ) {
+    final callIds = <String>{};
+    for (final message in messages) {
+      if (message.role != Role.assistant) continue;
+      for (final call in message.toolUses ?? const <ToolUse>[]) {
+        if (call.name == toolName && call.input['action'] == action) {
+          callIds.add(call.id);
+        }
+      }
+    }
+    for (final message in messages.reversed) {
+      final result = message.toolResult;
+      if (message.role != Role.tool ||
+          result == null ||
+          result.isError ||
+          !callIds.contains(result.toolUseId)) {
+        continue;
+      }
+      try {
+        final decoded = jsonDecode(result.content);
+        return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
   }
 
   String _firstOrDefault(List<String> values, String fallback) {

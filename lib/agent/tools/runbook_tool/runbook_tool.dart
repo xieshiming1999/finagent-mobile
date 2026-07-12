@@ -230,6 +230,7 @@ const _runbooks = <String, Map<String, dynamic>>{
       'DataProcess',
       'ArtifactRegistry',
       'WorkflowEvidence',
+      'WorkflowVerifier',
       'CapabilityStatus',
     ],
     'artifactTypes': ['strategy', 'backtest', 'report'],
@@ -237,11 +238,17 @@ const _runbooks = <String, Map<String, dynamic>>{
         'Read-only strategy reuse/backtest. No watchlist mutation or simulated trade unless the user explicitly asks for a later workflow.',
     'failureHandling': [
       'Do not recreate a strategy from prose when a saved id/spec is required.',
+      'If saved strategy id or target symbol is ambiguous, call AskUserQuestion; do not end the turn with a prose-only question.',
       'If no saved strategy exists, create a clearly labelled candidate StrategySpec and stop before pretending it was saved.',
       'Report unsupported indicators, data coverage gaps, fees/slippage assumptions, and benchmark limits.',
     ],
+    'firstPassPlan': [
+      'Use custom_strategy_list or custom_strategy_read to retrieve the saved strategy identity/spec.',
+      'If the target strategy or target symbol is ambiguous, call AskUserQuestion once and then call MarketData(action:"custom_strategy_run", strategyId:<selected>, symbols:[<target>]).',
+      'Run WorkflowVerifier(action:"check", workflow:"strategy_rerun", strategyId:<selected>, targetSymbols:[<target>]) before final strategy-rerun claims.',
+    ],
     'verifier':
-        'WorkflowVerifier(action:"check", workflow:"strategy_rerun") before final strategy-rerun claims.',
+        'WorkflowVerifier(action:"check", workflow:"strategy_rerun", strategyId:<selected>, targetSymbols:[<target>]) before final strategy-rerun claims.',
   },
   'trade_preparation': {
     'workflow': 'trade_preparation',

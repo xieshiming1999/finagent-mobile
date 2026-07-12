@@ -228,7 +228,23 @@ void main() {
         final dir = Directory(context.basePath);
         if (dir.existsSync()) dir.deleteSync(recursive: true);
       });
-      _seedSession(context, toolName: 'MarketData');
+      _seedSessionCalls(context, [
+        {
+          'id': 'tool-1',
+          'name': 'MarketData',
+          'input': {
+            'action': 'custom_strategy_run',
+            'strategyId': 'custom_moutai_ema_trend_v1_v1',
+            'symbols': ['300059'],
+          },
+          'result': jsonEncode({
+            'action': 'custom_strategy_run',
+            'strategyId': 'custom_moutai_ema_trend_v1_v1',
+            'code': '300059',
+            'dataCoverage': {'symbol': '300059', 'sufficient': true},
+          }),
+        },
+      ]);
       _seedWorkflowState(context, workflowKind: 'strategy_rerun');
       ArtifactRegistry(context.basePath).register(
         kind: ArtifactKind.backtest,
@@ -244,12 +260,66 @@ void main() {
                   'action': 'check',
                   'workflow': 'strategy_rerun',
                   'requireWorkflowState': true,
+                  'strategyId': 'custom_moutai_ema_trend_v1_v1',
+                  'targetSymbols': ['300059'],
                 }, context)).content,
               )
               as Map<String, dynamic>;
 
       expect(result['passed'], true);
       expect(result['missing'], isEmpty);
+    },
+  );
+
+  test(
+    'WorkflowVerifier rejects strategy rerun without selected target evidence',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      _seedSessionCalls(context, [
+        {
+          'id': 'tool-1',
+          'name': 'MarketData',
+          'input': {
+            'action': 'custom_strategy_run',
+            'strategyId': 'custom_moutai_ema_trend_v1_v1',
+            'symbols': ['600519'],
+          },
+          'result': jsonEncode({
+            'action': 'custom_strategy_run',
+            'strategyId': 'custom_moutai_ema_trend_v1_v1',
+            'code': '600519',
+            'dataCoverage': {'symbol': '600519', 'sufficient': true},
+          }),
+        },
+      ]);
+      _seedWorkflowState(context, workflowKind: 'strategy_rerun');
+      ArtifactRegistry(context.basePath).register(
+        kind: ArtifactKind.backtest,
+        path: 'memory/reports/backtest.md',
+        title: 'Backtest',
+        source: 'agent-workflow',
+        verificationStatus: ArtifactVerificationStatus.verified,
+      );
+
+      final result =
+          jsonDecode(
+                (await WorkflowVerifierTool().call('verify-rerun-target', {
+                  'action': 'check',
+                  'workflow': 'strategy_rerun',
+                  'requireWorkflowState': true,
+                  'strategyId': 'custom_moutai_ema_trend_v1_v1',
+                  'targetSymbols': ['300059'],
+                }, context)).content,
+              )
+              as Map<String, dynamic>;
+
+      expect(result['passed'], false);
+      expect(result['missing'], contains('strategy_rerun_target_symbols'));
+      expect(result['nextAction'], contains('Do not finalize yet'));
     },
   );
 

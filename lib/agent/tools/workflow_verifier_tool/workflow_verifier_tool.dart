@@ -107,6 +107,17 @@ class WorkflowVerifierTool extends Tool {
         'description':
             'Optional provider-health rows from ProviderRouter/API health/probes. Blocking statuses fail this verifier check.',
       },
+      'strategyId': {
+        'type': 'string',
+        'description':
+            'Optional saved StrategySpec id expected in strategy_rerun evidence.',
+      },
+      'targetSymbols': {
+        'type': 'array',
+        'items': {'type': 'string'},
+        'description':
+            'Optional target symbols expected in custom_strategy_run evidence.',
+      },
       'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100},
     },
   };
@@ -171,6 +182,8 @@ class WorkflowVerifierTool extends Tool {
           workflowStateId: (input['workflowStateId'] as String?)?.trim(),
           requireWorkflowState: input['requireWorkflowState'] == true,
           providerHealth: input['providerHealth'],
+          strategyId: _optionalString(input['strategyId']),
+          targetSymbols: _stringList(input['targetSymbols']),
           limit: limit,
         ),
       ),
@@ -207,6 +220,8 @@ Map<String, dynamic> _checkWorkflow(
   required String? workflowStateId,
   required bool requireWorkflowState,
   required Object? providerHealth,
+  required String? strategyId,
+  required List<String> targetSymbols,
   required int limit,
 }) {
   final session = _readSession(context, limit);
@@ -219,11 +234,18 @@ Map<String, dynamic> _checkWorkflow(
     required: requireWorkflowState || workflowStateId != null,
   );
   final providerHealthEvidence = _providerHealthEvidence(providerHealth);
-  final workflowSpecificEvidence = _workflowSpecificEvidence(workflow, session);
+  final workflowSpecificEvidence = _workflowSpecificEvidence(
+    workflow,
+    session,
+    strategyId: strategyId,
+    targetSymbols: targetSymbols,
+  );
   final requiredAnyTools = _stringList(spec['requiredAnyTools']);
   final toolNames = (session['toolNames'] as List).whereType<String>().toSet();
   final usedRequiredTool = requiredAnyTools.any(toolNames.contains);
   final approvalBoundary = spec['approvalBoundary'] as String? ?? 'none';
+  final toolErrorCount = session['toolErrorCount'] as int;
+  final unrecoveredErrors = _unrecoveredToolErrors(session);
   final checks = [
     _check(
       'tool_calls_present',
@@ -239,9 +261,11 @@ Map<String, dynamic> _checkWorkflow(
     ),
     _check(
       'no_tool_errors',
-      (session['toolErrorCount'] as int) == 0,
-      'No tool errors are visible.',
-      '${session['toolErrorCount']} tool error(s) are visible.',
+      unrecoveredErrors.isEmpty,
+      toolErrorCount == 0
+          ? 'No tool errors are visible.'
+          : '${toolErrorCount - unrecoveredErrors.length} recovered tool error(s); no unrecovered tool errors remain.',
+      '${unrecoveredErrors.length} unrecovered tool error(s) are visible: ${unrecoveredErrors.join('; ')}',
     ),
     _check(
       'no_pending_interactions',
@@ -318,7 +342,7 @@ Map<String, dynamic> _readSession(ToolContext context, int limit) {
   final calls = <Map<String, dynamic>>[];
   var toolCallCount = 0;
   var toolErrorCount = 0;
-  for (final line in file.readAsLinesSync().take(limit)) {
+  for (final line in file.readAsLinesSync().reversed.take(limit).toList().reversed) {
     final text = line.trim();
     if (text.isEmpty) continue;
     try {
@@ -372,8 +396,16 @@ Map<String, dynamic> _readSession(ToolContext context, int limit) {
 Map<String, dynamic> _workflowSpecificEvidence(
   String workflow,
   Map<String, dynamic> session,
+  {String? strategyId, List<String> targetSymbols = const []}
 ) {
   if (workflow == 'fund_selection') return _fundSelectionEvidence(session);
+  if (workflow == 'strategy_rerun') {
+    return _strategyRerunEvidence(
+      session,
+      strategyId: strategyId,
+      targetSymbols: targetSymbols,
+    );
+  }
   return {'checks': <Map<String, dynamic>>[], 'observed': <String, dynamic>{}};
 }
 
@@ -461,6 +493,157 @@ Map<String, dynamic>? _summarizeCall(Map<String, dynamic>? call) {
     'code': args['code'] ?? args['fundCode'] ?? args['symbol'],
     'resultPreview': result.length > 220 ? result.substring(0, 220) : result,
   };
+}
+
+Map<String, dynamic> _strategyRerunEvidence(
+  Map<String, dynamic> session, {
+  required String? strategyId,
+  required List<String> targetSymbols,
+}) {
+  final runs = <Map<String, Map<String, dynamic>>>[];
+  for (final call in _successfulActions(session, 'custom_strategy_run')) {
+    final payload = _strategyRunPayload(call);
+    if (payload['action'] != 'custom_strategy_run') continue;
+    runs.add({'call': call, 'payload': payload});
+  }
+  final strategyMatched = strategyId == null ||
+      runs.any((item) {
+        final call = item['call']!;
+        final payload = item['payload']!;
+        final input = call['input'];
+        final inputId =
+            input is Map ? '${input['strategyId'] ?? input['strategy_id'] ?? ''}' : '';
+        final outputId =
+            '${payload['strategyId'] ?? payload['strategy_id'] ?? ''}';
+        return inputId == strategyId || outputId == strategyId;
+      });
+  final missingTargets = targetSymbols.where((symbol) {
+    final expected = _normalizeSymbol(symbol);
+    return !runs.any((item) {
+      return _observedSymbolsForStrategyRun(
+        item['call']!,
+        item['payload'],
+      ).contains(expected);
+    });
+  }).toList();
+  return {
+    'checks': [
+      _check(
+        'strategy_rerun_call',
+        runs.isNotEmpty,
+        'A successful custom_strategy_run result is visible.',
+        'Strategy rerun needs MarketData(action:"custom_strategy_run") evidence before finalizing.',
+      ),
+      _check(
+        'strategy_rerun_strategy_identity',
+        strategyMatched,
+        strategyId == null
+            ? 'No specific strategyId was required for this check.'
+            : 'custom_strategy_run evidence matches strategyId $strategyId.',
+        'custom_strategy_run evidence does not match required strategyId $strategyId.',
+      ),
+      _check(
+        'strategy_rerun_target_symbols',
+        missingTargets.isEmpty,
+        targetSymbols.isEmpty
+            ? 'No specific target symbol was required for this check.'
+            : 'custom_strategy_run evidence covers target symbol(s): ${targetSymbols.join(', ')}.',
+        'custom_strategy_run evidence is missing target symbol(s): ${missingTargets.join(', ')}.',
+      ),
+    ],
+    'observed': {
+      'expectedStrategyId': strategyId,
+      'expectedTargetSymbols': targetSymbols,
+      'runs': runs.map((item) {
+        final call = item['call']!;
+        final payload = item['payload']!;
+        final input = call['input'];
+        final dataCoverage = payload['dataCoverage'];
+        return {
+          'input': input,
+          'strategyId': payload['strategyId'] ?? payload['strategy_id'],
+          'action': payload['action'],
+          'code': payload['code'] ?? payload['symbol'],
+          'dataCoverage': dataCoverage,
+        };
+      }).toList(),
+    },
+  };
+}
+
+List<Map<String, dynamic>> _successfulActions(
+  Map<String, dynamic> session,
+  String action,
+) {
+  final calls = (session['calls'] as List).whereType<Map<String, dynamic>>();
+  return calls.where((call) {
+    if (call['isError'] == true) return false;
+    final input = call['input'];
+    if (input is! Map || '${input['action'] ?? ''}' != action) return false;
+    final result = '${call['result'] ?? ''}';
+    return !result.startsWith('Skipped:');
+  }).toList();
+}
+
+Map<String, dynamic>? _jsonObject(String value) {
+  try {
+    final decoded = jsonDecode(value);
+    return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+Map<String, dynamic> _strategyRunPayload(Map<String, dynamic> call) {
+  final result = '${call['result'] ?? ''}';
+  final parsed = _jsonObject(result);
+  if (parsed?['action'] == 'custom_strategy_run') return parsed!;
+  final input = call['input'];
+  final args = input is Map ? input : const {};
+  final symbols = args['symbols'];
+  return {
+    'action': 'custom_strategy_run',
+    'strategyId':
+        args['strategyId'] ??
+        args['strategy_id'] ??
+        RegExp(r'"strategyId"\s*:\s*"([^"]+)"')
+            .firstMatch(result)
+            ?.group(1),
+    'strategy_id': args['strategy_id'],
+    'code':
+        args['code'] ??
+        args['symbol'] ??
+        (symbols is List && symbols.isNotEmpty ? symbols.first : null) ??
+        RegExp(r'"code"\s*:\s*"([^"]+)"').firstMatch(result)?.group(1) ??
+        RegExp(r'"symbol"\s*:\s*"([^"]+)"').firstMatch(result)?.group(1),
+  };
+}
+
+Set<String> _observedSymbolsForStrategyRun(
+  Map<String, dynamic> call,
+  Map<String, dynamic>? payload,
+) {
+  final input = call['input'];
+  final args = input is Map ? input : const {};
+  final coverage = payload?['dataCoverage'];
+  final symbols = <String>{};
+  for (final value in [
+    args['code'],
+    args['symbol'],
+    payload?['code'],
+    payload?['symbol'],
+    if (coverage is Map) coverage['symbol'],
+  ]) {
+    final normalized = _normalizeSymbol(value);
+    if (normalized.isNotEmpty) symbols.add(normalized);
+  }
+  for (final value in [args['codes'], args['symbols']]) {
+    for (final item in _stringList(value)) {
+      final normalized = _normalizeSymbol(item);
+      if (normalized.isNotEmpty) symbols.add(normalized);
+    }
+  }
+  return symbols;
 }
 
 Map<String, dynamic> _artifactEvidence(
@@ -750,10 +933,37 @@ Map<String, dynamic> _check(
   'message': passed ? passedMessage : failedMessage,
 };
 
+List<String> _unrecoveredToolErrors(Map<String, dynamic> session) {
+  final calls = (session['calls'] as List?)?.whereType<Map>().toList() ?? [];
+  final failures = <String>[];
+  for (var index = 0; index < calls.length; index++) {
+    final call = calls[index];
+    if (call['isError'] != true) continue;
+    final input = call['input'];
+    final action = input is Map ? '${input['action'] ?? ''}' : '';
+    final name = '${call['name'] ?? ''}';
+    final recovered = calls.skip(index + 1).any((later) {
+      if (later['isError'] == true || later['name'] != name) return false;
+      final laterInput = later['input'];
+      final laterAction = laterInput is Map ? '${laterInput['action'] ?? ''}' : '';
+      return laterAction == action;
+    });
+    if (!recovered) failures.add(action.isEmpty ? name : '$name.$action');
+  }
+  return failures;
+}
+
 List<String> _stringList(Object? value) {
   if (value is! List) return const [];
   return value.whereType<String>().toList();
 }
+
+String? _optionalString(Object? value) {
+  final text = value?.toString().trim() ?? '';
+  return text.isEmpty ? null : text;
+}
+
+String _normalizeSymbol(Object? value) => '${value ?? ''}'.trim().toUpperCase();
 
 int _intValue(Object? value, {required int defaultValue}) {
   if (value is int) return value;
