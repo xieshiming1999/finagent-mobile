@@ -29,6 +29,27 @@ void main() {
       expect(result['contract'], 'provider-router-route-v1');
       expect(result['order'], ['sina']);
       expect(
+        result['providerModules'],
+        contains(
+          isA<Map>()
+              .having((row) => row['provider'], 'provider', 'sina')
+              .having(
+                (row) => row['descriptorStatus'],
+                'descriptorStatus',
+                'registered',
+              )
+              .having(
+                (row) => row['descriptor']['category'],
+                'category',
+                'public-direct-http',
+              ),
+        ),
+      );
+      expect(
+        result['descriptorSource']['registeredProviders'],
+        contains('macro-official'),
+      );
+      expect(
         result['skipped'],
         contains(
           isA<Map>().having((row) => row['provider'], 'provider', 'tdx'),

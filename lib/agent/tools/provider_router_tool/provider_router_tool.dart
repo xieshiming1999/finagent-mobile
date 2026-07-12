@@ -6,6 +6,7 @@ import '../../data_fetcher/provider_policy.dart';
 import '../../message.dart';
 import '../../tool.dart';
 import '../../tool_context.dart';
+import '../tool_catalog_tool/provider_module_descriptors.dart';
 
 typedef ProviderHealthProvider = List<Map<String, dynamic>> Function();
 
@@ -169,6 +170,16 @@ class ProviderRouterTool extends Tool {
       'runtime': 'finagent-mobile',
       'task': _taskName(task),
       'order': allowed.map(_providerName).toList(),
+      'providerModules': base.map((provider) {
+        final name = _providerName(provider);
+        final descriptor = _descriptorForProvider(provider);
+        return {
+          'provider': name,
+          'routeEffect': allowed.contains(provider) ? 'selected' : 'skipped',
+          if (descriptor != null) 'descriptor': descriptor.toJson(),
+          'descriptorStatus': descriptor == null ? 'missing' : 'registered',
+        };
+      }).toList(),
       'preferredProviders': preferred.map(_providerName).toList(),
       'skipped': skipped,
       'serialProviders': allowed
@@ -186,6 +197,12 @@ class ProviderRouterTool extends Tool {
           )
           .toList(),
       'providerHealthSource': _providerHealthSource(input, healthRows),
+      'descriptorSource': {
+        'version': providerModuleDescriptorVersion,
+        'registeredProviders': providerModuleDescriptors
+            .map((descriptor) => descriptor.provider)
+            .toList(),
+      },
       'nextAction': allowed.isEmpty
           ? 'No provider is currently allowed. Use cache/readback, configure credentials, or clear temporary provider blocks before retrying.'
           : 'Use providers in returned order; do not override order from prompt knowledge.',
@@ -208,6 +225,14 @@ class ProviderRouterTool extends Tool {
     rows.addAll(runtime);
     return rows;
   }
+}
+
+ProviderModuleDescriptor? _descriptorForProvider(FinanceProvider provider) {
+  final name = _providerName(provider);
+  for (final descriptor in providerModuleDescriptors) {
+    if (descriptor.provider == name) return descriptor;
+  }
+  return null;
 }
 
 const _rawOrders = <FinanceDataTask, List<FinanceProvider>>{
