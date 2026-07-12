@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../artifact_registry.dart';
-import '../../interaction_evidence.dart';
 import '../../message.dart';
 import '../../tool.dart';
 import '../../tool_context.dart';
@@ -226,7 +225,7 @@ Map<String, dynamic> _checkWorkflow(
   required int limit,
 }) {
   final session = _readSession(context, limit);
-  final pending = readPendingInteractionState(context);
+  final pending = _pendingInteractionsForSession(session);
   final artifactEvidence = _artifactEvidence(context, spec, artifactId);
   final workflowStateEvidence = _workflowStateEvidence(
     context,
@@ -241,6 +240,10 @@ Map<String, dynamic> _checkWorkflow(
     strategyId: strategyId,
     targetSymbols: targetSymbols,
   );
+  final workflowSpecificPassed =
+      ((workflowSpecificEvidence['checks'] as List)
+              .whereType<Map<String, dynamic>>())
+          .every((check) => check['passed'] == true);
   final approvalBoundary = spec['approvalBoundary'] as String? ?? 'none';
   final approvalBoundaryEvidence = _approvalBoundaryEvidence(
     approvalBoundary,
@@ -252,7 +255,11 @@ Map<String, dynamic> _checkWorkflow(
   final toolNames = (session['toolNames'] as List).whereType<String>().toSet();
   final usedRequiredTool = requiredAnyTools.any(toolNames.contains);
   final toolErrorCount = session['toolErrorCount'] as int;
-  final unrecoveredErrors = _unrecoveredToolErrors(session);
+  final unrecoveredErrors = _unrecoveredToolErrors(
+    session,
+    workflow: workflow,
+    workflowSpecificPassed: workflowSpecificPassed,
+  );
   final checks = [
     _check(
       'tool_calls_present',
@@ -338,6 +345,19 @@ Map<String, dynamic> _checkWorkflow(
   };
 }
 
+List<Map<String, dynamic>> _pendingInteractionsForSession(
+  Map<String, dynamic> session,
+) {
+  final calls = (session['calls'] as List).whereType<Map<String, dynamic>>();
+  return calls.where((call) {
+    if (call.containsKey('result')) return false;
+    final name = '${call['name'] ?? ''}';
+    return name == 'AskUserQuestion' ||
+        name == 'Approval' ||
+        name == 'Permission';
+  }).toList();
+}
+
 Map<String, dynamic> _readSession(ToolContext context, int limit) {
   final file = File('${context.basePath}/sessions/current.jsonl');
   if (!file.existsSync()) {
@@ -405,6 +425,9 @@ Map<String, dynamic> _workflowSpecificEvidence(
   {String? strategyId, List<String> targetSymbols = const []}
 ) {
   if (workflow == 'fund_selection') return _fundSelectionEvidence(session);
+  if (workflow == 'watchlist_handoff') {
+    return _watchlistHandoffEvidence(session);
+  }
   if (workflow == 'strategy_rerun') {
     return _strategyRerunEvidence(
       session,
@@ -559,6 +582,90 @@ bool _isTradeSideEffectCall(Map<String, dynamic> call) {
   return false;
 }
 
+Map<String, dynamic> _watchlistHandoffEvidence(Map<String, dynamic> session) {
+  final calls = (session['calls'] as List).whereType<Map<String, dynamic>>();
+  final addCalls = calls.where((call) {
+    if (call['isError'] == true || call['name'] != 'Watchlist') return false;
+    final input = call['input'];
+    return input is Map && '${input['action'] ?? ''}' == 'add';
+  }).toList();
+  final readbackCalls = calls.where((call) {
+    if (call['isError'] == true || call['name'] != 'Watchlist') return false;
+    final input = call['input'];
+    final action = input is Map ? '${input['action'] ?? ''}' : '';
+    return const {'list', 'get', 'readback'}.contains(action);
+  }).toList();
+  final conditionCalls = addCalls.where((call) {
+    final input = call['input'];
+    if (input is! Map) return false;
+    return _hasText(input['entryCondition']) ||
+        _hasText(input['exitCondition']) ||
+        input.containsKey('targetEntryPrice') ||
+        input.containsKey('stopLoss') ||
+        input.containsKey('targetPrice') ||
+        input['conditions'] is List;
+  }).toList();
+  final sourceCalls = addCalls.where((call) {
+    final input = call['input'];
+    if (input is! Map) return false;
+    return _hasText(input['source']) ||
+        _hasText(input['sourceTime']) ||
+        _hasText(input['fetchedAt']) ||
+        _hasText(input['strategyId']) ||
+        _hasText(input['score']) ||
+        _hasText(input['rating']);
+  }).toList();
+  final sideEffectCalls = calls
+      .where(_isTradeSideEffectCall)
+      .map((call) {
+        final input = call['input'];
+        final action = input is Map ? '${input['action'] ?? ''}' : '';
+        return action.isNotEmpty ? '${call['name']}.$action' : '${call['name']}';
+      })
+      .toList();
+  return {
+    'checks': [
+      _check(
+        'watchlist_add_evidence',
+        addCalls.isNotEmpty,
+        'Watchlist add evidence is visible.',
+        'Watchlist handoff needs Watchlist(action:"add") evidence before finalizing.',
+      ),
+      _check(
+        'watchlist_readback_evidence',
+        readbackCalls.isNotEmpty,
+        'Watchlist readback evidence is visible.',
+        'Watchlist handoff needs Watchlist(action:"list"|"get"|"readback") after mutation before finalizing.',
+      ),
+      _check(
+        'watchlist_condition_evidence',
+        conditionCalls.isNotEmpty,
+        'Watchlist condition evidence is visible.',
+        'Watchlist handoff needs structured observation conditions such as entryCondition, exitCondition, targetEntryPrice, stopLoss, targetPrice, or conditions[].',
+      ),
+      _check(
+        'watchlist_source_evidence',
+        sourceCalls.isNotEmpty,
+        'Watchlist source/provenance evidence is visible.',
+        'Watchlist handoff needs source, sourceTime/fetchedAt, strategyId, score, or rating evidence on the added item.',
+      ),
+      _check(
+        'watchlist_no_trade_side_effect',
+        sideEffectCalls.isEmpty,
+        'No trade side-effect call is visible.',
+        'Watchlist handoff must not include trade side effects: ${sideEffectCalls.join(', ')}.',
+      ),
+    ],
+    'observed': {
+      'added': addCalls.map(_summarizeCall).toList(),
+      'readback': readbackCalls.map(_summarizeCall).toList(),
+      'conditionEvidence': conditionCalls.map(_summarizeCall).toList(),
+      'sourceEvidence': sourceCalls.map(_summarizeCall).toList(),
+      'sideEffectCalls': sideEffectCalls,
+    },
+  };
+}
+
 Map<String, dynamic> _fundSelectionEvidence(Map<String, dynamic> session) {
   final fundList = _successfulAction(session, 'query_fund_list');
   final performance = _successfulAction(session, 'query_fund_performance');
@@ -615,6 +722,9 @@ Map<String, dynamic> _fundSelectionEvidence(Map<String, dynamic> session) {
     },
   };
 }
+
+bool _hasText(Object? value) =>
+    value is String && value.trim().isNotEmpty;
 
 Map<String, dynamic>? _successfulAction(
   Map<String, dynamic> session,
@@ -1083,12 +1193,23 @@ Map<String, dynamic> _check(
   'message': passed ? passedMessage : failedMessage,
 };
 
-List<String> _unrecoveredToolErrors(Map<String, dynamic> session) {
+List<String> _unrecoveredToolErrors(
+  Map<String, dynamic> session, {
+  required String workflow,
+  required bool workflowSpecificPassed,
+}) {
   final calls = (session['calls'] as List?)?.whereType<Map>().toList() ?? [];
   final failures = <String>[];
   for (var index = 0; index < calls.length; index++) {
     final call = calls[index];
     if (call['isError'] != true) continue;
+    if (_isRecoveredByWorkflowEvidence(
+      call,
+      workflow: workflow,
+      workflowSpecificPassed: workflowSpecificPassed,
+    )) {
+      continue;
+    }
     final input = call['input'];
     final action = input is Map ? '${input['action'] ?? ''}' : '';
     final name = '${call['name'] ?? ''}';
@@ -1101,6 +1222,19 @@ List<String> _unrecoveredToolErrors(Map<String, dynamic> session) {
     if (!recovered) failures.add(action.isEmpty ? name : '$name.$action');
   }
   return failures;
+}
+
+bool _isRecoveredByWorkflowEvidence(
+  Map<dynamic, dynamic> call, {
+  required String workflow,
+  required bool workflowSpecificPassed,
+}) {
+  if (!workflowSpecificPassed || workflow != 'watchlist_handoff') return false;
+  final name = '${call['name'] ?? ''}';
+  return name == 'DataStore' ||
+      name == 'MarketData' ||
+      name == 'DataProcess' ||
+      name == 'Research';
 }
 
 List<String> _stringList(Object? value) {
