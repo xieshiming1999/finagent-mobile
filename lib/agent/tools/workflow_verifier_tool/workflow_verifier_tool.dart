@@ -33,6 +33,12 @@ const _workflows = <String, Map<String, dynamic>>{
     'artifactKinds': ['trade_preparation', 'analysis'],
     'approvalBoundary': 'explicit_approval_required',
   },
+  'macro_factor_lookup': {
+    'requiredAnyTools': ['SourceReader', 'DataStore', 'Research'],
+    'artifactKinds': ['macro_evidence', 'research', 'data_snapshot'],
+    'approvalBoundary': 'no_trade',
+    'macroEvidenceRecord': true,
+  },
 };
 
 class WorkflowVerifierTool extends Tool {
@@ -335,10 +341,88 @@ Map<String, dynamic> _artifactEvidence(
       return {'passed': true, 'artifact': artifact.toJson()};
     }
   }
+  if (spec['macroEvidenceRecord'] == true) {
+    final evidence = _macroEvidenceRecordEvidence(context);
+    if (evidence['passed'] == true) return evidence;
+  }
   return {
     'passed': false,
     'reason': 'No registered artifact of required kind: ${kinds.join(', ')}.',
   };
+}
+
+Map<String, dynamic> _macroEvidenceRecordEvidence(ToolContext context) {
+  final dir = Directory('${context.memoryDir}/macro_evidence');
+  if (!dir.existsSync()) {
+    return {
+      'passed': false,
+      'reason':
+          'No macro evidence record directory exists. Use SourceReader(action:"macroEvidence") before finalizing.',
+    };
+  }
+  final files = dir
+      .listSync()
+      .whereType<File>()
+      .where((file) => file.path.endsWith('.json'))
+      .toList()
+    ..sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+  for (final file in files) {
+    try {
+      final decoded = jsonDecode(file.readAsStringSync());
+      if (decoded is! Map) continue;
+      final record = Map<String, dynamic>.from(decoded);
+      final missing = _missingMacroEvidenceFields(record);
+      if (missing.isNotEmpty) {
+        return {
+          'passed': false,
+          'reason':
+              'Latest macro evidence record is missing structured fields: ${missing.join(', ')}.',
+          'artifact': record,
+        };
+      }
+      return {
+        'passed': true,
+        'artifact': {
+          'kind': 'macro_evidence',
+          'path': file.path,
+          'record': record,
+        },
+      };
+    } catch (_) {
+      continue;
+    }
+  }
+  return {
+    'passed': false,
+    'reason':
+        'No readable macro-evidence-record-v1 JSON file exists. Use SourceReader(action:"macroEvidence").',
+  };
+}
+
+List<String> _missingMacroEvidenceFields(Map<String, dynamic> record) {
+  final missing = <String>[];
+  for (final field in [
+    'contract',
+    'source',
+    'title',
+    'topic',
+    'region',
+    'assetClass',
+    'confidenceEffect',
+    'tradeBoundary',
+  ]) {
+    final value = record[field];
+    if (value == null || value.toString().trim().isEmpty) missing.add(field);
+  }
+  if (record['contract'] != 'macro-evidence-record-v1') missing.add('contract:macro-evidence-record-v1');
+  if (record['keyClaims'] is! List || (record['keyClaims'] as List).isEmpty) {
+    missing.add('keyClaims');
+  }
+  if (record['affectedAssets'] is! List ||
+      (record['affectedAssets'] as List).isEmpty) {
+    missing.add('affectedAssets');
+  }
+  return missing;
 }
 
 Map<String, dynamic> _workflowStateEvidence(
@@ -483,6 +567,8 @@ String _workflowKindForVerifierWorkflow(String workflow) {
       return 'strategy_review';
     case 'trade_preparation':
       return 'trade_prep';
+    case 'macro_factor_lookup':
+      return 'macro_attribution';
     default:
       return 'unknown';
   }

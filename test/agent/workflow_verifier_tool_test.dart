@@ -130,6 +130,32 @@ void main() {
     );
   });
 
+  test('WorkflowVerifier accepts durable macro evidence records', () async {
+    final context = _tempContext();
+    addTearDown(() {
+      final dir = Directory(context.basePath);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+    _seedSession(context, toolName: 'SourceReader');
+    _seedWorkflowState(context, workflowKind: 'macro_attribution');
+    _seedMacroEvidence(context);
+
+    final result =
+        jsonDecode(
+              (await WorkflowVerifierTool().call('verify-macro', {
+                'action': 'check',
+                'workflow': 'macro_factor_lookup',
+                'requireWorkflowState': true,
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+
+    expect(result['passed'], true);
+    expect(result['missing'], isEmpty);
+    expect(result['observed']['artifact']['kind'], 'macro_evidence');
+    expect(result['observed']['artifact']['record']['contract'], 'macro-evidence-record-v1');
+  });
+
   test(
     'WorkflowVerifier rejects unknown workflow through tool error',
     () async {
@@ -211,6 +237,28 @@ void _seedWorkflowState(ToolContext context, {required String workflowKind}) {
           'updatedAt': '2026-07-11T00:00:00.000Z',
         },
       ],
+    }),
+  );
+}
+
+void _seedMacroEvidence(ToolContext context) {
+  final dir = Directory('${context.memoryDir}/macro_evidence')
+    ..createSync(recursive: true);
+  File('${dir.path}/macro_test.json').writeAsStringSync(
+    jsonEncode({
+      'contract': 'macro-evidence-record-v1',
+      'id': 'macro:test',
+      'source': 'bea',
+      'title': 'Official macro evidence',
+      'topic': 'rates and demand',
+      'region': 'US',
+      'assetClass': 'equity',
+      'keyClaims': ['Demand conditions affect cyclical earnings.'],
+      'affectedAssets': ['A-shares', 'cyclical stocks'],
+      'confidenceEffect': 'raises confidence in macro attribution, not a trade signal',
+      'freshness': 'fresh',
+      'tradeBoundary':
+          'Macro evidence is context, hypothesis, and invalidation input. It is not a direct buy/sell rule.',
     }),
   );
 }

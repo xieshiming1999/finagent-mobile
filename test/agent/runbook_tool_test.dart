@@ -34,6 +34,18 @@ void main() {
     expect(detail['workflow'], 'strategy_backtest');
     expect(detail['requiredEvidence'], contains('StrategySpec'));
     expect(detail['approvalBoundary'], contains('Backtest and monitor only'));
+
+    final macro =
+        jsonDecode(
+              (await tool.call('runbook-macro', {
+                'action': 'get',
+                'workflow': 'macro_factor_lookup',
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+    expect(macro['requiredEvidence'], contains('macro-evidence-record-v1'));
+    expect(macro['allowedTools'], contains('SourceReader'));
+    expect(macro['approvalBoundary'], contains('not a direct buy/sell rule'));
   });
 
   test('Runbook rejects unknown workflow through tool error channel', () async {
