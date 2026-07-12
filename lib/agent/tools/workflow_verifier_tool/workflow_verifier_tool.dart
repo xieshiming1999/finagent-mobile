@@ -49,6 +49,7 @@ const _workflows = <String, Map<String, dynamic>>{
   'trade_preparation': {
     'requiredAnyTools': ['Portfolio', 'XueqiuTrade', 'AskUserQuestion'],
     'artifactKinds': ['trade_preparation', 'analysis'],
+    'artifactRequired': false,
     'approvalBoundary': 'explicit_approval_required',
   },
   'trade_review': {
@@ -240,10 +241,16 @@ Map<String, dynamic> _checkWorkflow(
     strategyId: strategyId,
     targetSymbols: targetSymbols,
   );
+  final approvalBoundary = spec['approvalBoundary'] as String? ?? 'none';
+  final approvalBoundaryEvidence = _approvalBoundaryEvidence(
+    approvalBoundary,
+    workflow,
+    session,
+    pending.length,
+  );
   final requiredAnyTools = _stringList(spec['requiredAnyTools']);
   final toolNames = (session['toolNames'] as List).whereType<String>().toSet();
   final usedRequiredTool = requiredAnyTools.any(toolNames.contains);
-  final approvalBoundary = spec['approvalBoundary'] as String? ?? 'none';
   final toolErrorCount = session['toolErrorCount'] as int;
   final unrecoveredErrors = _unrecoveredToolErrors(session);
   final checks = [
@@ -283,11 +290,9 @@ Map<String, dynamic> _checkWorkflow(
     ),
     _check(
       'approval_boundary',
-      approvalBoundary != 'explicit_approval_required' || pending.isNotEmpty,
-      approvalBoundary == 'explicit_approval_required'
-          ? 'Trade-preparation boundary is explicit: approval or user question is pending.'
-          : 'Workflow has no trade approval boundary.',
-      'Trade-preparation workflow requires explicit approval evidence before any side-effect.',
+      approvalBoundaryEvidence['passed'] == true,
+      approvalBoundaryEvidence['passedMessage'] as String,
+      approvalBoundaryEvidence['reason'] as String,
     ),
     _check(
       'workflow_state',
@@ -324,6 +329,7 @@ Map<String, dynamic> _checkWorkflow(
       'artifact': artifactEvidence['artifact'],
       'workflowState': workflowStateEvidence['record'],
       'providerHealth': providerHealthEvidence['observed'],
+      'approvalBoundary': approvalBoundaryEvidence['observed'],
       'workflowSpecific': workflowSpecificEvidence['observed'],
     },
     'nextAction': missing.isEmpty
@@ -406,7 +412,151 @@ Map<String, dynamic> _workflowSpecificEvidence(
       targetSymbols: targetSymbols,
     );
   }
+  if (workflow == 'trade_preparation') {
+    return _tradePreparationEvidence(session);
+  }
   return {'checks': <Map<String, dynamic>>[], 'observed': <String, dynamic>{}};
+}
+
+Map<String, dynamic> _approvalBoundaryEvidence(
+  String approvalBoundary,
+  String workflow,
+  Map<String, dynamic> session,
+  int pendingCount,
+) {
+  if (approvalBoundary != 'explicit_approval_required') {
+    return {
+      'passed': true,
+      'passedMessage': 'Workflow has no trade approval boundary.',
+      'reason': 'Workflow has no trade approval boundary.',
+      'observed': {'boundary': approvalBoundary},
+    };
+  }
+  if (workflow != 'trade_preparation') {
+    return {
+      'passed': pendingCount > 0,
+      'passedMessage': 'Explicit approval or user question is pending.',
+      'reason':
+          'Workflow requires explicit approval evidence before any side-effect.',
+      'observed': {
+        'boundary': approvalBoundary,
+        'pendingInteractions': pendingCount,
+      },
+    };
+  }
+  final tradeEvidence = _tradePreparationEvidence(session);
+  final observed = Map<String, dynamic>.from(
+    tradeEvidence['observed'] as Map,
+  );
+  final sideEffects = (observed['sideEffectCalls'] as List?) ?? const [];
+  final hasAccount = observed['accountEvidence'] == true;
+  final hasSizing = observed['sizingEvidence'] == true;
+  return {
+    'passed': sideEffects.isEmpty && hasAccount && hasSizing,
+    'passedMessage':
+        'Trade-preparation boundary is satisfied: account/sizing evidence exists and no order side-effect is visible.',
+    'reason': sideEffects.isNotEmpty
+        ? 'Trade-preparation has order side-effect calls: ${sideEffects.join(', ')}.'
+        : 'Trade-preparation needs account evidence and sizing/quote evidence while avoiding order side-effect calls.',
+    'observed': observed,
+  };
+}
+
+Map<String, dynamic> _tradePreparationEvidence(Map<String, dynamic> session) {
+  final calls = (session['calls'] as List).whereType<Map<String, dynamic>>();
+  final accountCalls = calls.where((call) {
+    if (call['isError'] == true) return false;
+    final name = '${call['name'] ?? ''}';
+    final input = call['input'];
+    final action = input is Map ? '${input['action'] ?? ''}' : '';
+    if (name == 'XueqiuTrade') {
+      return const {'balance', 'portfolios', 'positions', 'history'}
+          .contains(action);
+    }
+    if (name == 'Portfolio') {
+      return const {'snapshot', 'positions'}.contains(action);
+    }
+    return false;
+  }).toList();
+  final sizingCalls = calls.where((call) {
+    if (call['isError'] == true) return false;
+    final name = '${call['name'] ?? ''}';
+    final input = call['input'];
+    final action = input is Map ? '${input['action'] ?? ''}' : '';
+    if (name == 'MarketData' &&
+        const {'quote', 'query_quote'}.contains(action)) {
+      return true;
+    }
+    if (name == 'DataStore' && action == 'query_quote') return true;
+    if (name == 'DataProcess' &&
+        const {'position_sizing', 'risk_sizing', 'indicators', 'support'}
+            .contains(action)) {
+      return true;
+    }
+    if (name == 'Portfolio' &&
+        const {'preview_trade', 'position_sizing'}.contains(action)) {
+      return true;
+    }
+    return false;
+  }).toList();
+  final sideEffectCalls = calls
+      .where(_isTradeSideEffectCall)
+      .map((call) {
+        final input = call['input'];
+        final action = input is Map ? '${input['action'] ?? ''}' : '';
+        return action.isNotEmpty ? '${call['name']}.$action' : '${call['name']}';
+      })
+      .toList();
+  return {
+    'checks': [
+      _check(
+        'trade_account_evidence',
+        accountCalls.isNotEmpty,
+        'Simulated account or portfolio state evidence is visible.',
+        'Trade preparation needs simulated account/portfolio state before sizing.',
+      ),
+      _check(
+        'trade_sizing_evidence',
+        sizingCalls.isNotEmpty,
+        'Sizing, quote, or risk evidence is visible.',
+        'Trade preparation needs quote/sizing/risk evidence before finalizing.',
+      ),
+      _check(
+        'trade_no_side_effect',
+        sideEffectCalls.isEmpty,
+        'No simulated order or cash-transfer side-effect call is visible.',
+        'Trade preparation must not include order/cash-transfer side effects: ${sideEffectCalls.join(', ')}.',
+      ),
+    ],
+    'observed': {
+      'accountEvidence': accountCalls.isNotEmpty,
+      'sizingEvidence': sizingCalls.isNotEmpty,
+      'sideEffectCalls': sideEffectCalls,
+      'accountCalls': accountCalls.map(_summarizeCall).toList(),
+      'sizingCalls': sizingCalls.map(_summarizeCall).toList(),
+    },
+  };
+}
+
+bool _isTradeSideEffectCall(Map<String, dynamic> call) {
+  final name = '${call['name'] ?? ''}';
+  final input = call['input'];
+  final action = input is Map ? '${input['action'] ?? ''}'.toLowerCase() : '';
+  if (name == 'XueqiuTrade') {
+    return const {
+      'buy',
+      'sell',
+      'transfer_in',
+      'transfer_out',
+      'bank_transfer',
+      'add_transaction',
+      'transaction_add',
+    }.contains(action);
+  }
+  if (name == 'Portfolio') {
+    return const {'trade', 'buy', 'sell', 'transfer'}.contains(action);
+  }
+  return false;
 }
 
 Map<String, dynamic> _fundSelectionEvidence(Map<String, dynamic> session) {

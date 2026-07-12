@@ -349,6 +349,100 @@ void main() {
     },
   );
 
+  test(
+    'WorkflowVerifier accepts trade preparation without order side effect',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      _seedSessionCalls(context, [
+        {
+          'id': 'tool-1',
+          'name': 'XueqiuTrade',
+          'input': {'action': 'balance'},
+          'result': '{"cash":100000}',
+        },
+        {
+          'id': 'tool-2',
+          'name': 'MarketData',
+          'input': {'action': 'quote', 'code': '600519'},
+          'result': '{"price":1204.98}',
+        },
+        {
+          'id': 'tool-3',
+          'name': 'DataProcess',
+          'input': {'action': 'indicators', 'code': '600519'},
+          'result': '{"rsi":40.9}',
+        },
+      ]);
+
+      final result =
+          jsonDecode(
+                (await WorkflowVerifierTool().call('verify-trade-prep', {
+                  'action': 'check',
+                  'workflow': 'trade_preparation',
+                }, context)).content,
+              )
+              as Map<String, dynamic>;
+
+      expect(result['passed'], true);
+      expect(result['missing'], isEmpty);
+      expect(result['observed']['approvalBoundary']['accountEvidence'], true);
+      expect(result['observed']['approvalBoundary']['sizingEvidence'], true);
+      expect(result['observed']['approvalBoundary']['sideEffectCalls'], isEmpty);
+    },
+  );
+
+  test(
+    'WorkflowVerifier rejects trade preparation with order side effect',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      _seedSessionCalls(context, [
+        {
+          'id': 'tool-1',
+          'name': 'XueqiuTrade',
+          'input': {'action': 'balance'},
+          'result': '{"cash":100000}',
+        },
+        {
+          'id': 'tool-2',
+          'name': 'MarketData',
+          'input': {'action': 'quote', 'code': '600519'},
+          'result': '{"price":1204.98}',
+        },
+        {
+          'id': 'tool-3',
+          'name': 'XueqiuTrade',
+          'input': {'action': 'buy', 'symbol': 'SH600519', 'shares': 8},
+          'result': '{"success":true}',
+        },
+      ]);
+
+      final result =
+          jsonDecode(
+                (await WorkflowVerifierTool().call('verify-trade-prep-write', {
+                  'action': 'check',
+                  'workflow': 'trade_preparation',
+                }, context)).content,
+              )
+              as Map<String, dynamic>;
+
+      expect(result['passed'], false);
+      expect(result['missing'], contains('approval_boundary'));
+      expect(result['missing'], contains('trade_no_side_effect'));
+      expect(
+        result['observed']['approvalBoundary']['sideEffectCalls'],
+        ['XueqiuTrade.buy'],
+      );
+    },
+  );
+
   test('WorkflowVerifier accepts matching typed workflow state', () async {
     final context = _tempContext();
     addTearDown(() {
