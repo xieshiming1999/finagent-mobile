@@ -70,6 +70,7 @@ class WebViewTool extends Tool {
           'scroll',
           'wait_for',
           'get_html',
+          'verify_report',
         ],
         'description':
             'query: execute JS or read DOM via selector/javascript. '
@@ -194,14 +195,16 @@ class WebViewTool extends Tool {
       'navigate': ['url'],
       'click': ['selector'],
       'input': ['selector', 'text'],
-      'wait_for': ['selector'],
-    },
-    'guidance': [
-      'Omit target to use the active mobile WebView.',
-      'Use get_info before assuming a page is ready.',
-      'Use screenshot when visual verification is needed.',
-      'Use refresh only for active file-backed pages; reload is native WebView reload.',
-    ],
+        'wait_for': ['selector'],
+        'verify_report': [],
+      },
+      'guidance': [
+        'Omit target to use the active mobile WebView.',
+        'Use get_info before assuming a page is ready.',
+        'Use verify_report after creating a report dashboard; failed render checks return a tool error with recovery guidance.',
+        'Use screenshot when visual verification is needed.',
+        'Use refresh only for active file-backed pages; reload is native WebView reload.',
+      ],
   });
 
   String _actionFromInput(Map<String, dynamic> input) {

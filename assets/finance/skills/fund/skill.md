@@ -229,8 +229,9 @@ JSON config and do not pass `html`.
 
 For a fund comparison dashboard, create a compact structured report config that
 contains the fund rows, comparison table, data source/time, fetched time,
-category caveat, and risk warning. Then verify once with WebView `get_info` or
-`screenshot` against the created dashboard id or observed `dash-...` panel id.
+category caveat, and risk warning. Then verify once with
+`WebView(action:"verify_report")` against the active report dashboard; use
+`screenshot` only when visual layout evidence is required.
 For money funds such as `000009`, use `query_fund_money_yield` and label the
 metric as per-10k income / 7-day annualized yield. Do not fetch or retry
 ordinary fund NAV after the fund identity shows it is a money fund.
@@ -241,7 +242,7 @@ visual proof is required; do not pretend the live panel was verified.
 
 When continuing or refreshing an existing report dashboard, reuse the same
 dashboard id with the dashboard report template and structured config, then
-verify with WebView. Do not recommend `UIControl.pushData` for report-template
+verify with `WebView(action:"verify_report")`. Do not recommend `UIControl.pushData` for report-template
 refreshes; it is for runtime-only panel updates, not the normal persisted
 dashboard artifact path.
 

@@ -46,6 +46,11 @@ Produce a single-screen financial report in one self-contained HTML file.
   interpretation, gaps, confidence, source coverage, data time, fetched time,
   cache status, and readiness. Do not hide source coverage or missing evidence
   only in prose.
+- After creating or refreshing a report dashboard, call
+  `WebView(action:"verify_report", target:<target if needed>)`. If it fails,
+  treat the failure as a workflow-blocking artifact error: correct the
+  structured config or regenerate the report from the current template, then
+  verify again before finalizing.
 - When macro context is relevant, pass governed factor rows as `macroFactors`
   or `macroFactorEvidence` in the same report config. Each row should come from
   `MarketData(action:"query_macro_factors", ...)` and preserve source name,

@@ -67,6 +67,29 @@ extension _WebViewHandlers on _FinAgentScreenState {
         final result = await ctrl.runJavaScriptReturningResult(script);
         return WebViewResult(content: result.toString());
 
+      case 'verify_report':
+        final result = await ctrl.runJavaScriptReturningResult(
+          _reportVerificationJavascript(),
+        );
+        final parsed = _parseReportVerificationResult(result.toString());
+        final rendered = parsed['rendered'] == true;
+        final loading = parsed['loading'] == true;
+        final error = parsed['error'];
+        if (!rendered || error != null) {
+          return WebViewResult(
+            content:
+                'WEBVIEW_REPORT_RENDER_FAILED: report dashboard did not render. '
+                'error=${_reportErrorMessage(error)} loading=$loading. '
+                'Regenerate the dashboard from the report template with corrected structured config, '
+                'then call WebView(action:"verify_report") again before finalizing. '
+                'payload=${const JsonEncoder.withIndent('  ').convert(parsed)}',
+            isError: true,
+          );
+        }
+        return WebViewResult(
+          content: const JsonEncoder.withIndent('  ').convert(parsed),
+        );
+
       case 'click':
         final selector = params['selector'] as String;
         final r = await ctrl.runJavaScriptReturningResult(
@@ -593,6 +616,73 @@ extension _WebViewHandlers on _FinAgentScreenState {
     final resolved = path.startsWith('/') ? path : '$basePath/$path';
     if (!resolved.startsWith(basePath)) return null;
     return resolved;
+  }
+
+  String _reportVerificationJavascript() {
+    return r'''
+JSON.stringify((function() {
+  var text = (document.body && document.body.innerText ? document.body.innerText : '').replace(/\s+/g, ' ').trim();
+  var status = window.__FINAGENT_REPORT_STATUS__ || null;
+  var errorNode = document.querySelector('.text-block strong');
+  var visibleError = errorNode && /Report render error/i.test(errorNode.textContent || '')
+    ? (errorNode.parentElement ? errorNode.parentElement.textContent : errorNode.textContent)
+    : '';
+  var sections = Array.from(document.querySelectorAll('.section-title')).map(function(el) {
+    return (el.textContent || '').trim();
+  }).filter(Boolean);
+  var loading = /Loading report\.\.\./i.test(text);
+  var rendered = !!(status && status.rendered === true) && !loading && !visibleError;
+  return {
+    contract: 'webview-report-verification-v1',
+    rendered: rendered,
+    loading: loading || !!(status && status.loading === true),
+    error: status && status.error ? status.error : (visibleError ? { message: visibleError } : null),
+    title: status && status.title ? status.title : document.title,
+    url: window.location.href,
+    readyState: document.readyState,
+    sectionCount: sections.length || (status && status.sectionCount) || 0,
+    sections: sections.slice(0, 20),
+    textLength: text.length,
+    textSnippet: text.slice(0, 800),
+    nextAction: rendered
+      ? 'Report dashboard rendered. The agent may cite this UI artifact as verified evidence.'
+      : 'Regenerate or rewrite the dashboard artifact, then verify_report again before finalizing.'
+  };
+})())
+''';
+  }
+
+  Map<String, dynamic> _parseReportVerificationResult(String raw) {
+    dynamic decoded = raw;
+    try {
+      decoded = jsonDecode(raw);
+    } catch (_) {}
+    if (decoded is String) {
+      try {
+        decoded = jsonDecode(decoded);
+      } catch (_) {
+        decoded = {'textSnippet': decoded};
+      }
+    }
+    if (decoded is Map) {
+      return Map<String, dynamic>.from(decoded);
+    }
+    return {
+      'contract': 'webview-report-verification-v1',
+      'rendered': false,
+      'loading': false,
+      'error': {'message': 'Unexpected WebView verification result'},
+      'textSnippet': raw,
+      'nextAction':
+          'Regenerate or rewrite the dashboard artifact, then verify_report again before finalizing.',
+    };
+  }
+
+  String _reportErrorMessage(dynamic error) {
+    if (error is Map && error['message'] != null) {
+      return error['message'].toString();
+    }
+    return error?.toString() ?? 'none';
   }
 
   void _logBridge(
