@@ -102,6 +102,13 @@ abstract class DomainWorkflowHooks {
     required String answer,
   });
 
+  bool finalAnswerNeedsRequiredVerifier({
+    required List<Message> messages,
+    required int turnStartIndex,
+  }) {
+    return false;
+  }
+
   String buildBudgetStopText({
     required List<Message> messages,
     required int turnStartIndex,

@@ -87,11 +87,6 @@ class FinanceTurnPolicy implements DomainTurnPolicy {
           _strategyIdFromSaveInput(toolUse) ??
           _savedCustomStrategyId;
     }
-    if (!result.isError && _isCustomStrategyRun(toolUse)) {
-      _savedCustomStrategyId ??=
-          _strategyIdFromRunResult(result) ??
-          _strategyIdFromRunInput(toolUse);
-    }
     if (result.isError && _isXueqiuWriteToolUse(toolUse)) {
       _xueqiuWriteFailed = true;
     }
@@ -129,11 +124,6 @@ class FinanceTurnPolicy implements DomainTurnPolicy {
   bool _isCustomStrategySave(ToolUse toolUse) {
     if (toolUse.name != 'MarketData') return false;
     return '${toolUse.input['action'] ?? ''}' == 'custom_strategy_save';
-  }
-
-  bool _isCustomStrategyRun(ToolUse toolUse) {
-    if (toolUse.name != 'MarketData') return false;
-    return '${toolUse.input['action'] ?? ''}' == 'custom_strategy_run';
   }
 
   bool _isDifferentCustomStrategyRun(ToolUse toolUse) {
@@ -174,18 +164,6 @@ class FinanceTurnPolicy implements DomainTurnPolicy {
     }
   }
 
-  String? _strategyIdFromRunResult(ToolResult result) {
-    try {
-      final decoded = jsonDecode(result.content);
-      if (decoded is! Map) return null;
-      if (decoded['action'] != 'custom_strategy_run') return null;
-      final value = decoded['strategyId']?.toString().trim();
-      return value == null || value.isEmpty ? null : value;
-    } catch (_) {
-      return null;
-    }
-  }
-
   String? _strategyIdFromSaveInput(ToolUse toolUse) {
     final spec = toolUse.input['strategySpec'];
     if (spec is! Map) return null;
@@ -193,8 +171,4 @@ class FinanceTurnPolicy implements DomainTurnPolicy {
     return value == null || value.isEmpty ? null : value;
   }
 
-  String? _strategyIdFromRunInput(ToolUse toolUse) {
-    final value = toolUse.input['strategyId']?.toString().trim();
-    return value == null || value.isEmpty ? null : value;
-  }
 }

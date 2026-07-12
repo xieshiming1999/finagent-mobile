@@ -1055,6 +1055,23 @@ class Agent {
       );
     }
     if (toolCalls.isEmpty) {
+      if (_domainWorkflowHooks.finalAnswerNeedsRequiredVerifier(
+        messages: messages,
+        turnStartIndex: _turnMessageStartIndex,
+      )) {
+        final recovered = await _tryStrategyMonitorBudgetRecovery(controller);
+        if (recovered != null && recovered.trim().isNotEmpty) {
+          final recoveredMsg = Message(
+            role: Role.assistant,
+            content: recovered.trim(),
+            timestamp: DateTime.now(),
+          );
+          messages.add(recoveredMsg);
+          sessionManager.currentSession?.appendMessage(recoveredMsg);
+          controller.add(AgentTextDelta('\n\n$recovered'));
+          return _agentLoop(controller);
+        }
+      }
       final rewritten = _domainWorkflowHooks.rewriteFinalAnswer(
         messages: messages,
         turnStartIndex: _turnMessageStartIndex,
@@ -1173,6 +1190,28 @@ class Agent {
       prompt: _currentPrompt,
       toolCalls: toolCalls,
     );
+    if (_domainWorkflowHooks.finalAnswerNeedsRequiredVerifier(
+          messages: messages,
+          turnStartIndex: _turnMessageStartIndex,
+        ) &&
+        !toolCalls.any(
+          (toolCall) =>
+              toolCall.name == 'WorkflowVerifier' &&
+              toolCall.input['action'] == 'check',
+        )) {
+      final recovered = await _tryStrategyMonitorBudgetRecovery(controller);
+      if (recovered != null && recovered.trim().isNotEmpty) {
+        final recoveredMsg = Message(
+          role: Role.assistant,
+          content: recovered.trim(),
+          timestamp: DateTime.now(),
+        );
+        messages.add(recoveredMsg);
+        sessionManager.currentSession?.appendMessage(recoveredMsg);
+        controller.add(AgentTextDelta('\n\n$recovered'));
+        return _agentLoop(controller);
+      }
+    }
     if (domainInterception != null) {
       _recordDomainSkippedToolCalls(
         toolCalls,

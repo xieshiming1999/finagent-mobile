@@ -114,13 +114,16 @@ class FinanceCustomStrategyEvidence {
     final metricsMap = metrics is Map ? metrics : const {};
     final assumptions = run['assumptions'];
     final assumptionMap = assumptions is Map ? assumptions : const {};
+    final originalSymbol = _customStrategySymbol(spec);
+    final rerunSymbol = run['symbol'] ?? originalSymbol ?? '-';
     return [
-      '已完成已保存策略的读取与重跑，并停止追加保存、文件读取、脚本、重复运行或交易工具调用。本回答只基于 `custom_strategy_read` 与 `custom_strategy_run` 的结构化结果。',
+      '已完成已保存策略的读取与重跑回测，并停止追加保存、文件读取、脚本、重复运行或交易工具调用。本回答只基于 `custom_strategy_read` 与 `custom_strategy_run` 的结构化结果。',
       '',
       '- strategyId：$strategyId。',
-      '- 标的：${run['symbol'] ?? _customStrategySymbol(spec) ?? '-'}。',
+      '- 原保存标的：${originalSymbol ?? '-'}；本次重跑回测标的：$rerunSymbol。',
       '- 保存状态：${save?['status'] ?? lifecycleMap['status'] ?? read?['status'] ?? read?['savedStatus'] ?? '-'}；可运行：${lifecycleMap['runnable'] ?? read?['runnable'] ?? '-'}。',
       '- 数据覆盖：${_strategyDataCoverageSummary(run)}。',
+      '- 比较口径：同一 StrategySpec 换标的重跑，以下指标是本次目标标的的回测结果；若需逐项比较原标的表现，应再运行原标的同口径回测。',
       '- 交易次数：${metricsMap['tradeCount'] ?? metricsMap['trades'] ?? run['trades'] ?? 0}。',
       '- 总收益率：${metricsMap['totalReturnPct'] ?? metricsMap['totalReturn'] ?? run['totalReturn'] ?? '-'}%。',
       '- 最大回撤：${metricsMap['maxDrawdownPct'] ?? metricsMap['maxDrawdown'] ?? run['maxDrawdown'] ?? '-'}%。',

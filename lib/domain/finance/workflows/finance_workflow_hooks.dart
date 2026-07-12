@@ -81,7 +81,8 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
 
   @override
   List<ToolUse>? buildPreflightToolCalls(List<Message> messages) {
-    return _buildMacroConditionWatchlistPreflightToolCalls(messages) ??
+    return _buildRequiredVerifierPreflightToolCalls(messages) ??
+        _buildMacroConditionWatchlistPreflightToolCalls(messages) ??
         _buildMacroStockQuotePreflightToolCalls(messages) ??
         _buildFundMonitorReviewPreflightToolCalls(messages) ??
         _buildPortfolioMonitorReviewPreflightToolCalls(messages) ??
@@ -92,6 +93,68 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
         _evidenceReviewSummary.buildSearchToolCalls(messages) ??
         _tradeSizingPreflight.buildToolCalls(messages) ??
         _customStrategyPreflight.buildToolCalls(messages);
+  }
+
+  List<ToolUse>? _buildRequiredVerifierPreflightToolCalls(
+    List<Message> messages,
+  ) {
+    final start = _lastUserIndex(messages);
+    if (start < 0) return null;
+    if (!finalAnswerNeedsRequiredVerifier(
+      messages: messages,
+      turnStartIndex: start,
+    )) {
+      return null;
+    }
+    final requiredVerifier = _latestExplicitRequiredVerifier(messages, start);
+    if (requiredVerifier == null ||
+        requiredVerifier['tool'] != 'WorkflowVerifier') {
+      return null;
+    }
+    final workflow = _textValue(requiredVerifier['workflow'], '');
+    if (workflow.isEmpty) return null;
+    final workflowState = FinanceWorkflowState.latestFromMessages(
+      messages,
+      turnStartIndex: start,
+    );
+    if (workflowState?.requiredArtifacts.isNotEmpty == true &&
+        !_hasSuccessfulToolAction(
+          messages.sublist(start),
+          'ArtifactRegistry',
+          'register',
+    )) {
+      return null;
+    }
+    final input = <String, dynamic>{
+      'action': 'check',
+      'workflow': workflow,
+      'requireWorkflowState': false,
+    };
+    if (workflow == 'strategy_rerun') {
+      final payload = _latestSuccessfulToolActionPayload(
+        messages.sublist(start),
+        'MarketData',
+        'custom_strategy_run',
+      );
+      if (payload == null) return null;
+      final strategyId = _textValue(payload['strategyId'], '');
+      final target = _textValue(
+        payload['code'] ??
+            payload['symbol'] ??
+            _firstString(payload['symbols']) ??
+            _firstString(payload['targetSymbols']),
+        '',
+      );
+      if (strategyId.isNotEmpty) input['strategyId'] = strategyId;
+      if (target.isNotEmpty) input['targetSymbols'] = [target];
+    }
+    return [
+      ToolUse(
+        id: 'required_workflow_verifier_${DateTime.now().microsecondsSinceEpoch}',
+        name: 'WorkflowVerifier',
+        input: input,
+      ),
+    ];
   }
 
   List<ToolUse>? _buildMacroStockQuotePreflightToolCalls(
@@ -744,6 +807,13 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     final start = messages.lastIndexWhere(
       (message) => message.role == Role.user,
     );
+    if (start >= 0 &&
+        finalAnswerNeedsRequiredVerifier(
+          messages: messages,
+          turnStartIndex: start,
+        )) {
+      return null;
+    }
     if (start >= 0 && _hasAnsweredAskUserQuestion(messages.skip(start + 1))) {
       final continuation = _tradeSizingPreflight.buildToolCalls(messages);
       if (continuation != null && continuation.isNotEmpty) return null;
@@ -2223,6 +2293,47 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     return null;
   }
 
+  @override
+  bool finalAnswerNeedsRequiredVerifier({
+    required List<Message> messages,
+    required int turnStartIndex,
+  }) {
+    if (turnStartIndex < 0 || turnStartIndex >= messages.length) return false;
+    final requiredVerifier = _latestExplicitRequiredVerifier(
+      messages,
+      turnStartIndex,
+    );
+    if (requiredVerifier == null ||
+        requiredVerifier['tool'] != 'WorkflowVerifier') {
+      return false;
+    }
+    final workflow = _textValue(requiredVerifier['workflow'], '');
+    if (workflow.isEmpty) return false;
+    return !_hasPassingRequiredVerifierCheck(
+      messages.sublist(turnStartIndex),
+      workflow,
+    );
+  }
+
+  Map<String, dynamic>? _latestExplicitRequiredVerifier(
+    List<Message> messages,
+    int turnStartIndex,
+  ) {
+    Map<String, dynamic>? latest;
+    final start = turnStartIndex.clamp(0, messages.length);
+    for (final message in messages.skip(start)) {
+      FinanceWorkflowState? state;
+      if (message.role == Role.user) {
+        state = FinanceWorkflowState.fromUserContent(message.content);
+      } else if (message.toolResult != null && !message.toolResult!.isError) {
+        state = FinanceWorkflowState.fromToolResult(message.toolResult!);
+      }
+      final requiredVerifier = state?.requiredVerifier;
+      if (requiredVerifier != null) latest = requiredVerifier;
+    }
+    return latest;
+  }
+
   bool _hasCustomStrategySaveOrRunCall(List<ToolUse> toolCalls) {
     return toolCalls.any(
       (toolCall) =>
@@ -2545,7 +2656,9 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       messages,
       turnStartIndex: turnStartIndex,
     );
-    final requiredVerifier = workflowState?.requiredVerifier;
+    final requiredVerifier =
+        _latestExplicitRequiredVerifier(messages, turnStartIndex) ??
+        workflowState?.requiredVerifier;
     if (requiredVerifier == null ||
         requiredVerifier['tool'] != 'WorkflowVerifier') {
       return null;
@@ -2556,7 +2669,7 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
     );
     if (workflow.isEmpty) return null;
     final turnMessages = messages.sublist(turnStartIndex);
-    if (_hasPassingWorkflowVerifierCheck(turnMessages, workflow)) {
+    if (_hasPassingRequiredVerifierCheck(turnMessages, workflow)) {
       return null;
     }
     final input = <String, dynamic>{
@@ -2812,6 +2925,57 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
       }
     }
     return false;
+  }
+
+  bool _hasPassingRequiredVerifierCheck(
+    List<Message> messages,
+    String workflow,
+  ) {
+    if (workflow != 'strategy_rerun') {
+      return _hasPassingWorkflowVerifierCheck(messages, workflow);
+    }
+    final runResultIndex = _latestSuccessfulToolActionResultIndex(
+      messages,
+      'MarketData',
+      'custom_strategy_run',
+    );
+    if (runResultIndex == null) return false;
+    return _hasPassingWorkflowVerifierCheck(
+      messages.sublist(runResultIndex + 1),
+      workflow,
+    );
+  }
+
+  int? _latestSuccessfulToolActionResultIndex(
+    List<Message> messages,
+    String toolName,
+    String action,
+  ) {
+    final callsById = <String, ToolUse>{};
+    for (final message in messages) {
+      if (message.role != Role.assistant) continue;
+      for (final call in message.toolUses ?? const <ToolUse>[]) {
+        if (call.name == toolName && call.input['action'] == action) {
+          callsById[call.id] = call;
+        }
+      }
+    }
+    for (var i = messages.length - 1; i >= 0; i--) {
+      final result = messages[i].toolResult;
+      if (messages[i].role != Role.tool ||
+          result == null ||
+          result.isError ||
+          !callsById.containsKey(result.toolUseId)) {
+        continue;
+      }
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is Map && decoded['action'] == action) return i;
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
   }
 
   Map<String, dynamic>? _latestSuccessfulToolActionPayload(

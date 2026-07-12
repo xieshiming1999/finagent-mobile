@@ -102,11 +102,150 @@ void main() {
     expect(answer, contains('最终模型输出为空或被截断'));
     expect(answer, contains('风险'));
   });
+
+  test('required verifier gate blocks final answer until verifier passes', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+    final messages = [
+      _userWithState(
+        workflowKind: 'strategy_review',
+        assetClass: 'stock',
+        requiredVerifier: {
+          'tool': 'WorkflowVerifier',
+          'action': 'check',
+          'workflow': 'strategy_rerun',
+        },
+      ),
+      _assistantWithToolUse('run', 'MarketData', {
+        'action': 'custom_strategy_run',
+        'strategyId': 'custom_moutai_low_risk_pullback_v1_v1',
+        'symbols': ['300059'],
+      }),
+      _tool('run', {
+        'action': 'custom_strategy_run',
+        'strategyId': 'custom_moutai_low_risk_pullback_v1_v1',
+        'code': '300059',
+        'dataCoverage': {'symbol': '300059', 'sufficient': true},
+      }),
+    ];
+
+    expect(
+      hooks.finalAnswerNeedsRequiredVerifier(
+        messages: messages,
+        turnStartIndex: 0,
+      ),
+      isTrue,
+    );
+
+    final verifiedMessages = [
+      ...messages,
+      _assistantWithToolUse('verify', 'WorkflowVerifier', {
+        'action': 'check',
+        'workflow': 'strategy_rerun',
+        'strategyId': 'custom_moutai_low_risk_pullback_v1_v1',
+        'targetSymbols': ['300059'],
+      }),
+      _tool('verify', {
+        'contract': 'workflow-verifier-check-v1',
+        'workflow': 'strategy_rerun',
+        'passed': true,
+        'missing': const [],
+      }),
+    ];
+
+    expect(
+      hooks.finalAnswerNeedsRequiredVerifier(
+        messages: verifiedMessages,
+        turnStartIndex: 0,
+      ),
+      isFalse,
+    );
+  });
+
+  test('strategy rerun requires verifier after rerun evidence', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+    final messages = [
+      _userWithState(
+        workflowKind: 'strategy_review',
+        assetClass: 'stock',
+        requiredVerifier: {
+          'tool': 'WorkflowVerifier',
+          'action': 'check',
+          'workflow': 'strategy_rerun',
+        },
+      ),
+      _assistantWithToolUse('early-verify', 'WorkflowVerifier', {
+        'action': 'check',
+        'workflow': 'strategy_rerun',
+      }),
+      _tool('early-verify', {
+        'contract': 'workflow-verifier-check-v1',
+        'workflow': 'strategy_rerun',
+        'passed': true,
+        'missing': const [],
+      }),
+      _assistantWithToolUse('run', 'MarketData', {
+        'action': 'custom_strategy_run',
+        'strategyId': 'custom_moutai_low_risk_pullback_v1_v1',
+        'symbols': ['300059'],
+      }),
+      _tool('run', {
+        'action': 'custom_strategy_run',
+        'strategyId': 'custom_moutai_low_risk_pullback_v1_v1',
+        'code': '300059',
+        'dataCoverage': {'symbol': '300059', 'sufficient': true},
+      }),
+    ];
+
+    expect(
+      hooks.finalAnswerNeedsRequiredVerifier(
+        messages: messages,
+        turnStartIndex: 0,
+      ),
+      isTrue,
+    );
+  });
+
+  test('strategy rerun preflight emits verifier before summary answer', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+    final messages = [
+      _userWithState(
+        workflowKind: 'strategy_review',
+        assetClass: 'stock',
+        requiredVerifier: {
+          'tool': 'WorkflowVerifier',
+          'action': 'check',
+          'workflow': 'strategy_rerun',
+        },
+      ),
+      _assistantWithToolUse('run', 'MarketData', {
+        'action': 'custom_strategy_run',
+        'strategyId': 'custom_low_risk_entry_v3',
+        'symbols': ['300059'],
+      }),
+      _tool('run', {
+        'action': 'custom_strategy_run',
+        'strategyId': 'custom_low_risk_entry_v3',
+        'code': '300059',
+        'metrics': {'totalReturnPct': 0.0},
+        'dataCoverage': {'symbol': '300059', 'sufficient': true},
+      }),
+    ];
+
+    expect(hooks.buildPreflightAnswer(messages), isNull);
+    final calls = hooks.buildPreflightToolCalls(messages);
+    expect(calls, hasLength(1));
+    expect(calls!.single.name, 'WorkflowVerifier');
+    expect(calls.single.input['action'], 'check');
+    expect(calls.single.input['workflow'], 'strategy_rerun');
+    expect(calls.single.input['strategyId'], 'custom_low_risk_entry_v3');
+    expect(calls.single.input['targetSymbols'], ['300059']);
+  });
 }
 
 Message _userWithState({
   required String workflowKind,
   required String assetClass,
+  Map<String, dynamic>? requiredVerifier,
 }) {
   return Message(
     role: Role.user,
@@ -121,6 +260,8 @@ Message _userWithState({
             'safetyBoundary': 'read-only analysis',
             'evidenceRefs': ['structured-evidence'],
             'confirmationState': 'none',
+            if (requiredVerifier != null)
+              'requiredVerifier': requiredVerifier,
             'source': 'test',
           },
         })}',

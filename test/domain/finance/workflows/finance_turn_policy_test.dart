@@ -44,7 +44,7 @@ void main() {
     expect(decoded['nextAction'], 'custom_strategy_run');
   });
 
-  test('successful custom strategy run anchors active strategy identity', () {
+  test('successful custom strategy run leaves verifier path open', () {
     final policy = FinanceTurnPolicy();
     const runCall = ToolUse(
       id: 'run-1',
@@ -70,37 +70,25 @@ void main() {
 
     expect(policy.shouldStopToolBatchAfterResult(runCall, result), isFalse);
 
-    final sameStrategyReason = policy.blockedToolUseReason(
+    final verifierReason = policy.blockedToolUseReason(
       const ToolUse(
-        id: 'run-same',
-        name: 'MarketData',
+        id: 'verifier-1',
+        name: 'WorkflowVerifier',
         input: {
-          'action': 'custom_strategy_run',
-          'strategyId': 'custom_saved_strategy_v1',
-          'symbols': ['300059'],
+          'action': 'check',
+          'workflow': 'strategy_rerun',
         },
       ),
     );
-    expect(sameStrategyReason, isNull);
+    expect(verifierReason, isNull);
 
-    final reason = policy.blockedToolUseReason(
+    final unrelatedReason = policy.blockedToolUseReason(
       const ToolUse(
-        id: 'run-2',
-        name: 'MarketData',
-        input: {
-          'action': 'custom_strategy_run',
-          'strategyId': '600519',
-          'symbols': ['600519'],
-        },
+        id: 'quote-1',
+        name: 'DataStore',
+        input: {'action': 'query_quote', 'symbol': '300059'},
       ),
     );
-
-    expect(reason, isNotNull);
-    final decoded = jsonDecode(reason!) as Map<String, dynamic>;
-    expect(decoded['action'], 'finance_turn_policy_block');
-    expect(decoded['status'], 'blocked');
-    expect(decoded['code'], 'custom_strategy_run_wrong_identity');
-    expect(decoded['strategyId'], 'custom_saved_strategy_v1');
-    expect(decoded['nextAction'], 'custom_strategy_run');
+    expect(unrelatedReason, isNull);
   });
 }
