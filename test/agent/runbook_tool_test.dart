@@ -16,7 +16,9 @@ void main() {
 
     final list =
         jsonDecode(
-              (await tool.call('runbook-1', {'action': 'list'}, context)).content,
+              (await tool.call('runbook-1', {
+                'action': 'list',
+              }, context)).content,
             )
             as Map<String, dynamic>;
     expect(list['contract'], 'runbook-list-v1');
@@ -45,6 +47,13 @@ void main() {
             as Map<String, dynamic>;
     expect(macro['requiredEvidence'], contains('macro-evidence-record-v1'));
     expect(macro['allowedTools'], contains('SourceReader'));
+    expect(macro['artifactTypes'], contains('report'));
+    expect(
+      macro['outputRequirements'],
+      contains(
+        'When the user asks for a reviewable report, dashboard, artifact, or panel output, create or register a durable report/dashboard artifact through ArtifactRegistry before finalizing.',
+      ),
+    );
     expect(macro['approvalBoundary'], contains('not a direct buy/sell rule'));
   });
 
@@ -66,6 +75,8 @@ void main() {
 }
 
 ToolContext _tempContext() {
-  final dir = Directory.systemTemp.createTempSync('finagent_runbook_tool_test_');
+  final dir = Directory.systemTemp.createTempSync(
+    'finagent_runbook_tool_test_',
+  );
   return ToolContext(basePath: dir.path, serviceBaseUrl: '');
 }

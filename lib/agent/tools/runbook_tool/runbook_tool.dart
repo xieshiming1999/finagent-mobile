@@ -7,12 +7,28 @@ import '../../tool_context.dart';
 const _runbooks = <String, Map<String, dynamic>>{
   'market_overview': {
     'workflow': 'market_overview',
-    'purpose': 'Understand current market condition before stock/fund decisions.',
-    'requiredEvidence': ['quote/index', 'sector', 'flow_rank', 'limit_pool', 'news_or_macro'],
-    'allowedTools': ['MarketData', 'DataStore', 'Research', 'WorkflowEvidence', 'CapabilityStatus'],
+    'purpose':
+        'Understand current market condition before stock/fund decisions.',
+    'requiredEvidence': [
+      'quote/index',
+      'sector',
+      'flow_rank',
+      'limit_pool',
+      'news_or_macro',
+    ],
+    'allowedTools': [
+      'MarketData',
+      'DataStore',
+      'Research',
+      'WorkflowEvidence',
+      'CapabilityStatus',
+    ],
     'artifactTypes': ['analysis', 'dashboard', 'data_evidence'],
     'approvalBoundary': 'No trade or simulated trade action.',
-    'failureHandling': ['Use cache when provider is unhealthy.', 'Disclose stale or missing evidence.'],
+    'failureHandling': [
+      'Use cache when provider is unhealthy.',
+      'Disclose stale or missing evidence.',
+    ],
     'firstPassPlan': [
       'Use a bounded market evidence set: coverage, index quote, sector ranking, flow rank or northbound flow, and news or macro evidence.',
       'For core market indexes, use governed index quote/readback evidence such as MarketData(action:"query_index_quote", symbols:["000001","399001","399006"]) or MarketData(action:"quote", symbols:[...]). Do not use stock technical tools on index codes; report index K-line/technical coverage as missing unless a governed index K-line or index indicator contract is available.',
@@ -21,47 +37,122 @@ const _runbooks = <String, Map<String, dynamic>>{
     ],
     'escalationBoundary':
         'Use macro_research_sources/macro_research_extract only for explicit source refresh, source validation, or report extraction tasks.',
-    'verifier': 'WorkflowVerifier(action:"check", workflow:"market_overview") when available; otherwise CapabilityStatus(action:"evaluate").',
+    'verifier':
+        'WorkflowVerifier(action:"check", workflow:"market_overview") when available; otherwise CapabilityStatus(action:"evaluate").',
   },
   'stock_research': {
     'workflow': 'stock_research',
-    'purpose': 'Analyze one stock with market, technical, fundamental, flow, risk, and macro context.',
-    'requiredEvidence': ['quote', 'kline', 'fundamental_or_missing_reason', 'money_flow', 'risk', 'macro_if_relevant'],
-    'allowedTools': ['MarketData', 'DataProcess', 'Research', 'Dashboard', 'WorkflowEvidence', 'CapabilityStatus'],
+    'purpose':
+        'Analyze one stock with market, technical, fundamental, flow, risk, and macro context.',
+    'requiredEvidence': [
+      'quote',
+      'kline',
+      'fundamental_or_missing_reason',
+      'money_flow',
+      'risk',
+      'macro_if_relevant',
+    ],
+    'allowedTools': [
+      'MarketData',
+      'DataProcess',
+      'Research',
+      'Dashboard',
+      'WorkflowEvidence',
+      'CapabilityStatus',
+    ],
     'artifactTypes': ['analysis', 'dashboard', 'data_evidence'],
-    'approvalBoundary': 'No order placement. Use trade-preparation workflow before any simulated trade.',
-    'failureHandling': ['Do not invent missing PE/PB/fundamental data.', 'Name provider/cache/source-time gaps.'],
-    'verifier': 'WorkflowVerifier(action:"check", workflow:"stock_research") when available; otherwise CapabilityStatus(action:"evaluate").',
+    'approvalBoundary':
+        'No order placement. Use trade-preparation workflow before any simulated trade.',
+    'failureHandling': [
+      'Do not invent missing PE/PB/fundamental data.',
+      'Name provider/cache/source-time gaps.',
+    ],
+    'verifier':
+        'WorkflowVerifier(action:"check", workflow:"stock_research") when available; otherwise CapabilityStatus(action:"evaluate").',
   },
   'fund_selection': {
     'workflow': 'fund_selection',
-    'purpose': 'Select or compare funds using fund class, NAV/yield, holdings, performance, risk, and suitability evidence.',
-    'requiredEvidence': ['fund_list', 'fund_nav_or_money_yield', 'fund_performance', 'fund_holding_or_missing_reason', 'risk'],
-    'allowedTools': ['MarketData', 'DataProcess', 'Research', 'WorkflowEvidence', 'CapabilityStatus'],
+    'purpose':
+        'Select or compare funds using fund class, NAV/yield, holdings, performance, risk, and suitability evidence.',
+    'requiredEvidence': [
+      'fund_list',
+      'fund_nav_or_money_yield',
+      'fund_performance',
+      'fund_holding_or_missing_reason',
+      'risk',
+    ],
+    'allowedTools': [
+      'MarketData',
+      'DataProcess',
+      'Research',
+      'WorkflowEvidence',
+      'CapabilityStatus',
+    ],
     'artifactTypes': ['analysis', 'data_evidence'],
-    'approvalBoundary': 'No purchase instruction or simulated trade without explicit trade-preparation workflow.',
-    'failureHandling': ['Do not use ordinary NAV for known money funds.', 'Separate selection evidence from buy advice.'],
-    'verifier': 'WorkflowVerifier(action:"check", workflow:"fund_selection") when available; otherwise CapabilityStatus(action:"evaluate").',
+    'approvalBoundary':
+        'No purchase instruction or simulated trade without explicit trade-preparation workflow.',
+    'failureHandling': [
+      'Do not use ordinary NAV for known money funds.',
+      'Separate selection evidence from buy advice.',
+    ],
+    'verifier':
+        'WorkflowVerifier(action:"check", workflow:"fund_selection") when available; otherwise CapabilityStatus(action:"evaluate").',
   },
   'strategy_backtest': {
     'workflow': 'strategy_backtest',
-    'purpose': 'Convert a strategy idea into StrategySpec, validate, backtest, report, and optionally monitor.',
-    'requiredEvidence': ['StrategySpec', 'validation_report', 'backtest_data_coverage', 'fees_slippage_assumptions', 'report'],
-    'allowedTools': ['DataProcess', 'MarketData', 'Watchlist', 'WorkflowEvidence', 'CapabilityStatus'],
+    'purpose':
+        'Convert a strategy idea into StrategySpec, validate, backtest, report, and optionally monitor.',
+    'requiredEvidence': [
+      'StrategySpec',
+      'validation_report',
+      'backtest_data_coverage',
+      'fees_slippage_assumptions',
+      'report',
+    ],
+    'allowedTools': [
+      'DataProcess',
+      'MarketData',
+      'Watchlist',
+      'WorkflowEvidence',
+      'CapabilityStatus',
+    ],
     'artifactTypes': ['strategy', 'backtest', 'report'],
-    'approvalBoundary': 'Backtest and monitor only. Simulated trade requires separate approval boundary.',
-    'failureHandling': ['Reject unsupported indicators/operators with repairPlan.', 'Do not run free-form strategy strings.'],
-    'verifier': 'WorkflowVerifier(action:"check", workflow:"strategy_backtest") when available; otherwise CapabilityStatus(action:"evaluate").',
+    'approvalBoundary':
+        'Backtest and monitor only. Simulated trade requires separate approval boundary.',
+    'failureHandling': [
+      'Reject unsupported indicators/operators with repairPlan.',
+      'Do not run free-form strategy strings.',
+    ],
+    'verifier':
+        'WorkflowVerifier(action:"check", workflow:"strategy_backtest") when available; otherwise CapabilityStatus(action:"evaluate").',
   },
   'trade_preparation': {
     'workflow': 'trade_preparation',
-    'purpose': 'Prepare a simulated trade with sizing, risk, stop, evidence, and explicit user approval.',
-    'requiredEvidence': ['analysis', 'risk_sizing', 'cash_or_portfolio_state', 'approval_state', 'trade_boundary'],
-    'allowedTools': ['Portfolio', 'XueqiuTrade', 'AskUserQuestion', 'WorkflowEvidence', 'CapabilityStatus'],
+    'purpose':
+        'Prepare a simulated trade with sizing, risk, stop, evidence, and explicit user approval.',
+    'requiredEvidence': [
+      'analysis',
+      'risk_sizing',
+      'cash_or_portfolio_state',
+      'approval_state',
+      'trade_boundary',
+    ],
+    'allowedTools': [
+      'Portfolio',
+      'XueqiuTrade',
+      'AskUserQuestion',
+      'WorkflowEvidence',
+      'CapabilityStatus',
+    ],
     'artifactTypes': ['trade_preparation', 'data_evidence'],
-    'approvalBoundary': 'Must stop for explicit user approval before any simulated order side effect.',
-    'failureHandling': ['If approval is missing, stop and ask.', 'If account/portfolio state is unavailable, do not place an order.'],
-    'verifier': 'WorkflowVerifier(action:"check", workflow:"trade_preparation") when available; otherwise CapabilityStatus(action:"evaluate").',
+    'approvalBoundary':
+        'Must stop for explicit user approval before any simulated order side effect.',
+    'failureHandling': [
+      'If approval is missing, stop and ask.',
+      'If account/portfolio state is unavailable, do not place an order.',
+    ],
+    'verifier':
+        'WorkflowVerifier(action:"check", workflow:"trade_preparation") when available; otherwise CapabilityStatus(action:"evaluate").',
   },
   'macro_factor_lookup': {
     'workflow': 'macro_factor_lookup',
@@ -85,7 +176,18 @@ const _runbooks = <String, Map<String, dynamic>>{
       'DataStore',
       'Research',
     ],
-    'artifactTypes': ['macro_evidence', 'research', 'data_evidence'],
+    'artifactTypes': [
+      'macro_evidence',
+      'research',
+      'data_evidence',
+      'report',
+      'dashboard',
+    ],
+    'outputRequirements': [
+      'For an ordinary chat answer, disclose macro source, source time, fetched-at, freshness/missing-evidence state, affected assets, confidence effect, and no-direct-trade boundary in text.',
+      'When the user asks for a reviewable report, dashboard, artifact, or panel output, create or register a durable report/dashboard artifact through ArtifactRegistry before finalizing.',
+      'The report/dashboard artifact must carry structured macro evidence fields in metadata/provenance/freshness: topic, sourceDataTime or sourceTime, fetchedAt, freshnessStatus, affectedAssets, missingEvidence, confidenceEffect, and failureClass when present.',
+    ],
     'approvalBoundary':
         'Macro evidence is context, hypothesis, and invalidation input. It is not a direct buy/sell rule.',
     'failureHandling': [
@@ -159,14 +261,16 @@ class RunbookTool extends Tool {
         content: jsonEncode({
           'contract': 'runbook-list-v1',
           'workflows': _runbooks.keys.toList(),
-          'guidance': 'Call Runbook(action:"get", workflow:<id>) before broad workflow execution.',
+          'guidance':
+              'Call Runbook(action:"get", workflow:<id>) before broad workflow execution.',
         }),
       );
     }
     if (action != 'get') {
       return ToolResult(
         toolUseId: toolUseId,
-        content: 'Invalid Runbook action "$action". Use action="help" for supported actions.',
+        content:
+            'Invalid Runbook action "$action". Use action="help" for supported actions.',
         isError: true,
       );
     }
@@ -182,10 +286,7 @@ class RunbookTool extends Tool {
     }
     return ToolResult(
       toolUseId: toolUseId,
-      content: jsonEncode({
-        'contract': 'runbook-detail-v1',
-        ...runbook,
-      }),
+      content: jsonEncode({'contract': 'runbook-detail-v1', ...runbook}),
     );
   }
 
