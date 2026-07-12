@@ -8,6 +8,7 @@ import '../../tool_context.dart';
 const _workflowKinds = [
   'market_analysis',
   'stock_research',
+  'stock_selection',
   'fund_research',
   'strategy_design',
   'strategy_review',

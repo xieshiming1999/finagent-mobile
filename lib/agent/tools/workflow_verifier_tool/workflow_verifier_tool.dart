@@ -18,6 +18,12 @@ const _workflows = <String, Map<String, dynamic>>{
     'artifactKinds': ['analysis', 'dashboard', 'data_snapshot'],
     'approvalBoundary': 'no_trade',
   },
+  'stock_selection': {
+    'requiredAnyTools': ['MarketData', 'DataStore', 'DataProcess', 'Research'],
+    'artifactKinds': ['analysis', 'data_snapshot'],
+    'artifactRequired': false,
+    'approvalBoundary': 'no_trade',
+  },
   'fund_selection': {
     'requiredAnyTools': ['MarketData', 'DataStore', 'DataProcess', 'Research'],
     'artifactKinds': ['analysis', 'data_snapshot'],
@@ -227,7 +233,8 @@ Map<String, dynamic> _checkWorkflow(
     _check(
       'artifact_evidence',
       artifactEvidence['passed'] == true,
-      'Required artifact evidence is registered.',
+      artifactEvidence['reason'] as String? ??
+          'Required artifact evidence is registered.',
       artifactEvidence['reason'] as String? ??
           'Required artifact evidence is missing.',
     ),
@@ -333,6 +340,12 @@ Map<String, dynamic> _artifactEvidence(
     return {
       'passed': false,
       'reason': 'Required artifact "$artifactId" is not registered.',
+    };
+  }
+  if (spec['artifactRequired'] == false) {
+    return {
+      'passed': true,
+      'reason': 'Artifact evidence is optional for this workflow.',
     };
   }
   final kinds = _stringList(spec['artifactKinds']);
@@ -561,6 +574,8 @@ String _workflowKindForVerifierWorkflow(String workflow) {
       return 'market_analysis';
     case 'stock_research':
       return 'stock_research';
+    case 'stock_selection':
+      return 'stock_selection';
     case 'fund_selection':
       return 'fund_research';
     case 'strategy_backtest':

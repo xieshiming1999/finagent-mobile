@@ -59,6 +59,74 @@ void main() {
     expect(result['nextAction'], contains('Do not finalize yet'));
   });
 
+  test(
+    'WorkflowVerifier accepts stock selection without stale artifact reuse',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      _seedSession(context, toolName: 'DataProcess');
+      _seedWorkflowState(context, workflowKind: 'stock_selection');
+
+      final result =
+          jsonDecode(
+                (await WorkflowVerifierTool().call('verify-selection', {
+                  'action': 'check',
+                  'workflow': 'stock_selection',
+                  'requireWorkflowState': true,
+                }, context)).content,
+              )
+              as Map<String, dynamic>;
+
+      expect(result['passed'], true);
+      expect(result['missing'], isEmpty);
+      expect(
+        result['observed']['workflowState']['workflowState']['workflowKind'],
+        'stock_selection',
+      );
+      expect(
+        result['checks'].firstWhere(
+          (check) => check['id'] == 'artifact_evidence',
+        )['message'],
+        contains('Artifact evidence is optional'),
+      );
+    },
+  );
+
+  test(
+    'WorkflowVerifier rejects stock selection with stock research state',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      _seedSession(context, toolName: 'DataProcess');
+      _seedWorkflowState(context, workflowKind: 'stock_research');
+
+      final result =
+          jsonDecode(
+                (await WorkflowVerifierTool().call('verify-selection-state', {
+                  'action': 'check',
+                  'workflow': 'stock_selection',
+                  'requireWorkflowState': true,
+                }, context)).content,
+              )
+              as Map<String, dynamic>;
+
+      expect(result['passed'], false);
+      expect(result['missing'], contains('workflow_state'));
+      expect(
+        result['checks'].firstWhere(
+          (check) => check['id'] == 'workflow_state',
+        )['message'],
+        contains('stock_selection'),
+      );
+    },
+  );
+
   test('WorkflowVerifier accepts matching typed workflow state', () async {
     final context = _tempContext();
     addTearDown(() {

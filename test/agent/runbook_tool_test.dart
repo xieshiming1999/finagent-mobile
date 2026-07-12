@@ -23,6 +23,7 @@ void main() {
             as Map<String, dynamic>;
     expect(list['contract'], 'runbook-list-v1');
     expect(list['workflows'], contains('stock_research'));
+    expect(list['workflows'], contains('stock_selection'));
 
     final detail =
         jsonDecode(
@@ -36,6 +37,21 @@ void main() {
     expect(detail['workflow'], 'strategy_backtest');
     expect(detail['requiredEvidence'], contains('StrategySpec'));
     expect(detail['approvalBoundary'], contains('Backtest and monitor only'));
+
+    final selection =
+        jsonDecode(
+              (await tool.call('runbook-selection', {
+                'action': 'get',
+                'workflow': 'stock_selection',
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+    expect(
+      selection['requiredEvidence'],
+      contains('screening_or_candidate_source'),
+    );
+    expect(selection['verifier'], contains('workflow:"stock_selection"'));
+    expect(selection['approvalBoundary'], contains('No watchlist mutation'));
 
     final macro =
         jsonDecode(
