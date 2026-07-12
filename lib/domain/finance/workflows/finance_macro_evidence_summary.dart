@@ -162,6 +162,16 @@ class FinanceMacroEvidenceSummary {
       try {
         final decoded = jsonDecode(content);
         if (decoded is! Map<String, dynamic>) continue;
+        final sourceReaderMacroPayload = _sourceReaderMacroPayload(decoded);
+        if (sourceReaderMacroPayload != null) {
+          sawMacroAction = true;
+          factorLines.addAll(_factorRows(sourceReaderMacroPayload));
+          reliabilityLines.addAll(_reliabilityRows(sourceReaderMacroPayload));
+          assetImpactLines.addAll(_assetImpactRows(sourceReaderMacroPayload));
+          decisionLines.addAll(_decisionRows(sourceReaderMacroPayload));
+          evidenceLines.addAll(_evidenceRows(sourceReaderMacroPayload));
+          continue;
+        }
         final action = '${decoded['action'] ?? ''}';
         if (action == 'query_finance_news') {
           final line = _financeNewsPayloadLine(decoded);
@@ -257,6 +267,33 @@ class FinanceMacroEvidenceSummary {
         })
         .where((line) => line.isNotEmpty)
         .toList();
+  }
+
+  Map<String, dynamic>? _sourceReaderMacroPayload(
+    Map<String, dynamic> payload,
+  ) {
+    final contract = _text(payload['contract']);
+    if (contract != 'source-reader-macro-evidence-result-v1' &&
+        contract != 'source-reader-macro-numeric-evidence-result-v1') {
+      return null;
+    }
+    final record = payload['record'];
+    if (record is! Map) return null;
+    final row = Map<String, dynamic>.from(record);
+    final numeric = row['numericSeries'];
+    if (numeric is Map) {
+      row.addAll(Map<String, dynamic>.from(numeric));
+    }
+    row['sourceName'] ??= row['source'];
+    row['sourceDataTime'] ??= row['sourceDate'];
+    row['evidenceTier'] ??= row['evidenceClass'];
+    row['sourceType'] ??= row['evidenceClass'];
+    row['status'] ??= row['freshness'];
+    return {
+      'action': 'source_reader_macro_evidence',
+      'status': 'ok',
+      'rows': [row],
+    };
   }
 
   List<String> _callContextLines(Map<String, dynamic> input) {

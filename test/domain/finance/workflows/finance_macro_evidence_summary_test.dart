@@ -360,6 +360,77 @@ void main() {
     expect(summary, contains('不能直接编译成可执行交易信号'));
   });
 
+  test('cites SourceReader official numeric macro evidence artifact', () {
+    final summary = FinanceMacroEvidenceSummary().build(
+      messages: [
+        Message(
+          role: Role.user,
+          content: 'use numeric macro evidence artifact',
+        ),
+        Message(
+          role: Role.assistant,
+          content: '',
+          toolUses: const [
+            ToolUse(
+              id: 'numeric-artifact',
+              name: 'SourceReader',
+              input: {
+                'action': 'macroNumericEvidence',
+                'topic': 'oil inventory pressure',
+              },
+            ),
+          ],
+        ),
+        _tool('numeric-artifact', {
+          'contract': 'source-reader-macro-numeric-evidence-result-v1',
+          'record': {
+            'contract': 'macro-evidence-record-v1',
+            'id': 'macro:eia',
+            'source': 'EIA',
+            'provider': 'eia',
+            'title': 'EIA official series WCESTUS1',
+            'sourceDate': '2026-07-03',
+            'topic': 'oil inventory pressure',
+            'region': 'US/global',
+            'assetClass': 'commodity/equity/fund',
+            'keyClaims': [
+              'US commercial crude oil inventories WCESTUS1 = 420000 MBBL as of 2026-07-03.',
+            ],
+            'affectedAssets': ['oil', 'energy equities', 'A-shares'],
+            'confidenceEffect': 'Adds official inventory context.',
+            'freshness': 'ok',
+            'evidenceClass': 'official-numeric-series',
+            'numericSeries': {
+              'seriesId': 'WCESTUS1',
+              'metricName': 'US commercial crude oil inventories',
+              'value': 420000,
+              'unit': 'MBBL',
+              'frequency': 'weekly',
+              'sourceDataTime': '2026-07-03',
+              'fetchedAt': '2026-07-12T02:00:00Z',
+              'provider': 'eia',
+              'status': 'ok',
+            },
+            'fetchedAt': '2026-07-12T02:00:00Z',
+            'tradeBoundary':
+                'Macro numeric evidence is context, hypothesis, and invalidation input. It is not a direct buy/sell rule.',
+            'missingEvidence': ['No second official source attached.'],
+          },
+        }),
+      ],
+      turnStartIndex: 0,
+      failureSummary: 'test',
+    );
+
+    expect(summary, contains('EIA official series WCESTUS1'));
+    expect(summary, contains('value=420000 MBBL'));
+    expect(summary, contains('2026-07-03'));
+    expect(summary, contains('official-numeric-series'));
+    expect(summary, contains('oil'));
+    expect(summary, contains('No second official source attached'));
+    expect(summary, contains('不能直接编译成可执行交易信号'));
+  });
+
   test('uses EIA only as stock and fund macro context', () {
     final summary = FinanceMacroEvidenceSummary().build(
       messages: [
@@ -731,7 +802,10 @@ void main() {
               ToolUse(
                 id: 'attr',
                 name: 'MarketData',
-                input: {'action': 'query_macro_attribution', 'target': 'energy'},
+                input: {
+                  'action': 'query_macro_attribution',
+                  'target': 'energy',
+                },
               ),
               ToolUse(
                 id: 'sources',
