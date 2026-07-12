@@ -115,6 +115,51 @@ void main() {
   );
 
   test(
+    'FinanceWorkflowState accepts P0 workflow maturity scenario kinds',
+    () async {
+      final tool = FinanceWorkflowStateTool();
+      for (final workflowKind in [
+        'watchlist_handoff',
+        'strategy_rerun',
+        'trade_preparation',
+        'trade_review',
+      ]) {
+        final dir = Directory.systemTemp.createTempSync(
+          'finagent_finance_workflow_state_tool_p0_test_',
+        );
+        addTearDown(() {
+          if (dir.existsSync()) dir.deleteSync(recursive: true);
+        });
+        final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
+        final result = await tool.call('state-$workflowKind', {
+          'action': 'validate',
+          'workflowState': {
+            'contract': 'finance-workflow-state-v1',
+            'workflowKind': workflowKind,
+            'assetClass': 'stock',
+            'intentMode': workflowKind == 'watchlist_handoff'
+                ? 'watchlist_add'
+                : 'analysis',
+            'executionMode': workflowKind == 'watchlist_handoff'
+                ? 'watchlist'
+                : workflowKind == 'strategy_rerun'
+                    ? 'backtest'
+                    : 'none',
+            'confirmationState': 'none',
+            'safetyBoundary': 'read-only or observation-only workflow',
+            'evidenceRefs': ['data_provenance'],
+            'source': 'test',
+          },
+        }, context);
+
+        expect(result.isError, isFalse);
+        final decoded = jsonDecode(result.content) as Map<String, dynamic>;
+        expect(decoded['workflowState']['workflowKind'], workflowKind);
+      }
+    },
+  );
+
+  test(
     'FinanceWorkflowState create accepts nested workflowState requirements',
     () async {
       final dir = Directory.systemTemp.createTempSync(

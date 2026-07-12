@@ -24,6 +24,12 @@ const _workflows = <String, Map<String, dynamic>>{
     'artifactRequired': false,
     'approvalBoundary': 'no_trade',
   },
+  'watchlist_handoff': {
+    'requiredAnyTools': ['Watchlist'],
+    'artifactKinds': ['data_snapshot', 'analysis'],
+    'artifactRequired': false,
+    'approvalBoundary': 'no_trade',
+  },
   'fund_selection': {
     'requiredAnyTools': ['MarketData', 'DataStore', 'DataProcess', 'Research'],
     'artifactKinds': ['analysis', 'data_snapshot'],
@@ -34,10 +40,21 @@ const _workflows = <String, Map<String, dynamic>>{
     'artifactKinds': ['strategy', 'backtest', 'report'],
     'approvalBoundary': 'no_trade',
   },
+  'strategy_rerun': {
+    'requiredAnyTools': ['DataProcess', 'MarketData', 'ArtifactRegistry'],
+    'artifactKinds': ['strategy', 'backtest', 'report'],
+    'approvalBoundary': 'no_trade',
+  },
   'trade_preparation': {
     'requiredAnyTools': ['Portfolio', 'XueqiuTrade', 'AskUserQuestion'],
     'artifactKinds': ['trade_preparation', 'analysis'],
     'approvalBoundary': 'explicit_approval_required',
+  },
+  'trade_review': {
+    'requiredAnyTools': ['Portfolio', 'XueqiuTrade'],
+    'artifactKinds': ['analysis', 'data_snapshot'],
+    'artifactRequired': false,
+    'approvalBoundary': 'no_trade',
   },
   'macro_factor_lookup': {
     'requiredAnyTools': ['SourceReader', 'DataStore', 'Research'],
@@ -576,11 +593,19 @@ String _workflowKindForVerifierWorkflow(String workflow) {
       return 'stock_research';
     case 'stock_selection':
       return 'stock_selection';
+    case 'watchlist_handoff':
+      return 'watchlist_handoff';
     case 'fund_selection':
       return 'fund_research';
     case 'strategy_backtest':
       return 'strategy_review';
+    case 'strategy_rerun':
+      return 'strategy_rerun';
     case 'trade_preparation':
+      return 'trade_preparation';
+    case 'trade_review':
+      return 'trade_review';
+    case 'trade_prep':
       return 'trade_prep';
     case 'macro_factor_lookup':
       return 'macro_attribution';

@@ -127,6 +127,92 @@ void main() {
     },
   );
 
+  test(
+    'WorkflowVerifier accepts watchlist handoff with watchlist evidence',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      _seedSession(context, toolName: 'Watchlist');
+      _seedWorkflowState(context, workflowKind: 'watchlist_handoff');
+
+      final result =
+          jsonDecode(
+                (await WorkflowVerifierTool().call('verify-watchlist', {
+                  'action': 'check',
+                  'workflow': 'watchlist_handoff',
+                  'requireWorkflowState': true,
+                }, context)).content,
+              )
+              as Map<String, dynamic>;
+
+      expect(result['passed'], true);
+      expect(result['missing'], isEmpty);
+      expect(result['observed']['toolNames'], contains('Watchlist'));
+    },
+  );
+
+  test(
+    'WorkflowVerifier accepts strategy rerun with backtest artifact evidence',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      _seedSession(context, toolName: 'MarketData');
+      _seedWorkflowState(context, workflowKind: 'strategy_rerun');
+      ArtifactRegistry(context.basePath).register(
+        kind: ArtifactKind.backtest,
+        path: 'memory/reports/backtest.md',
+        title: 'Backtest',
+        source: 'agent-workflow',
+        verificationStatus: ArtifactVerificationStatus.verified,
+      );
+
+      final result =
+          jsonDecode(
+                (await WorkflowVerifierTool().call('verify-rerun', {
+                  'action': 'check',
+                  'workflow': 'strategy_rerun',
+                  'requireWorkflowState': true,
+                }, context)).content,
+              )
+              as Map<String, dynamic>;
+
+      expect(result['passed'], true);
+      expect(result['missing'], isEmpty);
+    },
+  );
+
+  test(
+    'WorkflowVerifier accepts trade review with simulated trading evidence',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      _seedSession(context, toolName: 'XueqiuTrade');
+      _seedWorkflowState(context, workflowKind: 'trade_review');
+
+      final result =
+          jsonDecode(
+                (await WorkflowVerifierTool().call('verify-trade-review', {
+                  'action': 'check',
+                  'workflow': 'trade_review',
+                  'requireWorkflowState': true,
+                }, context)).content,
+              )
+              as Map<String, dynamic>;
+
+      expect(result['passed'], true);
+      expect(result['missing'], isEmpty);
+    },
+  );
+
   test('WorkflowVerifier accepts matching typed workflow state', () async {
     final context = _tempContext();
     addTearDown(() {

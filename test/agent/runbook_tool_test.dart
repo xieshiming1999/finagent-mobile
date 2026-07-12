@@ -53,6 +53,45 @@ void main() {
     expect(selection['verifier'], contains('workflow:"stock_selection"'));
     expect(selection['approvalBoundary'], contains('No watchlist mutation'));
 
+    final watchlist =
+        jsonDecode(
+              (await tool.call('runbook-watchlist', {
+                'action': 'get',
+                'workflow': 'watchlist_handoff',
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+    expect(watchlist['requiredEvidence'], contains('watchlist_readback'));
+    expect(watchlist['verifier'], contains('workflow:"watchlist_handoff"'));
+
+    final rerun =
+        jsonDecode(
+              (await tool.call('runbook-rerun', {
+                'action': 'get',
+                'workflow': 'strategy_rerun',
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+    expect(rerun['requiredEvidence'], contains('saved_strategy_identity'));
+    expect(rerun['verifier'], contains('workflow:"strategy_rerun"'));
+
+    final tradeReview =
+        jsonDecode(
+              (await tool.call('runbook-trade-review', {
+                'action': 'get',
+                'workflow': 'trade_review',
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+    expect(
+      tradeReview['requiredEvidence'],
+      contains('transactions_or_missing_reason'),
+    );
+    expect(
+      tradeReview['approvalBoundary'],
+      contains('Read-only simulated-account review'),
+    );
+
     final macro =
         jsonDecode(
               (await tool.call('runbook-macro', {
