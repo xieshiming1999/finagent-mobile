@@ -216,6 +216,7 @@ class ToolCatalogTool extends Tool {
     }
     final providers = byProvider.values.map((item) => item.toJson()).toList()
       ..sort((a, b) => '${a['provider']}'.compareTo('${b['provider']}'));
+    final interfaceRows = _providerInterfaceRows();
     return {
       'contract': 'provider-module-matrix-v2',
       'runtime': 'finagent-mobile',
@@ -224,6 +225,7 @@ class ToolCatalogTool extends Tool {
       'providerCount': providers.length,
       'descriptorCount': providerModuleDescriptors.length,
       'interfaceCount': dataApiInterfaceContract.interfaces.length,
+      'interfaceRowCount': interfaceRows.length,
       'providers': providers.map((provider) {
         final descriptor = descriptorByProvider['${provider['provider']}'];
         return {
@@ -232,6 +234,7 @@ class ToolCatalogTool extends Tool {
           'descriptorStatus': descriptor == null ? 'missing' : 'registered',
         };
       }).toList(),
+      'interfaceRows': interfaceRows,
       'descriptorCoverage': {
         'requiredFamilies': [
           'EastMoney',
@@ -254,6 +257,58 @@ class ToolCatalogTool extends Tool {
       'guidance':
           'Use this matrix before broad provider calls. Supported/globalOnly capabilities are reusable only when normalizer, canonical table, readback, and runtime evidence are present. Gated/unstable/disabled/notSupported providers must not be retried as normal workflow.',
     };
+  }
+
+  List<Map<String, dynamic>> _providerInterfaceRows() {
+    final rows = <Map<String, dynamic>>[];
+    for (final definition in dataApiInterfaceContract.interfaces) {
+      for (final capability in definition.capabilities) {
+        rows.add({
+          'interfaceId': definition.id,
+          'label': definition.label,
+          'provider': capability.provider.name,
+          'capabilityId': capability.id,
+          'status': _capabilityStatusName(capability.status),
+          'canonicalSchema': definition.canonicalSchema,
+          'canonicalTable': capability.canonicalTable,
+          'queryActions': definition.queryActions,
+          'dataStoreTables': definition.dataStoreTables,
+          'normalizer': capability.normalizer,
+          'adapter': capability.adapter,
+          'upstreamOrigin': capability.upstreamOrigin,
+          'probeId': capability.probeId,
+          'priority': capability.priority,
+          'reason': capability.reason,
+        });
+      }
+    }
+    rows.sort((a, b) {
+      final left = '${a['interfaceId']}:${a['provider']}:${a['capabilityId']}';
+      final right = '${b['interfaceId']}:${b['provider']}:${b['capabilityId']}';
+      return left.compareTo(right);
+    });
+    return rows;
+  }
+
+  String _capabilityStatusName(DataApiCapabilityStatus status) {
+    switch (status) {
+      case DataApiCapabilityStatus.supported:
+        return 'supported';
+      case DataApiCapabilityStatus.disabled:
+        return 'disabled';
+      case DataApiCapabilityStatus.credentialGated:
+        return 'credential-gated';
+      case DataApiCapabilityStatus.quotaGated:
+        return 'quota-gated';
+      case DataApiCapabilityStatus.transportUnstable:
+        return 'transport-unstable';
+      case DataApiCapabilityStatus.notSupported:
+        return 'not-supported';
+      case DataApiCapabilityStatus.outputOnly:
+        return 'output-only';
+      case DataApiCapabilityStatus.globalOnly:
+        return 'global-only';
+    }
   }
 
   List<Map<String, dynamic>> _moduleDescriptors(

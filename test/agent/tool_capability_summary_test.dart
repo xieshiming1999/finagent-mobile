@@ -244,6 +244,12 @@ void main() {
     expect(providers.content, contains('"provider":"macro-official"'));
     expect(providers.content, contains('"provider":"macro-research"'));
     expect(providers.content, contains('"descriptorStatus":"registered"'));
+    expect(providers.content, contains('"interfaceRowCount"'));
+    expect(providers.content, contains('"interfaceRows"'));
+    expect(providers.content, contains('"interfaceId":"stock.quote"'));
+    expect(providers.content, contains('"provider":"eastmoneyDirect"'));
+    expect(providers.content, contains('"status":"supported"'));
+    expect(providers.content, contains('"canonicalSchema"'));
     expect(
       providers.content,
       contains('"category":"macro-official-api-provider"'),
