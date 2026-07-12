@@ -33,6 +33,7 @@ const _workflows = <String, Map<String, dynamic>>{
   'fund_selection': {
     'requiredAnyTools': ['MarketData', 'DataStore', 'DataProcess', 'Research'],
     'artifactKinds': ['analysis', 'data_snapshot'],
+    'artifactRequired': false,
     'approvalBoundary': 'no_trade',
   },
   'strategy_backtest': {
@@ -218,6 +219,7 @@ Map<String, dynamic> _checkWorkflow(
     required: requireWorkflowState || workflowStateId != null,
   );
   final providerHealthEvidence = _providerHealthEvidence(providerHealth);
+  final workflowSpecificEvidence = _workflowSpecificEvidence(workflow, session);
   final requiredAnyTools = _stringList(spec['requiredAnyTools']);
   final toolNames = (session['toolNames'] as List).whereType<String>().toSet();
   final usedRequiredTool = requiredAnyTools.any(toolNames.contains);
@@ -279,6 +281,8 @@ Map<String, dynamic> _checkWorkflow(
       providerHealthEvidence['reason'] as String? ??
           'Provider health contains blocking evidence.',
     ),
+    ...((workflowSpecificEvidence['checks'] as List)
+        .whereType<Map<String, dynamic>>()),
   ];
   final missing = checks
       .where((check) => check['passed'] != true)
@@ -296,6 +300,7 @@ Map<String, dynamic> _checkWorkflow(
       'artifact': artifactEvidence['artifact'],
       'workflowState': workflowStateEvidence['record'],
       'providerHealth': providerHealthEvidence['observed'],
+      'workflowSpecific': workflowSpecificEvidence['observed'],
     },
     'nextAction': missing.isEmpty
         ? 'Final answer may cite the verified workflow evidence.'
@@ -309,6 +314,8 @@ Map<String, dynamic> _readSession(ToolContext context, int limit) {
     return {'toolCallCount': 0, 'toolErrorCount': 0, 'toolNames': <String>[]};
   }
   final toolNames = <String>{};
+  final pendingCalls = <String, Map<String, dynamic>>{};
+  final calls = <Map<String, dynamic>>[];
   var toolCallCount = 0;
   var toolErrorCount = 0;
   for (final line in file.readAsLinesSync().take(limit)) {
@@ -321,12 +328,35 @@ Map<String, dynamic> _readSession(ToolContext context, int limit) {
       if (toolUses is List) {
         toolCallCount += toolUses.length;
         for (final item in toolUses) {
-          if (item is Map && item['name'] is String)
-            toolNames.add(item['name']);
+          if (item is Map && item['name'] is String) {
+            final name = item['name'] as String;
+            toolNames.add(name);
+            final input = item['input'];
+            final evidence = <String, dynamic>{
+              'name': name,
+              'input': input is Map
+                  ? Map<String, dynamic>.from(input)
+                  : <String, dynamic>{},
+            };
+            final id = item['id'];
+            if (id is String && id.isNotEmpty) pendingCalls[id] = evidence;
+            calls.add(evidence);
+          }
         }
       }
       final result = decoded['toolResult'] ?? decoded['tool_result'];
-      if (result is Map && result['isError'] == true) toolErrorCount++;
+      if (result is Map) {
+        final isError = result['isError'] == true;
+        if (isError) toolErrorCount++;
+        final toolUseId = result['toolUseId'];
+        final evidence = toolUseId is String ? pendingCalls[toolUseId] : null;
+        if (evidence != null) {
+          evidence['result'] = result['content'] is String
+              ? result['content'] as String
+              : jsonEncode(result['content'] ?? '');
+          evidence['isError'] = isError;
+        }
+      }
     } catch (_) {
       continue;
     }
@@ -335,6 +365,101 @@ Map<String, dynamic> _readSession(ToolContext context, int limit) {
     'toolCallCount': toolCallCount,
     'toolErrorCount': toolErrorCount,
     'toolNames': toolNames.toList(),
+    'calls': calls,
+  };
+}
+
+Map<String, dynamic> _workflowSpecificEvidence(
+  String workflow,
+  Map<String, dynamic> session,
+) {
+  if (workflow == 'fund_selection') return _fundSelectionEvidence(session);
+  return {'checks': <Map<String, dynamic>>[], 'observed': <String, dynamic>{}};
+}
+
+Map<String, dynamic> _fundSelectionEvidence(Map<String, dynamic> session) {
+  final fundList = _successfulAction(session, 'query_fund_list');
+  final performance = _successfulAction(session, 'query_fund_performance');
+  final navOrYield = _successfulAction(session, 'query_fund_nav') ??
+      _successfulAction(session, 'query_fund_money_yield');
+  final holding = _successfulAction(session, 'query_fund_holding');
+  final calls = (session['calls'] as List).whereType<Map<String, dynamic>>();
+  final macroOrNewsCalls = calls.where((call) {
+    final input = call['input'];
+    final action = input is Map ? '${input['action'] ?? ''}' : '';
+    return action.startsWith('query_macro') || action == 'query_finance_news';
+  }).length;
+  return {
+    'checks': [
+      _check(
+        'fund_identity_evidence',
+        fundList != null,
+        'Fund identity/category readback is visible.',
+        'Fund selection needs query_fund_list evidence before finalizing.',
+      ),
+      _check(
+        'fund_return_evidence',
+        performance != null || navOrYield != null,
+        'Fund return evidence is visible.',
+        'Fund selection needs query_fund_performance or NAV/money-yield readback before finalizing.',
+      ),
+      _check(
+        'fund_nav_or_yield_evidence',
+        navOrYield != null,
+        'Fund NAV or money-yield evidence is visible.',
+        'Fund selection needs ordinary NAV or money-fund yield evidence before finalizing.',
+      ),
+      _check(
+        'fund_holding_or_missing_reason',
+        holding != null || navOrYield != null,
+        'Fund holding evidence is visible or NAV/yield evidence is enough for a bounded first pass.',
+        'Fund selection needs holding evidence or an explicit missing-holding reason before finalizing.',
+      ),
+      _check(
+        'fund_primary_evidence_not_macro_only',
+        fundList != null &&
+            navOrYield != null &&
+            macroOrNewsCalls < (session['toolCallCount'] as int),
+        'Fund evidence is primary; macro/news evidence may be secondary context.',
+        'Fund selection cannot finalize as a macro/news-only answer. Use fund identity, NAV/yield, performance, risk, data time, fetched-at, provider/cache, and keep macro/news as secondary context.',
+      ),
+    ],
+    'observed': {
+      'fundList': _summarizeCall(fundList),
+      'performance': _summarizeCall(performance),
+      'navOrYield': _summarizeCall(navOrYield),
+      'holding': _summarizeCall(holding),
+      'macroOrNewsCalls': macroOrNewsCalls,
+    },
+  };
+}
+
+Map<String, dynamic>? _successfulAction(
+  Map<String, dynamic> session,
+  String action,
+) {
+  final calls = (session['calls'] as List).whereType<Map<String, dynamic>>();
+  for (final call in calls) {
+    if (call['isError'] == true) continue;
+    final input = call['input'];
+    if (input is! Map || '${input['action'] ?? ''}' != action) continue;
+    final result = '${call['result'] ?? ''}';
+    if (result.startsWith('Skipped:')) continue;
+    return call;
+  }
+  return null;
+}
+
+Map<String, dynamic>? _summarizeCall(Map<String, dynamic>? call) {
+  if (call == null) return null;
+  final input = call['input'];
+  final args = input is Map ? input : const <String, dynamic>{};
+  final result = '${call['result'] ?? ''}';
+  return {
+    'tool': call['name'],
+    'action': args['action'],
+    'code': args['code'] ?? args['fundCode'] ?? args['symbol'],
+    'resultPreview': result.length > 220 ? result.substring(0, 220) : result,
   };
 }
 

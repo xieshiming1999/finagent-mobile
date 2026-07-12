@@ -154,6 +154,7 @@ const _runbooks = <String, Map<String, dynamic>>{
       'risk',
     ],
     'allowedTools': [
+      'DataStore',
       'MarketData',
       'DataProcess',
       'Research',
@@ -161,11 +162,25 @@ const _runbooks = <String, Map<String, dynamic>>{
       'CapabilityStatus',
     ],
     'artifactTypes': ['analysis', 'data_evidence'],
+    'outputRequirements': [
+      'The final answer must list fund observation candidates, not just macro context.',
+      'For each candidate, include fund code/name, fund type/category, return or NAV/yield evidence, main risk, source time, fetched-at, provider/cache state, and missing evidence.',
+      'Macro/news evidence is secondary context or invalidation condition only; it must not replace fund identity, NAV/yield, performance, or risk evidence.',
+      'State observation-only boundary and do not give subscribe/redeem/trade instructions.',
+    ],
     'approvalBoundary':
         'No purchase instruction or simulated trade without explicit trade-preparation workflow.',
     'failureHandling': [
       'Do not use ordinary NAV for known money funds.',
       'Separate selection evidence from buy advice.',
+      'If WorkflowVerifier(fund_selection) reports missing fund evidence, collect the named fund readback before finalizing.',
+      'If macro/news readbacks are present, keep them in a short secondary context section after the fund candidates.',
+    ],
+    'firstPassPlan': [
+      'Read query_fund_list for fund identity/type and query_fund_performance when available.',
+      'Read query_fund_nav for ordinary funds or query_fund_money_yield for money funds; read holdings only when needed or disclose missing-holding coverage.',
+      'Run WorkflowVerifier(action:"check", workflow:"fund_selection") and follow its missing-evidence guidance.',
+      'Finalize as a fund shortlist with provenance, risk, and observation boundary.',
     ],
     'verifier':
         'WorkflowVerifier(action:"check", workflow:"fund_selection") when available; otherwise CapabilityStatus(action:"evaluate").',

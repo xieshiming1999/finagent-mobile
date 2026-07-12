@@ -95,6 +95,72 @@ void main() {
     },
   );
 
+  test('WorkflowVerifier requires fund-specific readback evidence', () async {
+    final context = _tempContext();
+    addTearDown(() {
+      final dir = Directory(context.basePath);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+    _seedSessionCalls(context, [
+      {
+        'id': 'tool-1',
+        'name': 'MarketData',
+        'input': {'action': 'query_macro_factors', 'target': 'bond funds'},
+        'result': '{"status":"ok"}',
+      },
+    ]);
+
+    final missingResult =
+        jsonDecode(
+              (await WorkflowVerifierTool().call('verify-fund-missing', {
+                'action': 'check',
+                'workflow': 'fund_selection',
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+
+    expect(missingResult['passed'], false);
+    expect(missingResult['missing'], contains('fund_identity_evidence'));
+    expect(missingResult['missing'], contains('fund_nav_or_yield_evidence'));
+
+    _seedSessionCalls(context, [
+      {
+        'id': 'tool-1',
+        'name': 'MarketData',
+        'input': {'action': 'query_fund_list', 'limit': 20},
+        'result': 'fund_list | interface:fund.identity_list',
+      },
+      {
+        'id': 'tool-2',
+        'name': 'MarketData',
+        'input': {'action': 'query_fund_nav', 'code': '000083'},
+        'result': '000083 fund NAV | interface:fund.nav_history',
+      },
+      {
+        'id': 'tool-3',
+        'name': 'MarketData',
+        'input': {'action': 'query_macro_factors', 'target': 'bond funds'},
+        'result': '{"status":"ok"}',
+      },
+    ]);
+
+    final passedResult =
+        jsonDecode(
+              (await WorkflowVerifierTool().call('verify-fund-pass', {
+                'action': 'check',
+                'workflow': 'fund_selection',
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+
+    expect(passedResult['passed'], true);
+    expect(passedResult['missing'], isEmpty);
+    expect(
+      passedResult['observed']['workflowSpecific']['navOrYield']['action'],
+      'query_fund_nav',
+    );
+  });
+
   test(
     'WorkflowVerifier rejects stock selection with stock research state',
     () async {
@@ -338,6 +404,20 @@ ToolContext _tempContext() {
 }
 
 void _seedSession(ToolContext context, {required String toolName}) {
+  _seedSessionCalls(context, [
+    {
+      'id': 'tool-1',
+      'name': toolName,
+      'input': <String, dynamic>{},
+      'result': '{}',
+    },
+  ]);
+}
+
+void _seedSessionCalls(
+  ToolContext context,
+  List<Map<String, dynamic>> calls,
+) {
   final dir = Directory('${context.basePath}/sessions')
     ..createSync(recursive: true);
   final file = File('${dir.path}/current.jsonl');
@@ -346,19 +426,26 @@ void _seedSession(ToolContext context, {required String toolName}) {
       jsonEncode({
         'type': 'message',
         'role': 'assistant',
-        'toolUses': [
-          {'id': 'tool-1', 'name': toolName, 'input': {}},
-        ],
+        'toolUses': calls
+            .map(
+              (call) => {
+                'id': call['id'],
+                'name': call['name'],
+                'input': call['input'] ?? <String, dynamic>{},
+              },
+            )
+            .toList(),
       }),
-      jsonEncode({
-        'type': 'message',
-        'role': 'tool',
-        'toolResult': {
-          'toolUseId': 'tool-1',
-          'content': '{}',
-          'isError': false,
-        },
-      }),
+      for (final call in calls)
+        jsonEncode({
+          'type': 'message',
+          'role': 'tool',
+          'toolResult': {
+            'toolUseId': call['id'],
+            'content': call['result'] ?? '{}',
+            'isError': call['isError'] == true,
+          },
+        }),
     ].join('\n'),
   );
 }

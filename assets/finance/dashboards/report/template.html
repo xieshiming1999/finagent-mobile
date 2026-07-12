@@ -97,6 +97,31 @@ function renderEvidenceList(items) {
   return html;
 }
 
+function renderVisibleError(message, detail) {
+  return '<div class="text-block" style="border-color:var(--red);color:var(--text-bright);">' +
+    '<strong>Report render error</strong><br>' +
+    escapeHtml(message || 'Unknown render error') +
+    (detail ? '<br><span style="color:var(--text-dim);">' + escapeHtml(detail) + '</span>' : '') +
+    '</div>';
+}
+
+function normalizeTableCells(row, headers) {
+  if (Array.isArray(row)) return row;
+  if (!row || typeof row !== 'object') return [row];
+  if (headers && headers.length) return headers.map(function(header) { return row[header]; });
+  return Object.keys(row).map(function(key) { return row[key]; });
+}
+
+function renderErrorFallback(error) {
+  var c = document.getElementById('content');
+  if (!c) return;
+  var title = nonEmpty(CONFIG.title) ? CONFIG.title : document.title;
+  c.innerHTML = '<div class="report-header"><div class="report-title">' +
+    escapeHtml(title || 'Report') +
+    '</div></div>' +
+    renderVisibleError(error && error.message, error && error.stack);
+}
+
 function normalizeArray(value) {
   if (Array.isArray(value)) return value;
   if (value === undefined || value === null || value === '') return [];
@@ -257,7 +282,9 @@ function render() {
         html += '</tr></thead><tbody>';
         (s.rows || []).forEach(function(row) {
           html += '<tr>';
-          row.forEach(function(cell) { html += '<td>' + cell + '</td>'; });
+          normalizeTableCells(row, s.headers || []).forEach(function(cell) {
+            html += '<td>' + escapeHtml(cell) + '</td>';
+          });
           html += '</tr>';
         });
         html += '</tbody></table>';
@@ -290,7 +317,12 @@ function render() {
   c.innerHTML = html;
 }
 
-render();
+try {
+  render();
+} catch (error) {
+  renderErrorFallback(error);
+  throw error;
+}
 </script>
 </body>
 </html>
