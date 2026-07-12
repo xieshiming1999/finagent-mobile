@@ -191,6 +191,7 @@ class ArtifactRegistryTool extends Tool {
       path = _writeManagedArtifact(context, kind, input, title, source);
       managedArtifact = true;
     }
+    final normalized = _normalizeArtifactEvidence(kind, input);
     final record = registry.register(
       kind: kind,
       path: path,
@@ -201,10 +202,10 @@ class ArtifactRegistryTool extends Tool {
       verificationStatus: ArtifactVerificationStatusWire.parse(
         input['verificationStatus'] as String?,
       ),
-      freshness: _mapValue(input['freshness']),
-      provenance: _mapValue(input['provenance']),
+      freshness: normalized.freshness,
+      provenance: normalized.provenance,
       links: _stringList(input['links']),
-      metadata: _mapValue(input['metadata']),
+      metadata: normalized.metadata,
     );
     return ToolResult(
       toolUseId: toolUseId,
@@ -226,6 +227,7 @@ class ArtifactRegistryTool extends Tool {
     final freshness = _mapValue(input['freshness']);
     final provenance = _mapValue(input['provenance']);
     final metadata = _mapValue(input['metadata']);
+    final normalized = _normalizeArtifactEvidence(kind, input);
     final digest = sha256
         .convert(
           utf8.encode(
@@ -251,18 +253,123 @@ class ArtifactRegistryTool extends Tool {
     file.parent.createSync(recursive: true);
     file.writeAsStringSync(
       '${jsonEncode({
-            'contract': 'managed-artifact-v1',
-            'kind': kind.wireName,
-            'title': title,
-            'source': source,
-            'createdAt': DateTime.now().toUtc().toIso8601String(),
-            'freshness': freshness,
-            'provenance': provenance.isEmpty ? {'source': source} : provenance,
-            'links': _stringList(input['links']),
-            'metadata': metadata,
-          })}\n',
+        'contract': 'managed-artifact-v1',
+        'kind': kind.wireName,
+        'title': title,
+        'source': source,
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'freshness': normalized.freshness,
+        'macroEvidenceSummary': normalized.macroEvidenceSummary,
+        'provenance': normalized.provenance.isEmpty ? {'source': source} : normalized.provenance,
+        'links': _stringList(input['links']),
+        'metadata': normalized.metadata.isEmpty ? metadata : normalized.metadata,
+      })}\n',
     );
     return relativePath;
+  }
+
+  _NormalizedArtifactEvidence _normalizeArtifactEvidence(
+    ArtifactKind kind,
+    Map<String, dynamic> input,
+  ) {
+    final freshness = _mapValue(input['freshness']);
+    final provenance = _mapValue(input['provenance']);
+    final metadata = _mapValue(input['metadata']);
+    final summary = _macroEvidenceSummary(kind, {
+      ...input,
+      ...metadata,
+      ...provenance,
+      ...freshness,
+    });
+    if (summary == null) {
+      return _NormalizedArtifactEvidence(
+        freshness: freshness,
+        provenance: provenance,
+        metadata: metadata,
+      );
+    }
+    final sourceTime = _optionalString(summary['sourceTime']);
+    final fetchedAt = _optionalString(summary['fetchedAt']);
+    final freshnessStatus = _optionalString(summary['freshnessStatus']);
+    return _NormalizedArtifactEvidence(
+      freshness: {
+        ...freshness,
+        if (sourceTime != null) 'sourceTime': sourceTime,
+        if (fetchedAt != null) 'fetchedAt': fetchedAt,
+        if (freshnessStatus != null) 'status': freshnessStatus,
+      },
+      provenance: {
+        ...provenance,
+        'macroEvidenceSummary': summary,
+        if (summary['failureClass'] != null)
+          'failureClass': summary['failureClass'],
+        if (summary['sourceTime'] != null)
+          'sourceDataTime': summary['sourceTime'],
+        if (summary['fetchedAt'] != null) 'fetchedAt': summary['fetchedAt'],
+      },
+      metadata: {...metadata, 'macroEvidenceSummary': summary},
+      macroEvidenceSummary: summary,
+    );
+  }
+
+  Map<String, dynamic>? _macroEvidenceSummary(
+    ArtifactKind kind,
+    Map<String, dynamic> row,
+  ) {
+    final direct = _optionalMap(row['macroEvidenceSummary']);
+    if (direct != null) return direct;
+    final macroEvidence =
+        _optionalMap(row['macroEvidence']) ?? _optionalMap(row['macro']);
+    final source = macroEvidence ?? row;
+    final affectedAssets = _stringList(
+      source['affectedAssets'] ?? source['affected_assets'],
+    );
+    final missingEvidence = _stringList(
+      source['missingEvidence'] ?? source['missing_evidence'],
+    );
+    final confidenceEffect = _optionalString(
+      source['confidenceEffect'] ?? source['confidence_effect'],
+    );
+    final sourceTime = _optionalString(
+      source['sourceDataTime'] ?? source['source_time'] ?? source['sourceTime'],
+    );
+    final fetchedAt = _optionalString(
+      source['fetchedAt'] ?? source['fetched_at'],
+    );
+    final failureClass = _optionalString(
+      source['failureClass'] ?? source['failure_class'],
+    );
+    final freshnessStatus = _optionalString(
+      source['freshnessStatus'] ?? source['status'],
+    );
+    final topic = _optionalString(
+      source['topic'] ?? source['family'] ?? source['target'],
+    );
+    final hasMacroFields =
+        affectedAssets.isNotEmpty ||
+        missingEvidence.isNotEmpty ||
+        confidenceEffect != null ||
+        sourceTime != null ||
+        fetchedAt != null ||
+        failureClass != null ||
+        topic != null;
+    final macroKind =
+        kind == ArtifactKind.macroEvidence ||
+        kind == ArtifactKind.report ||
+        kind == ArtifactKind.dashboard ||
+        kind == ArtifactKind.analysis;
+    if (!macroKind || !hasMacroFields) return null;
+    return {
+      'contract': 'macro-artifact-evidence-summary-v1',
+      'topic': topic,
+      'sourceTime': sourceTime,
+      'fetchedAt': fetchedAt,
+      'freshnessStatus': freshnessStatus ?? 'unknown',
+      'confidenceEffect': confidenceEffect,
+      'affectedAssets': affectedAssets,
+      'missingEvidence': missingEvidence,
+      'failureClass': failureClass,
+    };
   }
 
   Map<String, dynamic> _graph(
@@ -347,6 +454,17 @@ Map<String, dynamic> _mapValue(Object? value) {
   return const {};
 }
 
+Map<String, dynamic>? _optionalMap(Object? value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) return Map<String, dynamic>.from(value);
+  return null;
+}
+
+String? _optionalString(Object? value) {
+  final text = '${value ?? ''}'.trim();
+  return text.isEmpty ? null : text;
+}
+
 List<String> _stringList(Object? value) {
   if (value is! List) return const [];
   return value.whereType<String>().toList();
@@ -359,4 +477,18 @@ int _intValue(Object? value, {required int defaultValue}) {
 
 extension on String {
   String? get ifEmptyNull => isEmpty ? null : this;
+}
+
+class _NormalizedArtifactEvidence {
+  final Map<String, dynamic> freshness;
+  final Map<String, dynamic> provenance;
+  final Map<String, dynamic> metadata;
+  final Map<String, dynamic>? macroEvidenceSummary;
+
+  const _NormalizedArtifactEvidence({
+    required this.freshness,
+    required this.provenance,
+    required this.metadata,
+    this.macroEvidenceSummary,
+  });
 }

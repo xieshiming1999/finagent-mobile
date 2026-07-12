@@ -86,25 +86,25 @@ void main() {
     },
   );
 
-  test('ArtifactRegistry rejects register input without title/source', () async {
-    final context = _tempContext();
-    addTearDown(() {
-      final dir = Directory(context.basePath);
-      if (dir.existsSync()) dir.deleteSync(recursive: true);
-    });
+  test(
+    'ArtifactRegistry rejects register input without title/source',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
 
-    final result = await ArtifactRegistryTool().call('artifact-4', {
-      'action': 'register',
-      'kind': 'analysis',
-      'title': 'Stock analysis',
-    }, context);
+      final result = await ArtifactRegistryTool().call('artifact-4', {
+        'action': 'register',
+        'kind': 'analysis',
+        'title': 'Stock analysis',
+      }, context);
 
-    expect(result.isError, true);
-    expect(
-      result.content,
-      contains('requires non-empty title and source'),
-    );
-  });
+      expect(result.isError, true);
+      expect(result.content, contains('requires non-empty title and source'));
+    },
+  );
 
   test('ArtifactRegistry creates managed artifact file without path', () async {
     final context = _tempContext();
@@ -133,10 +133,85 @@ void main() {
     expect(decoded['managedArtifact'], true);
     expect(
       artifact['path'],
-      matches(RegExp(r'^memory[/\\]artifacts[/\\]macro_evidence[/\\].+\.json$')),
+      matches(
+        RegExp(r'^memory[/\\]artifacts[/\\]macro_evidence[/\\].+\.json$'),
+      ),
     );
     expect(File('${context.basePath}/${artifact['path']}').existsSync(), true);
   });
+
+  test(
+    'ArtifactRegistry normalizes macro evidence into report artifacts',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+
+      final decoded =
+          jsonDecode(
+                (await ArtifactRegistryTool().call('artifact-macro-report', {
+                  'action': 'register',
+                  'kind': 'report',
+                  'title': 'Macro factor report',
+                  'source': 'macro workflow',
+                  'metadata': {
+                    'topic': 'energy',
+                    'affectedAssets': ['oil', 'energy equities'],
+                    'missingEvidence': ['second official source'],
+                    'confidenceEffect':
+                        'raises confidence for energy-sensitive watch conditions',
+                    'sourceDataTime': '2026-07-03',
+                    'fetchedAt': '2026-07-12T04:00:00Z',
+                    'freshnessStatus': 'stale',
+                    'failureClass': 'credential-or-quota-required',
+                  },
+                }, context)).content,
+              )
+              as Map<String, dynamic>;
+      final artifact = decoded['artifact'] as Map<String, dynamic>;
+      final summary =
+          (artifact['metadata'] as Map<String, dynamic>)['macroEvidenceSummary']
+              as Map<String, dynamic>;
+
+      expect(summary['contract'], 'macro-artifact-evidence-summary-v1');
+      expect(summary['topic'], 'energy');
+      expect(summary['sourceTime'], '2026-07-03');
+      expect(summary['fetchedAt'], '2026-07-12T04:00:00Z');
+      expect(summary['freshnessStatus'], 'stale');
+      expect(
+        summary['confidenceEffect'],
+        'raises confidence for energy-sensitive watch conditions',
+      );
+      expect(summary['affectedAssets'], ['oil', 'energy equities']);
+      expect(summary['missingEvidence'], ['second official source']);
+      expect(summary['failureClass'], 'credential-or-quota-required');
+
+      expect(
+        (artifact['provenance'] as Map<String, dynamic>)['failureClass'],
+        'credential-or-quota-required',
+      );
+      expect(
+        (artifact['provenance']
+            as Map<String, dynamic>)['macroEvidenceSummary'],
+        summary,
+      );
+      expect(artifact['freshness'], {
+        'sourceTime': '2026-07-03',
+        'fetchedAt': '2026-07-12T04:00:00Z',
+        'status': 'stale',
+      });
+      final stored =
+          jsonDecode(
+                File(
+                  '${context.basePath}/${artifact['path']}',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      expect(stored['macroEvidenceSummary'], summary);
+    },
+  );
 }
 
 ToolContext _tempContext() {
