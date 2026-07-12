@@ -237,10 +237,18 @@ void main() {
     expect(providers.isError, isFalse);
     expect(
       providers.content,
-      contains('"contract":"provider-module-matrix-v1"'),
+      contains('"contract":"provider-module-matrix-v2"'),
     );
     expect(providers.content, contains('"runtime":"finagent-mobile"'));
     expect(providers.content, contains('"provider":"eastmoneyDirect"'));
+    expect(providers.content, contains('"provider":"macro-official"'));
+    expect(providers.content, contains('"provider":"macro-research"'));
+    expect(providers.content, contains('"descriptorStatus":"registered"'));
+    expect(
+      providers.content,
+      contains('"category":"macro-official-api-provider"'),
+    );
+    expect(providers.content, contains('"category":"ui-artifact-provider"'));
     expect(providers.content, contains('"statusCounts"'));
   });
 

@@ -4,6 +4,7 @@ import '../../../domain/market/providers/data_api_interface_contract.dart';
 import '../../message.dart';
 import '../../tool.dart';
 import '../../tool_context.dart';
+import 'provider_module_descriptors.dart';
 
 class ToolCatalogTool extends Tool {
   final List<Tool> Function() toolsProvider;
@@ -203,16 +204,53 @@ class ToolCatalogTool extends Tool {
             .add(definition, capability);
       }
     }
+    final descriptorByProvider = {
+      for (final descriptor in providerModuleDescriptors)
+        descriptor.provider: descriptor,
+    };
+    for (final descriptor in providerModuleDescriptors) {
+      byProvider.putIfAbsent(
+        descriptor.provider,
+        () => _ProviderModuleAccumulator(descriptor.provider),
+      );
+    }
     final providers = byProvider.values.map((item) => item.toJson()).toList()
       ..sort((a, b) => '${a['provider']}'.compareTo('${b['provider']}'));
     return {
-      'contract': 'provider-module-matrix-v1',
+      'contract': 'provider-module-matrix-v2',
       'runtime': 'finagent-mobile',
-      'source': 'dataApiInterfaceContract',
+      'sources': ['dataApiInterfaceContract', providerModuleDescriptorVersion],
       'version': dataApiInterfaceContractVersion,
       'providerCount': providers.length,
+      'descriptorCount': providerModuleDescriptors.length,
       'interfaceCount': dataApiInterfaceContract.interfaces.length,
-      'providers': providers,
+      'providers': providers.map((provider) {
+        final descriptor = descriptorByProvider['${provider['provider']}'];
+        return {
+          ...provider,
+          if (descriptor != null) 'descriptor': descriptor.toJson(),
+          'descriptorStatus': descriptor == null ? 'missing' : 'registered',
+        };
+      }).toList(),
+      'descriptorCoverage': {
+        'requiredFamilies': [
+          'EastMoney',
+          'TDX',
+          'Yahoo/yfinance',
+          'Wind',
+          'Tushare',
+          'Sina',
+          'Tencent',
+          'AkShare',
+          'official macro APIs',
+          'search/research',
+          'Xueqiu',
+          'UI artifacts',
+        ],
+        'coveredProviders': providerModuleDescriptors
+            .map((descriptor) => descriptor.provider)
+            .toList(),
+      },
       'guidance':
           'Use this matrix before broad provider calls. Supported/globalOnly capabilities are reusable only when normalizer, canonical table, readback, and runtime evidence are present. Gated/unstable/disabled/notSupported providers must not be retried as normal workflow.',
     };
