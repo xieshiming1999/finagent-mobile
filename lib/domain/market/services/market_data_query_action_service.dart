@@ -482,20 +482,24 @@ class MarketDataQueryActionService {
             .map(_numericSeriesRow)
             .toList() ??
         const <Map<String, dynamic>>[];
+    final gap = rows.isEmpty ? _macroNumericReadbackGap(input) : null;
     return {
       'action': 'query_macro_numeric_series',
       'count': rows.length,
       'status': rows.isEmpty ? 'missing' : 'ok',
       if (rows.isEmpty)
         'missingReason':
+            gap?['reason'] ??
             'No official numeric macro series rows matched the requested filters. Run the macro factor refresh for configured providers or inspect macro_research_sources for credential/access limits.',
+      'failureClass': gap?['failureClass'],
+      'missingEvidence': gap == null ? const [] : [gap],
       'provenance': {
         'interfaceId': 'macro.official_series',
         'providerId': 'local',
         'provider': 'local',
         'capabilityId': 'local.query_macro_numeric_series',
         'providerMode': 'official-series-readback',
-        'cacheStatus': 'local-readback',
+        'cacheStatus': rows.isEmpty ? 'local-miss' : 'local-readback',
         'cacheDecision':
             'read official numeric macro series separately from research narratives and policy/index events',
         'canonicalSchema': 'market_moving_factor_v1',
@@ -566,6 +570,10 @@ class MarketDataQueryActionService {
     final raw = row['raw_json'] is Map
         ? Map<String, dynamic>.from(row['raw_json'] as Map)
         : <String, dynamic>{};
+    final frequency =
+        '${raw['Frequency'] ?? raw['frequency'] ?? row['frequency'] ?? ''}';
+    final sourceDataTime =
+        values['period'] ?? row['source_published_at'] ?? row['event_at'];
     return {
       'seriesId': _seriesIdForRow(row, values, retrieval, raw),
       'metricName':
@@ -574,13 +582,16 @@ class MarketDataQueryActionService {
       'sourceName': row['source_name'],
       'value': values['actual'] ?? values['text'],
       'unit': values['unit'] ?? raw['CL_UNIT'] ?? raw['unit'],
-      'frequency': raw['Frequency'] ?? raw['frequency'],
-      'sourceDataTime':
-          values['period'] ?? row['source_published_at'] ?? row['event_at'],
+      'frequency': frequency.isEmpty ? null : frequency,
+      'sourceDataTime': sourceDataTime,
       'releaseDate': row['source_published_at'] ?? row['event_at'],
       'fetchedAt': row['fetched_at'] ?? values['retrievedAt'],
       'status': row['status'],
       'failureClass': row['failure_class'],
+      'freshnessStatus': _macroNumericFreshnessStatus(
+        sourceDataTime,
+        frequency,
+      ),
       'sourceUrl': row['source_url'],
       'family': row['family'],
       'provenance': {
@@ -593,6 +604,93 @@ class MarketDataQueryActionService {
         'retrievalStatus': retrieval['status'],
       },
     };
+  }
+
+  Map<String, dynamic> _macroNumericReadbackGap(Map<String, dynamic> input) {
+    final provider = _clean(input['provider'] ?? input['source']);
+    final seriesId = _clean(
+      input['seriesId'] ?? input['target'] ?? input['metric'] ?? input['query'],
+    );
+    final catalogRows = macroNumericSeriesCatalogRows
+        .where((row) {
+          if (provider != null &&
+              !_matchesValue(row['provider'], provider) &&
+              !_matchesValue(row['sourceName'], provider)) {
+            return false;
+          }
+          if (seriesId != null &&
+              !_matchesValue(row['seriesId'], seriesId) &&
+              !_matchesValue(row['metricName'], seriesId)) {
+            return false;
+          }
+          return true;
+        })
+        .toList(growable: false);
+    final row = catalogRows.isEmpty ? null : catalogRows.first;
+    if (row == null) {
+      return {
+        'failureClass': 'catalog-gap',
+        'reason':
+            'No official numeric macro series catalog row matched the requested provider/series filters.',
+        'nextAction':
+            'Inspect macro_numeric_series_catalog or add a governed official-series descriptor before relying on this macro number.',
+      };
+    }
+    if (row['status'] == 'security-control') {
+      return {
+        'failureClass': 'source-access-controlled',
+        'provider': row['provider'],
+        'seriesId': row['seriesId'],
+        'reason':
+            '${row['sourceName']} ${row['seriesId']} is known but access-controlled or browser/manual-source only.',
+        'nextAction': row['nextAction'],
+        'credentialKey': row['credentialKey'],
+      };
+    }
+    if (row['credentialRequired'] == true) {
+      return {
+        'failureClass': 'credential-or-quota-required',
+        'provider': row['provider'],
+        'seriesId': row['seriesId'],
+        'reason':
+            '${row['sourceName']} ${row['seriesId']} has no local official numeric readback row and requires ${row['credentialKey'] ?? 'provider credential'} for live refresh.',
+        'nextAction': row['nextAction'],
+        'credentialKey': row['credentialKey'],
+      };
+    }
+    return {
+      'failureClass': 'missing-local-readback',
+      'provider': row['provider'],
+      'seriesId': row['seriesId'],
+      'reason':
+          '${row['sourceName']} ${row['seriesId']} is supported, but no governed local numeric row matched the filters.',
+      'nextAction': row['nextAction'],
+    };
+  }
+
+  bool _matchesValue(Object? value, String needle) =>
+      '${value ?? ''}'.toLowerCase().contains(needle.toLowerCase());
+
+  String _macroNumericFreshnessStatus(Object? value, String frequency) {
+    final text = _clean(value);
+    if (text == null) return 'unknown';
+    final date = DateTime.tryParse(text);
+    if (date == null) return 'unknown';
+    final ageDays =
+        DateTime.now().toUtc().difference(date.toUtc()).inHours / 24;
+    final freq = frequency.toLowerCase();
+    final staleAfterDays = freq.contains('daily')
+        ? 7
+        : freq.contains('weekly')
+        ? 21
+        : freq.contains('monthly')
+        ? 70
+        : freq.contains('quarter')
+        ? 150
+        : freq.contains('annual')
+        ? 460
+        : 90;
+    return ageDays > staleAfterDays ? 'stale' : 'current';
   }
 
   String _seriesIdForRow(

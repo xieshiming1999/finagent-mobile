@@ -1138,6 +1138,49 @@ void main() {
     );
 
     test(
+      'query_macro_numeric_series classifies missing official readback by provider status',
+      () async {
+        final dir = Directory.systemTemp.createTempSync(
+          'finagent_macro_factor_',
+        );
+        addTearDown(() => dir.deleteSync(recursive: true));
+
+        final service = MarketDataActionService();
+        final context = ToolContext(basePath: dir.path, serviceBaseUrl: '');
+
+        final eia =
+            await service.run('query_macro_numeric_series', const [], {
+                  'provider': 'eia',
+                  'seriesId': 'WCESTUS1',
+                }, context)
+                as Map<String, dynamic>;
+        expect(eia['action'], 'query_macro_numeric_series');
+        expect(eia['status'], 'missing');
+        expect(eia['count'], 0);
+        expect(eia['failureClass'], 'credential-or-quota-required');
+        expect((eia['provenance'] as Map)['cacheStatus'], 'local-miss');
+        final eiaGap = (eia['missingEvidence'] as List).first as Map;
+        expect(eiaGap['provider'], 'eia');
+        expect(eiaGap['seriesId'], 'WCESTUS1');
+        expect(eiaGap['credentialKey'], 'EIA_API_KEY');
+
+        final nbs =
+            await service.run('query_macro_numeric_series', const [], {
+                  'provider': 'nbs_china',
+                }, context)
+                as Map<String, dynamic>;
+        expect(nbs['failureClass'], 'source-access-controlled');
+
+        final oecd =
+            await service.run('query_macro_numeric_series', const [], {
+                  'provider': 'oecd',
+                }, context)
+                as Map<String, dynamic>;
+        expect(oecd['failureClass'], 'missing-local-readback');
+      },
+    );
+
+    test(
       'macro_research_provenance persists reusable and blocked source evidence',
       () async {
         final dir = Directory.systemTemp.createTempSync(
