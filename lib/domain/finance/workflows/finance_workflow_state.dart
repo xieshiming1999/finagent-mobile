@@ -459,7 +459,29 @@ class FinanceWorkflowState {
     List<T> values,
     String name,
     T fallback,
-  ) => _enumByName(values, name, fallback);
+  ) {
+    final exact = _enumByName(values, name, fallback);
+    if (exact != fallback || name.isEmpty) return exact;
+    final normalized = _normalizeEnumName(name);
+    final aliases = <String, String>{
+      'marketanalysis': 'marketAnalysis',
+      'marketoverview': 'marketAnalysis',
+      'stockresearch': 'stockResearch',
+      'fundresearch': 'fundResearch',
+      'strategydesign': 'strategyDesign',
+      'strategyreview': 'strategyReview',
+      'tradingprep': 'tradePrep',
+      'tradeprep': 'tradePrep',
+      'tradepreparation': 'tradePrep',
+      'monitorreview': 'monitorReview',
+      'evidencereview': 'evidenceReview',
+      'previewonly': 'previewOnly',
+      'requiresconfirmation': 'requiresConfirmation',
+      'paperallowedafterconfirmation': 'paperAllowedAfterConfirmation',
+    };
+    final alias = aliases[normalized];
+    return alias == null ? fallback : _enumByName(values, alias, fallback);
+  }
 
   static String _normalizeEnumName(String value) =>
       value.replaceAll('_', '').replaceAll('-', '').toLowerCase();

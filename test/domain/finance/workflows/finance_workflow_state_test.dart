@@ -151,6 +151,28 @@ void main() {
     expect(state.isEvidenceReview, isTrue);
   });
 
+  test('accepts trade_preparation scenario workflowState alias', () {
+    final state = FinanceWorkflowState.fromJson({
+      'contract': 'finance-workflow-state-v1',
+      'workflowKind': 'trade_preparation',
+      'assetClass': 'stock',
+      'intentMode': 'execute_after_confirmation',
+      'executionMode': 'xueqiu_moni',
+      'confirmationState': 'required',
+      'safetyBoundary': 'Xueqiu MONI simulated trade only',
+      'evidenceRefs': ['xueqiu_preview_order'],
+      'requiredVerifier': {
+        'tool': 'WorkflowVerifier',
+        'action': 'check',
+        'workflow': 'trade_preparation',
+      },
+    });
+
+    expect(state.workflowKind, FinanceWorkflowKind.tradePrep);
+    expect(state.assetClass, FinanceAssetClass.stock);
+    expect(state.requiredVerifier?['workflow'], 'trade_preparation');
+  });
+
   test('preserves structured blocked tools', () {
     final state = FinanceWorkflowState.fromJson({
       'contract': 'finance-workflow-state-v1',

@@ -240,6 +240,73 @@ void main() {
     expect(calls.single.input['strategyId'], 'custom_low_risk_entry_v3');
     expect(calls.single.input['targetSymbols'], ['300059']);
   });
+
+  test('trade preparation preflight starts with runbook not verifier', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+    final messages = [
+      _userWithState(
+        workflowKind: 'trade_prep',
+        assetClass: 'stock',
+        requiredVerifier: {
+          'tool': 'WorkflowVerifier',
+          'action': 'check',
+          'workflow': 'trade_preparation',
+        },
+      ),
+    ];
+
+    final calls = hooks.buildPreflightToolCalls(messages);
+    expect(calls, hasLength(1));
+    expect(calls!.single.name, 'Runbook');
+    expect(calls.single.input, {
+      'action': 'get',
+      'workflow': 'trade_preparation',
+    });
+  });
+
+  test('trade preparation verifier waits for trade evidence', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+    final messages = [
+      _userWithState(
+        workflowKind: 'trade_prep',
+        assetClass: 'stock',
+        requiredVerifier: {
+          'tool': 'WorkflowVerifier',
+          'action': 'check',
+          'workflow': 'trade_preparation',
+        },
+      ),
+      _assistantWithToolUse('runbook', 'Runbook', {
+        'action': 'get',
+        'workflow': 'trade_preparation',
+      }),
+      _tool('runbook', {
+        'action': 'get',
+        'workflow': 'trade_preparation',
+      }),
+    ];
+
+    expect(hooks.buildPreflightToolCalls(messages), isNull);
+
+    final withEvidence = [
+      ...messages,
+      _assistantWithToolUse('preview', 'XueqiuTrade', {
+        'action': 'preview_order',
+        'side': 'buy',
+        'symbol': '300059',
+        'shares': 1,
+      }),
+      _tool('preview', {
+        'action': 'preview_order',
+        'sideEffect': false,
+        'order': {'symbol': '300059', 'shares': 1},
+      }),
+    ];
+    final calls = hooks.buildPreflightToolCalls(withEvidence);
+    expect(calls, hasLength(1));
+    expect(calls!.single.name, 'WorkflowVerifier');
+    expect(calls.single.input['workflow'], 'trade_preparation');
+  });
 }
 
 Message _userWithState({

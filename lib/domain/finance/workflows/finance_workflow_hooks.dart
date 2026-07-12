@@ -81,7 +81,8 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
 
   @override
   List<ToolUse>? buildPreflightToolCalls(List<Message> messages) {
-    return _buildRequiredVerifierPreflightToolCalls(messages) ??
+    return _buildRunbookPreflightToolCalls(messages) ??
+        _buildRequiredVerifierPreflightToolCalls(messages) ??
         _buildMacroConditionWatchlistPreflightToolCalls(messages) ??
         _buildMacroStockQuotePreflightToolCalls(messages) ??
         _buildFundMonitorReviewPreflightToolCalls(messages) ??
@@ -93,6 +94,35 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
         _evidenceReviewSummary.buildSearchToolCalls(messages) ??
         _tradeSizingPreflight.buildToolCalls(messages) ??
         _customStrategyPreflight.buildToolCalls(messages);
+  }
+
+  List<ToolUse>? _buildRunbookPreflightToolCalls(List<Message> messages) {
+    final start = _lastUserIndex(messages);
+    if (start < 0) return null;
+    final workflowState = FinanceWorkflowState.latestFromMessages(
+      messages,
+      turnStartIndex: start,
+    );
+    final workflow = _runbookWorkflowForState(workflowState);
+    if (workflow == null) return null;
+    if (_hasToolCallAction(messages.sublist(start), 'Runbook', 'get')) {
+      return null;
+    }
+    return [
+      ToolUse(
+        id: 'finance_runbook_${DateTime.now().microsecondsSinceEpoch}',
+        name: 'Runbook',
+        input: {'action': 'get', 'workflow': workflow},
+      ),
+    ];
+  }
+
+  String? _runbookWorkflowForState(FinanceWorkflowState? state) {
+    if (state == null) return null;
+    if (state.workflowKind == FinanceWorkflowKind.tradePrep) {
+      return 'trade_preparation';
+    }
+    return null;
   }
 
   List<ToolUse>? _buildRequiredVerifierPreflightToolCalls(
@@ -122,7 +152,11 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
           messages.sublist(start),
           'ArtifactRegistry',
           'register',
-    )) {
+        )) {
+      return null;
+    }
+    if (workflow == 'trade_preparation' &&
+        !_hasTradePreparationVerifierEvidence(messages.sublist(start))) {
       return null;
     }
     final input = <String, dynamic>{
@@ -155,6 +189,36 @@ class FinanceWorkflowHooks extends DomainWorkflowHooks {
         input: input,
       ),
     ];
+  }
+
+  bool _hasTradePreparationVerifierEvidence(List<Message> messages) {
+    const evidenceActions = {
+      'balance',
+      'portfolios',
+      'position',
+      'positions',
+      'history',
+      'preview_order',
+      'quote',
+      'query_quote',
+      'position_sizing',
+      'risk_sizing',
+    };
+    for (final message in messages) {
+      final result = message.toolResult;
+      if (message.role != Role.tool || result == null || result.isError) {
+        continue;
+      }
+      try {
+        final decoded = jsonDecode(result.content);
+        if (decoded is! Map) continue;
+        final action = '${decoded['action'] ?? ''}';
+        if (evidenceActions.contains(action)) return true;
+      } catch (_) {
+        continue;
+      }
+    }
+    return false;
   }
 
   List<ToolUse>? _buildMacroStockQuotePreflightToolCalls(
