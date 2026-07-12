@@ -6,6 +6,10 @@ const _evidenceReviewState = '''
 data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"evidence_review","assetClass":"mixed","intentMode":"review","executionMode":"preview_only","safetyBoundary":"read-only evidence review","evidenceRefs":["analysis-evidence-v1","prior-analysis"],"confirmationState":"none","source":"agent-structured-intent"}}
 ''';
 
+const _macroEvidenceReviewState = '''
+data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"evidence_review","assetClass":"mixed","intentMode":"review","executionMode":"none","safetyBoundary":"macro evidence remains analysis context only","evidenceRefs":["macro_evidence","data_provenance","artifact_registry"],"confirmationState":"none","requiredArtifacts":[{"kindAnyOf":["report","dashboard"],"purpose":"reviewable macro impact output"}],"requiredVerifier":{"tool":"WorkflowVerifier","action":"check","workflow":"macro_factor_lookup"},"source":"agent-structured-intent"}}
+''';
+
 void main() {
   test('structured evidence review state triggers session search preflight', () {
     final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
@@ -30,6 +34,17 @@ void main() {
     ]);
 
     expect(calls, isNull);
+  });
+
+  test('macro evidence review with required artifacts uses normal tool loop', () {
+    final hooks = FinanceWorkflowHooks(isBypassTool: (_) => false);
+
+    final messages = [
+      Message(role: Role.user, content: 'anything\n$_macroEvidenceReviewState'),
+    ];
+
+    expect(hooks.buildPreflightToolCalls(messages), isNull);
+    expect(hooks.buildPreflightAnswer(messages), isNull);
   });
 
   test('uses structured SessionSearch rows as evidence excerpts', () {

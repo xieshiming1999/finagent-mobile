@@ -46,7 +46,19 @@ class FinanceEvidenceReviewSummary {
       messages,
       turnStartIndex: turnStart,
     );
-    return state != null && state.isEvidenceReview;
+    if (state == null || !state.isEvidenceReview) return false;
+    if (state.requiredArtifacts.isNotEmpty || state.requiredVerifier != null) {
+      return false;
+    }
+    return state.evidenceRefs.any(
+      (ref) => const {
+        'prior-analysis',
+        'session',
+        'session-search',
+        'session_history',
+        'analysis-evidence-v1',
+      }.contains(ref.trim().toLowerCase()),
+    );
   }
 
   bool _hasSuccessfulSessionSearchAfterLastUser(List<Message> messages) {

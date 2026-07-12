@@ -754,9 +754,10 @@ class WorkflowAutomationControl {
         .whereType<AgentToolUseStart>()
         .map((e) => {'toolName': e.toolName, 'input': e.input})
         .toList();
-    final reportToolCalls = eventToolCalls.isNotEmpty
-        ? eventToolCalls
-        : _toolCallsFromMessages(messageEvidence);
+    final reportToolCalls = _mergeToolCalls(
+      eventToolCalls,
+      _toolCallsFromMessages(messageEvidence),
+    );
     final eventToolResults = toolResults
         .map(
           (e) => {
@@ -767,9 +768,10 @@ class WorkflowAutomationControl {
           },
         )
         .toList();
-    final reportToolResults = eventToolResults.isNotEmpty
-        ? eventToolResults
-        : _toolResultsFromMessages(messageEvidence);
+    final reportToolResults = _mergeToolResults(
+      eventToolResults,
+      _toolResultsFromMessages(messageEvidence),
+    );
     final reportToolErrors = reportToolResults
         .where((e) => e['isError'] == true)
         .toList(growable: false);
@@ -1436,6 +1438,31 @@ List<Map<String, dynamic>> _toolCallsFromMessages(
   return calls;
 }
 
+List<Map<String, dynamic>> _mergeToolCalls(
+  List<Map<String, dynamic>> eventCalls,
+  List<Map<String, dynamic>> messageCalls,
+) {
+  final merged = <Map<String, dynamic>>[];
+  final seenIds = <String>{};
+  final seenSignatures = <String>{};
+  void addAll(List<Map<String, dynamic>> calls) {
+    for (final call in calls) {
+      final id = '${call['id'] ?? ''}'.trim();
+      final signature =
+          '${call['toolName'] ?? call['name']}:${jsonEncode(call['input'] ?? const {})}';
+      if (id.isNotEmpty && seenIds.contains(id)) continue;
+      if (seenSignatures.contains(signature)) continue;
+      if (id.isNotEmpty) seenIds.add(id);
+      seenSignatures.add(signature);
+      merged.add(call);
+    }
+  }
+
+  addAll(eventCalls);
+  addAll(messageCalls);
+  return merged;
+}
+
 List<Map<String, dynamic>> _toolResultsFromMessages(
   List<Map<String, dynamic>> messages,
 ) {
@@ -1469,6 +1496,31 @@ List<Map<String, dynamic>> _toolResultsFromMessages(
     });
   }
   return results;
+}
+
+List<Map<String, dynamic>> _mergeToolResults(
+  List<Map<String, dynamic>> eventResults,
+  List<Map<String, dynamic>> messageResults,
+) {
+  final merged = <Map<String, dynamic>>[];
+  final seenIds = <String>{};
+  final seenSignatures = <String>{};
+  void addAll(List<Map<String, dynamic>> results) {
+    for (final result in results) {
+      final id = '${result['toolUseId'] ?? ''}'.trim();
+      final signature =
+          '${result['toolName'] ?? result['name']}:${result['isError']}:${result['result'] ?? result['content']}';
+      if (id.isNotEmpty && seenIds.contains(id)) continue;
+      if (seenSignatures.contains(signature)) continue;
+      if (id.isNotEmpty) seenIds.add(id);
+      seenSignatures.add(signature);
+      merged.add(result);
+    }
+  }
+
+  addAll(eventResults);
+  addAll(messageResults);
+  return merged;
 }
 
 Map<String, dynamic> _summarizeReportFile(File file) {

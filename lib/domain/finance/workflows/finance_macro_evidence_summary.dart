@@ -87,7 +87,9 @@ class FinanceMacroEvidenceSummary {
       );
     }
     if (evidence.decisionLines.isNotEmpty) {
-      lines.add('- 置信度/下一步：${evidence.decisionLines.take(5).join('；')}。');
+      lines.add(
+        '- 信心影响/置信度/下一步：${evidence.decisionLines.take(5).join('；')}。',
+      );
     }
     lines.addAll([
       '',
