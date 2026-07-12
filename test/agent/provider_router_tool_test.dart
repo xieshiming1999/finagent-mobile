@@ -90,14 +90,47 @@ void main() {
     expect(
       result['skipped'],
       contains(
-        isA<Map>().having(
-          (row) => row['reason'],
-          'reason',
-          'akshare_compatibility_disabled',
-        ),
+        isA<Map>()
+            .having((row) => row['provider'], 'provider', 'akshare')
+            .having((row) => row['reason'], 'reason', contains('descriptor')),
       ),
     );
+    expect(result['providerHealthSource']['descriptorRows'], greaterThan(0));
   });
+
+  test(
+    'ProviderRouter descriptor policy blocks unsupported mobile providers even when compatibility is requested',
+    () async {
+      final context = _tempContext();
+      addTearDown(() {
+        final dir = Directory(context.basePath);
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+
+      final result =
+          jsonDecode(
+                (await ProviderRouterTool(
+                      runtimeHealthProvider: () => const [],
+                    ).call('router-descriptor-policy', {
+                      'action': 'route',
+                      'task': 'sector',
+                      'gates': {'allowAkshareCompatibility': true},
+                    }, context))
+                    .content,
+              )
+              as Map<String, dynamic>;
+
+      expect(result['order'], isNot(contains('akshare')));
+      expect(
+        result['providerHealth'],
+        contains(
+          isA<Map>()
+              .having((row) => row['provider'], 'provider', 'akshare')
+              .having((row) => row['reason'], 'reason', contains('descriptor')),
+        ),
+      );
+    },
+  );
 
   test(
     'ProviderRouter uses provider health to skip unhealthy provider',

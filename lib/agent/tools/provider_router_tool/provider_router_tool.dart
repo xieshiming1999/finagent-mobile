@@ -219,12 +219,58 @@ class ProviderRouterTool extends Tool {
       rows.addAll(provided.whereType<Map>().map(Map<String, dynamic>.from));
     }
     if (input['includeRuntimeHealth'] == false) return rows;
+    rows.addAll(descriptorProviderHealthRows(task, runtime: 'mobile'));
     rows.addAll(contractProviderHealthRows(task));
     final runtime =
         _runtimeHealthProvider?.call() ?? runtimeProviderHealthRows();
     rows.addAll(runtime);
     return rows;
   }
+}
+
+List<Map<String, dynamic>> descriptorProviderHealthRows(
+  FinanceDataTask task, {
+  required String runtime,
+}) {
+  return _baseOrder(task).expand((provider) {
+    final descriptor = _descriptorForProvider(provider);
+    if (descriptor == null) return const <Map<String, dynamic>>[];
+    final status = _descriptorBlockingStatus(descriptor, runtime: runtime);
+    if (status == null) return const <Map<String, dynamic>>[];
+    return [
+      {
+        'provider': _providerName(provider),
+        'status': status['status'],
+        'reason':
+            'descriptor ${status['status']}: ${descriptor.provider} ${status['reason']}',
+        'source': 'providerModuleDescriptor',
+        'descriptorProvider': descriptor.provider,
+        'descriptorCategory': descriptor.category,
+        'descriptorStatus': descriptor.status,
+        'runtimeAvailability': descriptor.runtimeAvailability,
+      },
+    ];
+  }).toList(growable: false);
+}
+
+Map<String, String>? _descriptorBlockingStatus(
+  ProviderModuleDescriptor descriptor, {
+  required String runtime,
+}) {
+  if (descriptor.status == 'disabled' || descriptor.status == 'not-supported') {
+    return {
+      'status': 'blocked',
+      'reason': 'is ${descriptor.status}',
+    };
+  }
+  if (!descriptor.runtimeAvailability.contains(runtime)) {
+    return {
+      'status': 'runtime_unavailable',
+      'reason':
+          'is unavailable for $runtime; availability=${descriptor.runtimeAvailability.join(',')}',
+    };
+  }
+  return null;
 }
 
 ProviderModuleDescriptor? _descriptorForProvider(FinanceProvider provider) {
@@ -433,6 +479,9 @@ Map<String, dynamic> _providerHealthSource(
                 : 0),
   'contractRows': rows
       .where((row) => row['source'] == 'dataApiInterfaceContract')
+      .length,
+  'descriptorRows': rows
+      .where((row) => row['source'] == 'providerModuleDescriptor')
       .length,
   'runtimeEnabled': input['includeRuntimeHealth'] != false,
 };
