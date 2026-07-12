@@ -25,7 +25,7 @@ class SourceReaderTool extends Tool {
     'properties': {
       'action': {
         'type': 'string',
-        'enum': ['help', 'read', 'macroEvidence'],
+        'enum': ['help', 'read', 'macroEvidence', 'macroNumericEvidence'],
       },
       'url': {'type': 'string'},
       'path': {'type': 'string'},
@@ -52,6 +52,16 @@ class SourceReaderTool extends Tool {
       'confidenceEffect': {'type': 'string'},
       'freshness': {'type': 'string'},
       'evidenceClass': {'type': 'string'},
+      'numericSeriesRow': {'type': 'object'},
+      'seriesId': {'type': 'string'},
+      'metricName': {'type': 'string'},
+      'value': {},
+      'unit': {'type': 'string'},
+      'frequency': {'type': 'string'},
+      'sourceDataTime': {'type': 'string'},
+      'fetchedAt': {'type': 'string'},
+      'provider': {'type': 'string'},
+      'status': {'type': 'string'},
     },
   };
 
@@ -76,6 +86,9 @@ class SourceReaderTool extends Tool {
     }
     if (action == 'macroEvidence') {
       return _macroEvidence(toolUseId, input, context);
+    }
+    if (action == 'macroNumericEvidence') {
+      return _macroNumericEvidence(toolUseId, input, context);
     }
     if (action != 'read') {
       return ToolResult(
@@ -150,13 +163,161 @@ class SourceReaderTool extends Tool {
 
   Map<String, dynamic> _help() => {
     'contract': 'source-reader-help-v1',
-    'actions': ['read', 'macroEvidence'],
+    'actions': ['read', 'macroEvidence', 'macroNumericEvidence'],
     'required': 'Exactly one of url or path.',
     'stores': 'memory/source_evidence/<sha256>.json',
     'macroEvidenceStores': 'memory/macro_evidence/<id>.json',
     'guidance':
-        'SourceReader records title/date/hash/excerpt as evidence. Use macroEvidence with explicit keyClaims, topic, region, assetClass, affectedAssets, freshness, and confidenceEffect before using macro sources in analysis. Use ArtifactRegistry to register reusable source evidence before citing it in analysis.',
+        'SourceReader records title/date/hash/excerpt as evidence. Use macroEvidence with explicit keyClaims, topic, region, assetClass, affectedAssets, freshness, and confidenceEffect before using macro sources in analysis. Use macroNumericEvidence to turn official query_macro_numeric_series rows into durable macro evidence records. Use ArtifactRegistry to register reusable source evidence before citing it in analysis.',
   };
+
+  ToolResult _macroNumericEvidence(
+    String toolUseId,
+    Map<String, dynamic> input,
+    ToolContext context,
+  ) {
+    final row = input['numericSeriesRow'] is Map
+        ? Map<String, dynamic>.from(input['numericSeriesRow'] as Map)
+        : input;
+    final source =
+        _optionalString(input['source']) ??
+        _optionalString(row['sourceName']) ??
+        _optionalString(row['source_name']) ??
+        _optionalString(row['provider']) ??
+        _optionalString(input['provider']) ??
+        'official macro series';
+    final provider =
+        _optionalString(input['provider']) ??
+        _optionalString(row['provider']) ??
+        source;
+    final seriesId =
+        _optionalString(input['seriesId']) ?? _optionalString(row['seriesId']);
+    final metricName =
+        _optionalString(input['metricName']) ??
+        _optionalString(row['metricName']) ??
+        seriesId;
+    final value = input.containsKey('value') ? input['value'] : row['value'];
+    final valueText = _optionalString(value);
+    final unit = _optionalString(input['unit']) ?? _optionalString(row['unit']);
+    final sourceDataTime =
+        _optionalString(input['sourceDataTime']) ??
+        _optionalString(row['sourceDataTime']);
+    final fetchedAt =
+        _optionalString(input['fetchedAt']) ??
+        _optionalString(row['fetchedAt']);
+    final topic = _optionalString(input['topic']);
+    final region = _optionalString(input['region']);
+    final assetClass = _optionalString(input['assetClass']);
+    final affectedAssets = _stringList(input['affectedAssets']);
+    final confidenceEffect = _optionalString(input['confidenceEffect']);
+    final freshness =
+        _optionalString(input['freshness']) ??
+        _optionalString(row['status']) ??
+        'unknown';
+    final missingEvidence = _stringList(input['missingEvidence']);
+    final keyClaims = _stringList(input['keyClaims']);
+
+    final missing = <String>[
+      if (seriesId == null) 'seriesId',
+      if (metricName == null) 'metricName',
+      if (valueText == null) 'value',
+      if (sourceDataTime == null) 'sourceDataTime',
+      if (topic == null) 'topic',
+      if (region == null) 'region',
+      if (assetClass == null) 'assetClass',
+      if (affectedAssets.isEmpty) 'affectedAssets',
+      if (confidenceEffect == null) 'confidenceEffect',
+    ];
+    if (missing.isNotEmpty) {
+      return ToolResult(
+        toolUseId: toolUseId,
+        content:
+            'SourceReader(action:"macroNumericEvidence") missing required structured fields: ${missing.join(', ')}. Pass a query_macro_numeric_series row plus explicit topic/region/assetClass/affectedAssets/confidenceEffect.',
+        isError: true,
+      );
+    }
+
+    final claim =
+        '$metricName $seriesId = $valueText'
+        '${unit == null ? '' : ' $unit'} as of $sourceDataTime.';
+    final idInput = jsonEncode({
+      'source': source,
+      'provider': provider,
+      'seriesId': seriesId,
+      'sourceDataTime': sourceDataTime,
+      'value': valueText,
+      'topic': topic,
+      'affectedAssets': affectedAssets,
+    });
+    final id = 'macro:${sha256.convert(utf8.encode(idInput))}';
+    final record = {
+      'contract': 'macro-evidence-record-v1',
+      'id': id,
+      'source': source,
+      'provider': provider,
+      'sourceHash': null,
+      'url': _optionalString(input['url']) ?? _optionalString(row['sourceUrl']),
+      'path': null,
+      'title':
+          _optionalString(input['title']) ??
+          '$source official series $seriesId',
+      'sourceDate': sourceDataTime,
+      'topic': topic,
+      'region': region,
+      'assetClass': assetClass,
+      'keyClaims': keyClaims.isEmpty ? [claim] : keyClaims,
+      'affectedAssets': affectedAssets,
+      'confidenceEffect': confidenceEffect,
+      'freshness': freshness,
+      'evidenceClass': 'official-numeric-series',
+      'numericSeries': {
+        'seriesId': seriesId,
+        'metricName': metricName,
+        'value': value,
+        'unit': unit,
+        'frequency':
+            _optionalString(input['frequency']) ??
+            _optionalString(row['frequency']),
+        'sourceDataTime': sourceDataTime,
+        'fetchedAt': fetchedAt,
+        'provider': provider,
+        'status':
+            _optionalString(input['status']) ?? _optionalString(row['status']),
+      },
+      'fetchedAt': fetchedAt,
+      'storedAt': DateTime.now().toUtc().toIso8601String(),
+      'tradeBoundary':
+          'Macro numeric evidence is context, hypothesis, and invalidation input. It is not a direct buy/sell rule.',
+      'missingEvidence': missingEvidence,
+    };
+    final file = File(
+      '${context.memoryDir}/macro_evidence/${id.replaceAll(':', '_')}.json',
+    );
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(record));
+    return ToolResult(
+      toolUseId: toolUseId,
+      content: jsonEncode({
+        'contract': 'source-reader-macro-numeric-evidence-result-v1',
+        'record': record,
+        'artifactHint': {
+          'kind': 'macroEvidence',
+          'path': file.path,
+          'title': record['title'],
+          'source': source,
+          'provenance': {
+            'provider': provider,
+            'seriesId': seriesId,
+            'sourceDataTime': sourceDataTime,
+            'fetchedAt': fetchedAt,
+            'topic': topic,
+            'region': region,
+            'assetClass': assetClass,
+          },
+        },
+      }),
+    );
+  }
 
   ToolResult _macroEvidence(
     String toolUseId,

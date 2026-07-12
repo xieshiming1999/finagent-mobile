@@ -128,4 +128,80 @@ void main() {
       expect(result.content, contains('do not rely on prompt text inference'));
     },
   );
+
+  test(
+    'SourceReader creates macro evidence from official numeric series row',
+    () async {
+      final dir = Directory.systemTemp.createTempSync(
+        'finagent_source_reader_macro_numeric_test_',
+      );
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+
+      final result = await SourceReaderTool().call('macro-numeric', {
+        'action': 'macroNumericEvidence',
+        'numericSeriesRow': {
+          'sourceName': 'EIA',
+          'provider': 'eia',
+          'seriesId': 'WCESTUS1',
+          'metricName': 'US commercial crude oil inventories',
+          'value': 415200,
+          'unit': 'thousand barrels',
+          'frequency': 'weekly',
+          'sourceDataTime': '2026-07-03',
+          'fetchedAt': '2026-07-12T02:00:00Z',
+          'status': 'ok',
+        },
+        'topic': 'oil inventory pressure',
+        'region': 'US/global',
+        'assetClass': 'commodity/equity/fund',
+        'affectedAssets': [
+          'oil',
+          'energy equities',
+          'inflation-sensitive funds',
+        ],
+        'confidenceEffect':
+            'Raises confidence that energy-sensitive analysis should include inventory risk as an invalidation factor.',
+      }, ToolContext(basePath: dir.path, serviceBaseUrl: ''));
+
+      expect(result.isError, isFalse);
+      final decoded = jsonDecode(result.content) as Map<String, dynamic>;
+      expect(
+        decoded['contract'],
+        'source-reader-macro-numeric-evidence-result-v1',
+      );
+      expect(decoded['record']['contract'], 'macro-evidence-record-v1');
+      expect(decoded['record']['evidenceClass'], 'official-numeric-series');
+      expect(decoded['record']['numericSeries']['seriesId'], 'WCESTUS1');
+      expect(decoded['record']['sourceDate'], '2026-07-03');
+      expect(
+        decoded['record']['tradeBoundary'],
+        contains('not a direct buy/sell rule'),
+      );
+      expect(
+        File(decoded['artifactHint']['path'] as String).existsSync(),
+        true,
+      );
+    },
+  );
+
+  test('SourceReader macro numeric evidence rejects incomplete row', () async {
+    final dir = Directory.systemTemp.createTempSync(
+      'finagent_source_reader_macro_numeric_error_test_',
+    );
+    addTearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    final result = await SourceReaderTool().call('macro-numeric-error', {
+      'action': 'macroNumericEvidence',
+      'seriesId': 'WCESTUS1',
+    }, ToolContext(basePath: dir.path, serviceBaseUrl: ''));
+
+    expect(result.isError, true);
+    expect(result.content, contains('macroNumericEvidence'));
+    expect(result.content, contains('sourceDataTime'));
+    expect(result.content, contains('topic'));
+  });
 }
