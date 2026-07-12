@@ -270,6 +270,15 @@ extension ReusableDataStoreMacroFactor on ReusableDataStore {
   }
 
   String _macroAssetImpact(Map<String, dynamic> row) {
+    final macroValues = row['macro_values'];
+    if (macroValues is Map) {
+      final explicit =
+          (macroValues['assetImpact'] ?? macroValues['asset_impact'])
+              ?.toString()
+              .trim() ??
+          '';
+      if (explicit.isNotEmpty) return explicit;
+    }
     final direction = row['expected_direction']?.toString().toLowerCase() ?? '';
     if (RegExp(r'(positive|tailwind|利好|上行)').hasMatch(direction)) {
       return 'positive tailwind';

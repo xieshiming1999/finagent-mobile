@@ -46,6 +46,79 @@ void main() {
       );
     });
 
+    test('promotes SourceReader macro evidence artifacts into radar rows', () {
+      final dir = Directory.systemTemp.createTempSync('finagent_macro_factor_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final evidenceDir = Directory('${dir.path}/memory/macro_evidence')
+        ..createSync(recursive: true);
+      File('${evidenceDir.path}/macro_eia.json').writeAsStringSync(
+        jsonEncode({
+          'contract': 'macro-evidence-record-v1',
+          'id': 'macro:eia-oil',
+          'source': 'EIA',
+          'provider': 'eia',
+          'title': 'EIA official series WCESTUS1',
+          'sourceDate': '2026-07-03',
+          'topic': 'oil inventory pressure',
+          'region': 'US/global',
+          'assetClass': 'commodity/equity/fund',
+          'keyClaims': [
+            'US commercial crude oil inventories WCESTUS1 = 420000 MBBL as of 2026-07-03.',
+          ],
+          'affectedAssets': ['oil', 'energy equities', 'A-shares'],
+          'confidenceEffect': 'Adds official inventory context.',
+          'freshness': 'ok',
+          'evidenceClass': 'official-numeric-series',
+          'numericSeries': {
+            'seriesId': 'WCESTUS1',
+            'metricName': 'US commercial crude oil inventories',
+            'value': 420000,
+            'unit': 'MBBL',
+            'sourceDataTime': '2026-07-03',
+            'fetchedAt': '2026-07-12T02:00:00Z',
+            'provider': 'eia',
+            'status': 'ok',
+          },
+          'fetchedAt': '2026-07-12T02:00:00Z',
+          'tradeBoundary':
+              'Macro numeric evidence is context, hypothesis, and invalidation input. It is not a direct buy/sell rule.',
+          'missingEvidence': ['No second official source attached.'],
+        }),
+      );
+
+      final store = ReusableDataStore(dir.path);
+      final result = MacroFactorRadarService(store: store).read();
+      final row = result.rows.firstWhere(
+        (item) => item['factor_id'] == 'source_reader:macro-eia-oil',
+      );
+
+      expect(row['family'], 'official-numeric-series');
+      expect(row['title'], 'EIA official series WCESTUS1');
+      expect(row['source_name'], 'EIA');
+      expect(row['source_type'], 'official-numeric-series');
+      expect(row['evidence_tier'], 'official-numeric-series');
+      expect(row['source_published_at'], '2026-07-03');
+      expect(row['fetched_at'], '2026-07-12T02:00:00Z');
+      expect(row['status'], 'active');
+      expect(row['asset_impact'], 'linked');
+      expect(row['affected_assets'], ['oil', 'energy equities', 'A-shares']);
+      expect(row['linked_macro_evidence_ids'], ['macro:eia-oil']);
+      expect(
+        (row['macro_values'] as Map)['artifactPath'],
+        '${evidenceDir.path}/macro_eia.json',
+      );
+      expect(
+        (row['macro_values'] as Map)['numericSeries'],
+        containsPair('seriesId', 'WCESTUS1'),
+      );
+      expect(
+        result.sources.firstWhere(
+          (source) => source['id'] == 'source_reader.macro_evidence',
+        )['state'],
+        'ok',
+      );
+    });
+
     test(
       'promotes cached finance news as unclassified narrative observations',
       () async {
@@ -760,10 +833,14 @@ void main() {
         expect(readback['action'], 'query_macro_numeric_series');
         expect(readback['status'], 'ok');
         expect(readback['count'], 1);
-        expect((readback['provenance'] as Map)['canonicalTable'],
-            'market_moving_factor');
-        expect((readback['provenance'] as Map)['readbackAction'],
-            'query_macro_numeric_series');
+        expect(
+          (readback['provenance'] as Map)['canonicalTable'],
+          'market_moving_factor',
+        );
+        expect(
+          (readback['provenance'] as Map)['readbackAction'],
+          'query_macro_numeric_series',
+        );
         final seriesRow = ((readback['series'] as List).first as Map);
         expect(seriesRow['provider'], 'eia');
         expect(seriesRow['seriesId'], 'WCESTUS1');

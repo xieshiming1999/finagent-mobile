@@ -37,11 +37,15 @@ class MacroFactorRadarService {
 
   MacroFactorRadarResult read() {
     final generatedAt = DateTime.now().toUtc().toIso8601String();
+    final macroEvidence = _extractSourceReaderMacroEvidence(generatedAt);
+    if (macroEvidence.rows.isNotEmpty) {
+      store.saveMarketMovingFactors(macroEvidence.rows);
+    }
     final existing = store.queryMarketMovingFactors(limit: 80);
     if (existing.isNotEmpty) {
       return MacroFactorRadarResult(
         rows: existing,
-        sources: _sourceRegistrySnapshot(),
+        sources: [..._sourceRegistrySnapshot(), macroEvidence.source],
         numericSeriesCatalog: _numericSeriesCatalogSnapshot(),
         generatedAt: generatedAt,
       );
@@ -49,7 +53,7 @@ class MacroFactorRadarService {
     store.saveMarketMovingFactors(_seedRows(generatedAt));
     return MacroFactorRadarResult(
       rows: store.queryMarketMovingFactors(limit: 80),
-      sources: _sourceRegistrySnapshot(),
+      sources: [..._sourceRegistrySnapshot(), macroEvidence.source],
       numericSeriesCatalog: _numericSeriesCatalogSnapshot(),
       generatedAt: generatedAt,
     );
@@ -97,6 +101,10 @@ class MacroFactorRadarService {
     final news = _readCachedNewsFactors(generatedAt);
     rows.addAll(news.rows);
     sources.add(news.source);
+
+    final macroEvidence = _extractSourceReaderMacroEvidence(generatedAt);
+    rows.addAll(macroEvidence.rows);
+    sources.add(macroEvidence.source);
 
     store.saveMarketMovingFactors(rows);
     return MacroFactorRadarResult(
@@ -647,7 +655,12 @@ class MacroFactorRadarService {
             'source_published_at': period,
             'fetched_at': fetchedAt,
             'event_at': period,
-            'affected_assets': ['global equities', 'country risk', 'FX', 'rates'],
+            'affected_assets': [
+              'global equities',
+              'country risk',
+              'FX',
+              'rates',
+            ],
             'affected_regions': ['OECD', 'Global'],
             'affected_sectors': ['Cyclicals'],
             'transmission_channels': [
@@ -1138,6 +1151,165 @@ class MacroFactorRadarService {
     );
   }
 
+  _FetchResult _extractSourceReaderMacroEvidence(String fetchedAt) {
+    final dir = Directory('${store.basePath}/memory/macro_evidence');
+    if (!dir.existsSync()) {
+      return _FetchResult(
+        rows: const [],
+        source: {
+          'id': 'source_reader.macro_evidence',
+          'name': 'SourceReader macro evidence artifacts',
+          'state': 'fallback-only',
+          'detail':
+              'No memory/macro_evidence directory is currently available.',
+        },
+      );
+    }
+    final files =
+        dir
+            .listSync()
+            .whereType<File>()
+            .where((file) => file.path.endsWith('.json'))
+            .toList()
+          ..sort(
+            (a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()),
+          );
+    final rows = <Map<String, dynamic>>[];
+    for (final file in files.take(20)) {
+      try {
+        final decoded = jsonDecode(file.readAsStringSync());
+        if (decoded is! Map) continue;
+        final row = _sourceReaderMacroRecordToFactorRow(
+          Map<String, dynamic>.from(decoded),
+          file.path,
+          fetchedAt,
+        );
+        if (row != null) rows.add(row);
+      } catch (_) {
+        // Skip unreadable evidence artifacts; malformed records are not reusable.
+      }
+    }
+    return _FetchResult(
+      rows: rows,
+      source: {
+        'id': 'source_reader.macro_evidence',
+        'name': 'SourceReader macro evidence artifacts',
+        'state': rows.isNotEmpty ? 'ok' : 'fallback-only',
+        'detail': rows.isNotEmpty
+            ? '${rows.length} durable macro evidence artifact(s) promoted into the macro research surface.'
+            : 'No readable macro-evidence-record-v1 artifacts are currently available.',
+      },
+    );
+  }
+
+  Map<String, dynamic>? _sourceReaderMacroRecordToFactorRow(
+    Map<String, dynamic> record,
+    String filePath,
+    String fetchedAt,
+  ) {
+    if (record['contract'] != 'macro-evidence-record-v1') return null;
+    final numeric = record['numericSeries'] is Map
+        ? Map<String, dynamic>.from(record['numericSeries'] as Map)
+        : <String, dynamic>{};
+    final sourceName = _firstString([
+      record['source'],
+      record['provider'],
+      'SourceReader',
+    ]);
+    final sourceDate = _firstString([
+      record['sourceDate'],
+      numeric['sourceDataTime'],
+    ]);
+    final fetched = _firstString([
+      record['fetchedAt'],
+      numeric['fetchedAt'],
+      fetchedAt,
+    ]);
+    final title = _firstString([record['title'], '$sourceName macro evidence']);
+    final affectedAssets = _macroEvidenceStringList(record['affectedAssets']);
+    final keyClaims = _macroEvidenceStringList(record['keyClaims']);
+    final missingEvidence = _macroEvidenceStringList(record['missingEvidence']);
+    final evidenceClass = _stringValue(record['evidenceClass']);
+    final sourceUrl = _stringValue(record['url']);
+    final evidenceId = _stringValue(record['id']);
+    return {
+      'factor_id':
+          'source_reader:${_stableId(evidenceId.isEmpty ? title : evidenceId)}',
+      'family': evidenceClass.isNotEmpty ? evidenceClass : 'macro_evidence',
+      'title': title,
+      'summary': keyClaims.isNotEmpty
+          ? keyClaims.join(' ')
+          : 'Durable SourceReader macro evidence artifact.',
+      'source_name': sourceName,
+      'source_url': sourceUrl.isEmpty ? null : sourceUrl,
+      'source_type': evidenceClass.isNotEmpty
+          ? evidenceClass
+          : 'source_reader_macro_evidence',
+      'evidence_tier': evidenceClass.isNotEmpty
+          ? evidenceClass
+          : 'governed_macro_evidence',
+      'source_published_at': sourceDate.isEmpty ? null : sourceDate,
+      'fetched_at': fetched,
+      'event_at': sourceDate.isEmpty ? null : sourceDate,
+      'affected_assets': affectedAssets,
+      'affected_regions': _macroEvidenceStringList(record['region']),
+      'affected_sectors': const <String>[],
+      'transmission_channels': _macroEvidenceStringList(record['assetClass']),
+      'expected_direction': 'mixed',
+      'severity': 'medium',
+      'confidence': _confidenceFromMacroEvidenceRecord(record),
+      'access_status': sourceUrl.isNotEmpty
+          ? 'public-or-recorded'
+          : 'artifact-readback',
+      'freshness_status': _firstString([record['freshness'], 'unknown']),
+      'confidence_effect': _firstString([
+        record['confidenceEffect'],
+        'requires evidence review',
+      ]),
+      'missing_evidence': missingEvidence.join('; '),
+      'next_evidence_action': missingEvidence.isNotEmpty
+          ? 'refresh or attach higher-tier evidence'
+          : 'use artifact/readback',
+      'asset_impact': affectedAssets.isNotEmpty ? 'linked' : 'needs-linking',
+      'status': 'active',
+      'limitations': [
+        ...missingEvidence,
+        'Macro evidence is context, hypothesis, and invalidation input, not a direct buy/sell rule.',
+      ],
+      'linked_macro_evidence_ids': [if (evidenceId.isNotEmpty) evidenceId],
+      'evidence_items': [
+        {
+          'label': keyClaims.isNotEmpty ? keyClaims.first : title,
+          'source_url': sourceUrl.isEmpty ? null : sourceUrl,
+          'retrieved_at': fetched,
+        },
+      ],
+      'macro_values': {
+        'evidenceTier': evidenceClass.isNotEmpty
+            ? evidenceClass
+            : 'governed_macro_evidence',
+        'evidenceClass': record['evidenceClass'],
+        'confidenceEffect': record['confidenceEffect'],
+        'sourceRecordPath': record['sourceRecordPath'],
+        'artifactPath': filePath,
+        'missingEvidence': missingEvidence,
+        'limitations': [
+          ...missingEvidence,
+          'Macro evidence is context, hypothesis, and invalidation input, not a direct buy/sell rule.',
+        ],
+        'linkedMacroEvidenceIds': [if (evidenceId.isNotEmpty) evidenceId],
+        'assetImpact': affectedAssets.isNotEmpty ? 'linked' : 'needs-linking',
+        'numericSeries': numeric,
+      },
+      'retrieval_test': _retrieval(
+        'source_reader',
+        'source_reader.macro_evidence.readback',
+        'ok',
+      ),
+      'raw_json': record,
+    };
+  }
+
   _FetchResult _readCachedNewsFactors(String fetchedAt) {
     final selected = store.queryFinanceNews(limit: 80).take(5).toList();
     if (selected.isEmpty) {
@@ -1436,6 +1608,41 @@ Map<String, dynamic> _newsFactorRow(
 
 num? _parseNumber(Object? value) {
   return num.tryParse('${value ?? ''}'.replaceAll(',', '').trim());
+}
+
+String _stringValue(Object? value) => '${value ?? ''}'.trim();
+
+String _firstString(List<Object?> values) {
+  for (final value in values) {
+    final text = _stringValue(value);
+    if (text.isNotEmpty) return text;
+  }
+  return '';
+}
+
+List<String> _macroEvidenceStringList(Object? value) {
+  if (value is List) {
+    return value.map(_stringValue).where((item) => item.isNotEmpty).toList();
+  }
+  final text = _stringValue(value);
+  if (text.isEmpty) return const [];
+  return text
+      .split(RegExp(r'[;,，、]'))
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty)
+      .toList();
+}
+
+String _confidenceFromMacroEvidenceRecord(Map<String, dynamic> record) {
+  final freshness = _stringValue(record['freshness']).toLowerCase();
+  final evidenceClass = _stringValue(record['evidenceClass']).toLowerCase();
+  if (evidenceClass.contains('official') && !freshness.contains('stale')) {
+    return 'high';
+  }
+  if (freshness.contains('stale') || freshness.contains('missing')) {
+    return 'low';
+  }
+  return 'medium';
 }
 
 String _stableId(String value) {
