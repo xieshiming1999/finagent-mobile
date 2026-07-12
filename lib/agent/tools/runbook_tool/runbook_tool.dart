@@ -15,6 +15,7 @@ const _runbooks = <String, Map<String, dynamic>>{
     'failureHandling': ['Use cache when provider is unhealthy.', 'Disclose stale or missing evidence.'],
     'firstPassPlan': [
       'Use a bounded market evidence set: coverage, index quote, sector ranking, flow rank or northbound flow, and news or macro evidence.',
+      'For core market indexes, use governed index quote/readback evidence such as MarketData(action:"query_index_quote", symbols:["000001","399001","399006"]) or MarketData(action:"quote", symbols:[...]). Do not use stock technical tools on index codes; report index K-line/technical coverage as missing unless a governed index K-line or index indicator contract is available.',
       'For macro context, use one query_macro_factors readback and one query_macro_attribution readback with a structured target such as A-shares.',
       'Do not add source extraction, provider-page browsing, numeric catalog sweeps, or watchlist expansion to the first answer unless the user explicitly asks for those workflows.',
     ],
