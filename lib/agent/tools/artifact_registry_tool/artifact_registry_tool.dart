@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 
 import '../../artifact_registry.dart';
 import '../../message.dart';
 import '../../tool.dart';
 import '../../tool_context.dart';
+import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as p;
 
 class ArtifactRegistryTool extends Tool {
   @override
@@ -81,7 +84,7 @@ class ArtifactRegistryTool extends Tool {
       case 'get':
         return _get(toolUseId, registry, input);
       case 'register':
-        return _register(toolUseId, registry, input);
+        return _register(toolUseId, registry, input, context);
       case 'graph':
         return ToolResult(
           toolUseId: toolUseId,
@@ -161,6 +164,7 @@ class ArtifactRegistryTool extends Tool {
     String toolUseId,
     ArtifactRegistry registry,
     Map<String, dynamic> input,
+    ToolContext context,
   ) {
     final kind = _kindOrNull(input['kind']);
     if (kind == null) {
@@ -171,16 +175,21 @@ class ArtifactRegistryTool extends Tool {
         isError: true,
       );
     }
-    final path = (input['path'] as String?)?.trim() ?? '';
+    var path = (input['path'] as String?)?.trim() ?? '';
     final title = (input['title'] as String?)?.trim() ?? '';
     final source = (input['source'] as String?)?.trim() ?? '';
-    if (path.isEmpty || title.isEmpty || source.isEmpty) {
+    if (title.isEmpty || source.isEmpty) {
       return ToolResult(
         toolUseId: toolUseId,
         content:
-            'ArtifactRegistry(action:"register") requires non-empty path, title, and source.',
+            'ArtifactRegistry(action:"register") requires non-empty title and source. Provide path for an existing artifact, or omit path to let ArtifactRegistry create a managed artifact file.',
         isError: true,
       );
+    }
+    var managedArtifact = false;
+    if (path.isEmpty) {
+      path = _writeManagedArtifact(context, kind, input, title, source);
+      managedArtifact = true;
     }
     final record = registry.register(
       kind: kind,
@@ -201,9 +210,59 @@ class ArtifactRegistryTool extends Tool {
       toolUseId: toolUseId,
       content: jsonEncode({
         'contract': 'artifact-registry-record-v1',
+        'managedArtifact': managedArtifact,
         'artifact': record.toJson(),
       }),
     );
+  }
+
+  String _writeManagedArtifact(
+    ToolContext context,
+    ArtifactKind kind,
+    Map<String, dynamic> input,
+    String title,
+    String source,
+  ) {
+    final freshness = _mapValue(input['freshness']);
+    final provenance = _mapValue(input['provenance']);
+    final metadata = _mapValue(input['metadata']);
+    final digest = sha256
+        .convert(
+          utf8.encode(
+            jsonEncode({
+              'kind': kind.wireName,
+              'title': title,
+              'source': source,
+              'freshness': freshness,
+              'provenance': provenance,
+              'metadata': metadata,
+            }),
+          ),
+        )
+        .toString()
+        .substring(0, 16);
+    final relativePath = p.join(
+      'memory',
+      'artifacts',
+      kind.wireName,
+      '$digest.json',
+    );
+    final file = File(p.join(context.basePath, relativePath));
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync(
+      '${jsonEncode({
+            'contract': 'managed-artifact-v1',
+            'kind': kind.wireName,
+            'title': title,
+            'source': source,
+            'createdAt': DateTime.now().toUtc().toIso8601String(),
+            'freshness': freshness,
+            'provenance': provenance.isEmpty ? {'source': source} : provenance,
+            'links': _stringList(input['links']),
+            'metadata': metadata,
+          })}\n',
+    );
+    return relativePath;
   }
 
   Map<String, dynamic> _graph(

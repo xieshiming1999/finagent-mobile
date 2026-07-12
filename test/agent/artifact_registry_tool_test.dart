@@ -86,7 +86,7 @@ void main() {
     },
   );
 
-  test('ArtifactRegistry rejects incomplete register input', () async {
+  test('ArtifactRegistry rejects register input without title/source', () async {
     final context = _tempContext();
     addTearDown(() {
       final dir = Directory(context.basePath);
@@ -96,14 +96,46 @@ void main() {
     final result = await ArtifactRegistryTool().call('artifact-4', {
       'action': 'register',
       'kind': 'analysis',
-      'path': 'memory/reports/stock-analysis.md',
+      'title': 'Stock analysis',
     }, context);
 
     expect(result.isError, true);
     expect(
       result.content,
-      contains('requires non-empty path, title, and source'),
+      contains('requires non-empty title and source'),
     );
+  });
+
+  test('ArtifactRegistry creates managed artifact file without path', () async {
+    final context = _tempContext();
+    addTearDown(() {
+      final dir = Directory(context.basePath);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    final decoded =
+        jsonDecode(
+              (await ArtifactRegistryTool().call('artifact-managed', {
+                'action': 'register',
+                'kind': 'macro_evidence',
+                'title': 'Energy macro evidence',
+                'source': 'EIA',
+                'metadata': {
+                  'topic': 'energy',
+                  'affectedAssets': ['energy equities'],
+                },
+              }, context)).content,
+            )
+            as Map<String, dynamic>;
+    final artifact = decoded['artifact'] as Map<String, dynamic>;
+
+    expect(decoded['contract'], 'artifact-registry-record-v1');
+    expect(decoded['managedArtifact'], true);
+    expect(
+      artifact['path'],
+      matches(RegExp(r'^memory[/\\]artifacts[/\\]macro_evidence[/\\].+\.json$')),
+    );
+    expect(File('${context.basePath}/${artifact['path']}').existsSync(), true);
   });
 }
 
