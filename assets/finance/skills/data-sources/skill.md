@@ -46,6 +46,14 @@ Treat `interfaces -> interface_describe -> interface_availability -> query/fetch
 as the normal progressive-disclosure path. Use `data_health` when you need the
 broader provider/dataset backlog, credential state, or classified failure
 queues.
+Use `ProviderRouter(action:"route", task:"quote|kline|fundamental|macro|fund")`
+when choosing or explaining providers. The route result is not just a fallback
+order: it includes provider descriptors, descriptor health, task-scoped
+`interfaceRows`, provider-scoped interface rows, canonical schemas/tables,
+normalizers, readback actions, probes, and skip/gate reasons. Cite those fields
+when explaining why a provider was selected, skipped, credential-gated,
+runtime-unavailable, output-only, disabled, or not-supported. Do not infer
+provider order from this skill or from prompt knowledge.
 Use `finance_doctor` when the workflow may be blocked by local runtime,
 session/history, API/task logs, reusable-store, or service readiness. It is a
 local diagnostic/readiness report under `data.health`, not a provider refresh
@@ -89,6 +97,12 @@ parse source data; services and repositories decide freshness, canonical writes,
 query/readback, and failure logging. Do not treat a one-off provider response as
 reusable structured data until the code registers the normalizer, table,
 readback action, and no-persist failure behavior.
+
+The mobile API Health / Doctor sheet exposes a compact provider capability
+matrix. Use it as a user-facing explanation of provider support, gated rows,
+output-only rows, unstable rows, disabled/not-supported rows, and route-rule
+next actions. It is explanatory UI over code-owned contracts; it does not
+authorize bypassing `ProviderRouter` or direct provider calls.
 
 Provider fallback order is code-owned by `ProviderPolicy`. When a route must
 prefer a source, pass a scoped preferred provider order through policy-supported
