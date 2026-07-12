@@ -154,6 +154,7 @@ class ProviderRouterTool extends Tool {
       preferredProviders: preferred,
     );
     final base = _baseOrder(task);
+    final interfaceRows = _routeInterfaceRows(task);
     final skipped = base
         .where((provider) => !allowed.contains(provider))
         .map(
@@ -170,14 +171,20 @@ class ProviderRouterTool extends Tool {
       'runtime': 'finagent-mobile',
       'task': _taskName(task),
       'order': allowed.map(_providerName).toList(),
+      'interfaceRows': interfaceRows,
       'providerModules': base.map((provider) {
         final name = _providerName(provider);
         final descriptor = _descriptorForProvider(provider);
+        final providerRows = interfaceRows
+            .where((row) => row['provider'] == name)
+            .toList(growable: false);
         return {
           'provider': name,
           'routeEffect': allowed.contains(provider) ? 'selected' : 'skipped',
           if (descriptor != null) 'descriptor': descriptor.toJson(),
           'descriptorStatus': descriptor == null ? 'missing' : 'registered',
+          'interfaceRowCount': providerRows.length,
+          'interfaceRows': providerRows,
         };
       }).toList(),
       'preferredProviders': preferred.map(_providerName).toList(),
@@ -227,6 +234,52 @@ class ProviderRouterTool extends Tool {
     return rows;
   }
 }
+
+List<Map<String, dynamic>> _routeInterfaceRows(FinanceDataTask task) {
+  final interfaceIds = _taskInterfaceIds(task).toSet();
+  if (interfaceIds.isEmpty) return const [];
+  final rows = <Map<String, dynamic>>[];
+  for (final definition in dataApiInterfaceContract.interfaces) {
+    if (!interfaceIds.contains(definition.id)) continue;
+    for (final capability in definition.capabilities) {
+      rows.add({
+        'interfaceId': definition.id,
+        'label': definition.label,
+        'provider': capability.provider.name,
+        'capabilityId': capability.id,
+        'status': _capabilityStatusName(capability.status),
+        'canonicalSchema': definition.canonicalSchema,
+        'canonicalTable': capability.canonicalTable,
+        'queryActions': definition.queryActions,
+        'dataStoreTables': definition.dataStoreTables,
+        'normalizer': capability.normalizer,
+        'adapter': capability.adapter,
+        'upstreamOrigin': capability.upstreamOrigin,
+        'probeId': capability.probeId,
+        'priority': capability.priority,
+        'reason': capability.reason,
+        'marketScope': const <String>[],
+      });
+    }
+  }
+  rows.sort((a, b) {
+    final left = '${a['interfaceId']}:${a['provider']}:${a['capabilityId']}';
+    final right = '${b['interfaceId']}:${b['provider']}:${b['capabilityId']}';
+    return left.compareTo(right);
+  });
+  return rows;
+}
+
+String _capabilityStatusName(DataApiCapabilityStatus status) => switch (status) {
+  DataApiCapabilityStatus.supported => 'supported',
+  DataApiCapabilityStatus.disabled => 'disabled',
+  DataApiCapabilityStatus.credentialGated => 'credential-gated',
+  DataApiCapabilityStatus.quotaGated => 'quota-gated',
+  DataApiCapabilityStatus.transportUnstable => 'transport-unstable',
+  DataApiCapabilityStatus.notSupported => 'not-supported',
+  DataApiCapabilityStatus.outputOnly => 'output-only',
+  DataApiCapabilityStatus.globalOnly => 'global-only',
+};
 
 List<Map<String, dynamic>> descriptorProviderHealthRows(
   FinanceDataTask task, {

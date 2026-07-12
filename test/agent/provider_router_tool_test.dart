@@ -29,10 +29,42 @@ void main() {
       expect(result['contract'], 'provider-router-route-v1');
       expect(result['order'], ['sina']);
       expect(
+        result['interfaceRows'],
+        contains(
+          isA<Map>()
+              .having((row) => row['interfaceId'], 'interfaceId', 'stock.quote')
+              .having((row) => row['provider'], 'provider', 'sina')
+              .having((row) => row['status'], 'status', 'supported')
+              .having(
+                (row) => row['canonicalSchema'],
+                'canonicalSchema',
+                'quote_snapshot',
+              ),
+        ),
+      );
+      expect(
         result['providerModules'],
         contains(
           isA<Map>()
               .having((row) => row['provider'], 'provider', 'sina')
+              .having(
+                (row) => row['interfaceRowCount'],
+                'interfaceRowCount',
+                greaterThan(0),
+              )
+              .having(
+                (row) => row['interfaceRows'],
+                'interfaceRows',
+                contains(
+                  isA<Map>()
+                      .having(
+                        (item) => item['interfaceId'],
+                        'interfaceId',
+                        'stock.quote',
+                      )
+                      .having((item) => item['provider'], 'provider', 'sina'),
+                ),
+              )
               .having(
                 (row) => row['descriptorStatus'],
                 'descriptorStatus',
